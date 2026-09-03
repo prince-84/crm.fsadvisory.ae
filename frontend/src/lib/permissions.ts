@@ -52,11 +52,13 @@ export function hasAnyPermission(permissionKeys: string[]): boolean {
 /**
  * Refresh user profile and permissions from backend and sync with localStorage.
  */
+import { API_BASE_URL } from './api';
+
 export async function refreshCurrentUser(): Promise<UserPermissionProfile | null> {
   const user = getCurrentUser();
   if (!user || !user.id) return null;
   try {
-    const res = await fetch(`http://127.0.0.1:8000/api/users?search=${encodeURIComponent(user.email)}`);
+    const res = await fetch(`${API_BASE_URL}/users?search=${encodeURIComponent(user.email)}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.users)) {
       const match = data.users.find((u: any) => u.id === user.id || u.email === user.email);

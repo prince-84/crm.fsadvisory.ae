@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, API_BASE_URL } from '@/lib/api';
 import { 
   Settings, Globe, Shield, Clock, Save, Layers, Building2, Plus, 
   Trash2, Edit2, Check, X, MapPin, Home, HardHat, Briefcase, Users, UserPlus, ShieldCheck, User, Search,
@@ -1714,7 +1714,7 @@ function SettingsContent() {
                           </span>
                         </div>
                         <div className="text-[11px] text-[#6E6E6E] font-mono">
-                          Webhook: http://127.0.0.1:8000/api/portals/ingest?portal={p.portal_name}
+                          Webhook: {API_BASE_URL}/portals/ingest?portal={p.portal_name}
                         </div>
                         <div className="text-[10px] text-slate-400">Total Leads Synced: {p.synced_count}</div>
                       </div>

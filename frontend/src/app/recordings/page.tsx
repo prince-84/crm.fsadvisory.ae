@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, API_BASE_URL } from '@/lib/api';
 import { 
   Mic, 
   Play, 
@@ -64,7 +64,7 @@ export default function CallRecordingsPage() {
     server_host: '3cx.fsadvisory.ae',
     gateway_status: 'ONLINE',
     active_users_count: 5,
-    webhook_url: 'http://127.0.0.1:8000/api/3cx/call-event',
+    webhook_url: `${API_BASE_URL}/3cx/call-event`,
   });
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -144,7 +144,7 @@ export default function CallRecordingsPage() {
 
     setImportingCsv(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/3cx/import-csv', {
+      const res = await fetch(`${API_BASE_URL}/3cx/import-csv`, {
         method: 'POST',
         body: formData,
       });
@@ -170,7 +170,7 @@ export default function CallRecordingsPage() {
     const formData = new FormData();
     formData.append('audio_file', file);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/recordings/${recId}/attach-audio`, {
+      const res = await fetch(`${API_BASE_URL}/recordings/${recId}/attach-audio`, {
         method: 'POST',
         body: formData,
       });
@@ -303,7 +303,7 @@ export default function CallRecordingsPage() {
   };
 
   const handleCopyWebhook = () => {
-    const url = 'http://127.0.0.1:8000/api/3cx/call-event';
+    const url = `${API_BASE_URL}/3cx/call-event`;
     navigator.clipboard.writeText(url);
     Swal.fire({
       icon: 'success',
@@ -966,7 +966,7 @@ export default function CallRecordingsPage() {
                   <input
                     type="text"
                     readOnly
-                    value="http://127.0.0.1:8000/api/3cx/call-event"
+                    value={`${API_BASE_URL}/3cx/call-event`}
                     className="flex-1 p-2 bg-slate-100 border border-slate-300 rounded font-mono text-[11px] text-[#081428] select-all"
                   />
                   <button

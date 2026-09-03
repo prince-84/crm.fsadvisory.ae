@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import Swal from 'sweetalert2';
+import { API_BASE_URL } from '@/lib/api';
 import {
   Users,
   ShieldCheck,
@@ -144,7 +145,7 @@ export default function UserManagementPage() {
       if (selectedDepartment !== 'all') params.append('department', selectedDepartment);
       if (selectedStatus !== 'all') params.append('is_active', selectedStatus === 'active' ? 'true' : 'false');
 
-      const res = await fetch(`http://127.0.0.1:8000/api/users?${params.toString()}`);
+      const res = await fetch(`${API_BASE_URL}/users?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
         setUsers(data.users || []);
@@ -161,8 +162,8 @@ export default function UserManagementPage() {
   const loadRolesAndMatrix = async () => {
     try {
       const [rolesRes, matrixRes] = await Promise.all([
-        fetch('http://127.0.0.1:8000/api/roles'),
-        fetch('http://127.0.0.1:8000/api/permissions/matrix'),
+        fetch(`${API_BASE_URL}/roles`),
+        fetch(`${API_BASE_URL}/permissions/matrix`),
       ]);
       const rolesData = await rolesRes.json();
       const matrixData = await matrixRes.json();
@@ -228,8 +229,8 @@ export default function UserManagementPage() {
     setSubmittingUser(true);
     try {
       const url = userModalMode === 'create'
-        ? 'http://127.0.0.1:8000/api/users'
-        : `http://127.0.0.1:8000/api/users/${activeUserId}`;
+        ? `${API_BASE_URL}/users`
+        : `${API_BASE_URL}/users/${activeUserId}`;
       const method = userModalMode === 'create' ? 'POST' : 'PUT';
 
       const res = await fetch(url, {
@@ -273,7 +274,7 @@ export default function UserManagementPage() {
 
     if (confirm.isConfirmed) {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/users/${id}`, { method: 'DELETE' });
+        const res = await fetch(`${API_BASE_URL}/users/${id}`, { method: 'DELETE' });
         const data = await res.json();
         if (data.success) {
           Swal.fire({ icon: 'success', title: 'Removed!', text: data.message, timer: 1400, showConfirmButton: false });
@@ -333,7 +334,7 @@ export default function UserManagementPage() {
     if (!formValues) return;
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/users/${user.id}/activate`, {
+      const res = await fetch(`${API_BASE_URL}/users/${user.id}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formValues),
@@ -422,7 +423,7 @@ export default function UserManagementPage() {
     if (!permTargetUser) return;
     setSavingPermissions(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/users/${permTargetUser.id}/permissions`, {
+      const res = await fetch(`${API_BASE_URL}/users/${permTargetUser.id}/permissions`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions: selectedPermissions }),

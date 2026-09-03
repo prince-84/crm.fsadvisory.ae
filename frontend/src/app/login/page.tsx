@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Swal from 'sweetalert2';
 import PhoneInput from '@/components/PhoneInput';
+import { API_BASE_URL } from '@/lib/api';
 import {
   Lock,
   Mail,
@@ -56,7 +57,7 @@ export default function LoginPage() {
   const handleQuickDemoLogin = async (roleSlug: string, label: string) => {
     setLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/auth/login', {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ demo_role: roleSlug }),
@@ -102,7 +103,7 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/auth/login', {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -172,7 +173,7 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/auth/register', {
+      const res = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -219,7 +220,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/auth/forgot-password', {
+      const res = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: forgotEmail.trim() }),

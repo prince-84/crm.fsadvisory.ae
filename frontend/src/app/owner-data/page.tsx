@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import Swal from 'sweetalert2';
+import { API_BASE_URL } from '@/lib/api';
 import { 
   Building2, 
   Search, 
@@ -218,7 +219,7 @@ export default function OwnerDataPage() {
       if (selectedBedrooms !== 'all') params.append('bedrooms', selectedBedrooms);
       if (selectedStatus !== 'all') params.append('status', selectedStatus);
 
-      const res = await fetch(`http://127.0.0.1:8000/api/owner-data?${params.toString()}`);
+      const res = await fetch(`${API_BASE_URL}/owner-data?${params.toString()}`);
       const result = await res.json();
 
       if (result.success) {
@@ -333,8 +334,8 @@ export default function OwnerDataPage() {
     setSubmitting(true);
     try {
       const url = modalMode === 'create'
-        ? 'http://127.0.0.1:8000/api/owner-data'
-        : `http://127.0.0.1:8000/api/owner-data/${activeRecordId}`;
+        ? `${API_BASE_URL}/owner-data`
+        : `${API_BASE_URL}/owner-data/${activeRecordId}`;
       const method = modalMode === 'create' ? 'POST' : 'PUT';
 
       const res = await fetch(url, {
@@ -379,7 +380,7 @@ export default function OwnerDataPage() {
 
     if (confirm.isConfirmed) {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/owner-data/${id}`, { method: 'DELETE' });
+        const res = await fetch(`${API_BASE_URL}/owner-data/${id}`, { method: 'DELETE' });
         const data = await res.json();
         if (data.success) {
           Swal.fire({ icon: 'success', title: 'Deleted!', text: data.message, timer: 1400, showConfirmButton: false });
@@ -409,7 +410,7 @@ export default function OwnerDataPage() {
 
     if (confirm.isConfirmed) {
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/owner-data/bulk-delete', {
+        const res = await fetch(`${API_BASE_URL}/owner-data/bulk-delete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: selectedIds }),
@@ -548,7 +549,7 @@ export default function OwnerDataPage() {
 
       setImporting(true);
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/owner-data/import', {
+        const res = await fetch(`${API_BASE_URL}/owner-data/import`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ records: recordsToImport }),

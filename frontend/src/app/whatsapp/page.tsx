@@ -46,6 +46,9 @@ import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import { hasPermission } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
+import { API_BASE_URL } from '@/lib/api';
+
+const GATEWAY_URL = (process.env.NEXT_PUBLIC_WHATSAPP_GATEWAY_URL || 'http://127.0.0.1:5001').replace(/\/+$/, '');
 
 // Emoji dataset for WhatsApp Real Estate & Chat
 const emojiCategories = {
@@ -266,7 +269,7 @@ export default function WhatsAppPage() {
     const interval = setInterval(() => {
       loadChats(false);
       // Poll gateway status to immediately catch mobile sign-out
-      fetch('http://127.0.0.1:5001/api/status')
+      fetch(`${GATEWAY_URL}/api/status`)
         .then((r) => r.json())
         .then((st) => {
           setGatewayStatus(st.status);
@@ -280,7 +283,7 @@ export default function WhatsAppPage() {
 
       // Also fetch new messages for current active chat silently
       if (selectedChatIdRef.current) {
-        fetch(`http://127.0.0.1:8000/api/whatsapp/chats/${selectedChatIdRef.current}/messages`)
+        fetch(`${API_BASE_URL}/whatsapp/chats/${selectedChatIdRef.current}/messages`)
           .then((r) => r.json())
           .then((data) => {
             if (data.messages && data.chat?.id === selectedChatIdRef.current) {
@@ -313,14 +316,14 @@ export default function WhatsAppPage() {
 
   const loadChannels = async (checkAutoQr = false) => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/whatsapp/channels');
+      const res = await fetch(`${API_BASE_URL}/whatsapp/channels`);
       const data = await res.json();
       const chList = data.channels || [];
       setChannels(chList);
 
       // Check Gateway connection state
       try {
-        const gwRes = await fetch('http://127.0.0.1:5001/api/status');
+        const gwRes = await fetch(`${GATEWAY_URL}/api/status`);
         const gwData = await gwRes.json();
         setGatewayStatus(gwData.status);
         if (checkAutoQr && gwData.status !== 'connected') {
@@ -337,7 +340,7 @@ export default function WhatsAppPage() {
   const loadChats = async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
     try {
-      let url = `http://127.0.0.1:8000/api/whatsapp/chats?channel_id=${selectedChannelId}`;
+      let url = `${API_BASE_URL}/whatsapp/chats?channel_id=${selectedChannelId}`;
       if (unreadOnly) url += '&unread_only=true';
 
       const res = await fetch(url);
@@ -403,7 +406,7 @@ export default function WhatsAppPage() {
     setSelectedChat(chat);
     setLoadingMessages(true);
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/whatsapp/chats/${chat.id}/messages`);
+        const res = await fetch(`${API_BASE_URL}/whatsapp/chats/${chat.id}/messages`);
         const data = await res.json();
         setMessages(data.messages || []);
         
@@ -436,7 +439,7 @@ export default function WhatsAppPage() {
     setSending(true);
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/whatsapp/chats/${selectedChat.id}/send`, {
+      const res = await fetch(`${API_BASE_URL}/whatsapp/chats/${selectedChat.id}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: outgoingText }),
@@ -537,7 +540,7 @@ export default function WhatsAppPage() {
 
         setSending(true);
         try {
-          const res = await fetch(`http://127.0.0.1:8000/api/whatsapp/chats/${selectedChat.id}/send`, {
+          const res = await fetch(`${API_BASE_URL}/whatsapp/chats/${selectedChat.id}/send`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -587,7 +590,7 @@ export default function WhatsAppPage() {
   const handleSavePhone = async () => {
     if (!selectedChat || !phoneInput.trim()) return;
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/whatsapp/chats/${selectedChat.id}/update-contact-info`, {
+      const res = await fetch(`${API_BASE_URL}/whatsapp/chats/${selectedChat.id}/update-contact-info`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: phoneInput.trim() }),
@@ -618,7 +621,7 @@ export default function WhatsAppPage() {
     if (isQrModalOpen) {
       interval = setInterval(async () => {
         try {
-          const res = await fetch('http://127.0.0.1:5001/api/status');
+          const res = await fetch(`${GATEWAY_URL}/api/status`);
           const data = await res.json();
           if (data.status === 'connected') {
             setIsQrModalOpen(false);
@@ -650,7 +653,7 @@ export default function WhatsAppPage() {
 
     try {
       // Fetch Real QR image from Live Baileys Gateway
-      const res = await fetch('http://127.0.0.1:5001/api/qr');
+      const res = await fetch(`${GATEWAY_URL}/api/qr`);
       const data = await res.json();
       if (data.qr_image) {
         setQrImageData(data.qr_image); // use pre-rendered base64 PNG
@@ -666,7 +669,7 @@ export default function WhatsAppPage() {
     setQrTimer(30);
     setQrImageData('');
     try {
-      const res = await fetch('http://127.0.0.1:5001/api/qr');
+      const res = await fetch(`${GATEWAY_URL}/api/qr`);
       const data = await res.json();
       if (data.qr_image) {
         setQrImageData(data.qr_image);
@@ -682,7 +685,7 @@ export default function WhatsAppPage() {
     if (!qrChannelId) return;
     setPairingLoading(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/whatsapp/channels/${qrChannelId}/pair-confirm`, {
+      const res = await fetch(`${API_BASE_URL}/whatsapp/channels/${qrChannelId}/pair-confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -723,7 +726,7 @@ export default function WhatsAppPage() {
 
     if (result.isConfirmed) {
       try {
-        await fetch(`http://127.0.0.1:8000/api/whatsapp/channels/${channelId}/disconnect`, {
+        await fetch(`${API_BASE_URL}/whatsapp/channels/${channelId}/disconnect`, {
           method: 'POST',
         });
         Swal.fire('Disconnected', 'WhatsApp device has been unlinked.', 'success');
@@ -861,7 +864,7 @@ export default function WhatsAppPage() {
               <button
                 onClick={async () => {
                   try {
-                    await fetch('http://127.0.0.1:5001/api/sync', { method: 'POST' });
+                    await fetch(`${GATEWAY_URL}/api/sync`, { method: 'POST' });
                   } catch (_) {}
                   await loadChannels();
                   await loadChats();
