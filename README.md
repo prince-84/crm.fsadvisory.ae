@@ -91,20 +91,94 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - Avoids bulk-fetch rate limits and prevents WhatsApp spam/bot account bans.
   - Automatic database caching in Laravel and instant frontend UI rendering with initial fallback badges.
 
+### Enterprise Access, Governance & Distribution
+- **36 — Enterprise User Management & Granular Permission Matrix (`/users`)**:
+  - `users` and `roles` table schema with departments, phone numbers, active status, and custom JSON granular permissions.
+  - Granular permissions system (`leads.view`, `leads.create`, `leads.edit`, `owner_data.view`, `queue.view`, `deals.view`, `calls.make`, `whatsapp.view`, `reports.view`, `users.manage`, `settings.view`, etc.).
+  - Granular Interactive Permission Matrix Drawer on `/users` allowing Super Admin to assign and override permissions per user.
+  - Self-registration approval workflow: pending registration notice, admin activation modal with department and role assignment, and automated HTML email notifications (`AccountActivatedMail`, `AccountInReviewMail`).
+  - Dynamic navigation and action guarding via `hasPermission()` in `Sidebar.tsx` and across application routes.
+
+- **37 — Dubai Title Deed Owner Data Master Registry (`/owner-data`)**:
+  - Dedicated `/owner-data` workspace for Dubai property owners and title deed records (`owner_records` table).
+  - High-density columns for Property Type, Master Developer, Project Name, Unit/Villa #, Area / Community, Owner Full Name, Primary Phone, Secondary Phone, Email, Nationality, Current Status, and Assigned Advisor.
+  - Live KPI Cards: *Total Records*, *Verified Owners*, *Active Units*, *Off-Plan Portfolio*.
+  - Comprehensive filter bar with live search, property type, bedrooms, area, and status dropdowns.
+  - Bulk Excel/CSV Import Wizard with column auto-mapping and progress reporting.
+  - Bulk delete and single record edit/delete with SweetAlert2 modal confirmation.
+
+- **38 — Intelligent Lead Distribution Engine & Round-Robin Rotation (`LeadDistributionService`)**:
+  - Automated intelligent lead distribution engine (`LeadDistributionService.php`) handling inbound ad webhooks, portal leads, and unassigned records.
+  - Dedicated database tables: `lead_distribution_settings`, `lead_distribution_agents`, and `lead_distribution_logs`.
+  - Settings UI card on `/settings` featuring:
+    - Master On/Off switch, Scope toggles (*Apply to Lead Pool*, *Apply to Owner Data*).
+    - Distribution Algorithm selector (*Round-Robin (Equal Count)* vs *Weighted Ratio*).
+    - Active Rotation Agent management with daily lead caps, active/idle toggles, and real-time counter tracking.
+    - Strict daily cap enforcement preventing over-allocation past agent capacity with designated Fallback Assignee routing.
+    - Interactive **[ 🔄 Reset Counts ]** button with SweetAlert2 confirmation dialog.
+    - Complete Activity Audit Trail with **[ 🗑️ Clear Logs ]** truncation feature.
+
+- **39 — Dynamic Sliding Window Pagination**:
+  - Advanced sliding window pagination algorithm supporting arbitrary page ranges without hardcoded limits.
+  - Includes jump controls (`...` advance 5 pages) and quick first/last page shortcuts across Settings audit logs and data tables.
+
+- **40 — Marketing & UTM Campaign Attribution Tracking**:
+  - Full-stack UTM marketing attribution added to database `contacts` table:
+    - `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, and `landing_page_url` (Complete Campaign / Referral URL).
+  - Seamless ingestion via portal/ad webhooks (`PortalController::ingest`), Contact API (`ContactController`), and all manual lead creation/editing forms.
+  - Rendered with clickable link and **[Open ↗]** button in the Contact Drawer campaign attribution card.
+
+- **41 — Client Personal Details Schema Optimization (Removal of Mobile Phone)**:
+  - Permanently dropped obsolete `mobile_phone` column from database schema (`2026_09_03_110001_drop_mobile_phone_from_contacts_table.php`).
+  - Removed `mobile_phone` from all backend controllers (`ContactController`, `CallRecordingController`) and frontend forms.
+  - Streamlined client telephone management strictly to **Primary Phone Number** and **Secondary Phone Number**.
+
+- **42 — Symmetrical 3-Column Responsive Grid Architecture**:
+  - Reorganized form layouts into balanced, clean 3-columns-per-row grids:
+    - **Client Personal Details**: Row 1 (Name `*`, Primary Phone `*`, Secondary Phone) | Row 2 (Email `*`, Nationality, Emirates ID / Passport #) — placing Primary & Secondary phone side-by-side.
+    - **Marketing & UTM Parameters**: Row 1 (UTM Source, UTM Medium, UTM Campaign) | Row 2 (UTM Term, UTM Content, Complete Campaign URL).
+  - Applied consistently across Full Create Page (`/leads/create`), Full Edit Page (`/leads/[id]/edit`), and modal dialogs (`CreateLeadModal`, `CreateContactModal`, `EditContactModal`).
+
+- **43 — Dynamic Database-Driven User & Advisor Dropdowns**:
+  - Replaced static/mock values with live API queries to `/api/users`.
+  - "Assigned Agent / Owner" in lead forms dynamically populates all active advisors from the database with unassigned rotation fallback.
+  - "TARGET SALES ADVISOR" in Sales Handover Validation Modal (`SalesHandoverModal.tsx`) dynamically loads from database with intelligent default matching for sales consultants.
+  - Team filters in `/opportunities` and `/queue` updated to parse API responses dynamically.
+
+- **44 — Vector Branding & Official SVG Logo Integration**:
+  - Converted official vector `logo.svg` to clean UTF-8.
+  - Integrated official gold-and-white `logo.svg` in:
+    - Main CRM Sidebar header (`Sidebar.tsx`)
+    - Login and Registration page desktop hero & mobile header (`login/page.tsx`)
+    - Next.js root layout metadata & browser tab favicons (`layout.tsx`).
+
+- **45 — Cloud Deployment & Vercel-Ready Architecture**:
+  - Live Laravel API configured on production subdomain (`https://api.fsadvisory.ae`).
+  - Published and configured Laravel CORS policy (`config/cors.php`) to allow cross-origin requests.
+  - Refactored entire frontend to eliminate hardcoded `127.0.0.1:8000` URLs in favor of dynamic `NEXT_PUBLIC_API_URL`.
+  - Complete fullstack codebase pushed to GitHub repository: `https://github.com/prince-84/crm.fsadvisory.ae.git` on branch `main`.
+
 ---
 
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
-Ensure MySQL is running on `127.0.0.1:3306` with database `fsadvisory_crm`.
+Ensure MySQL is running with database `fsadvisory_crm` (or configured database in `.env`):
+```bash
+cd backend
+php artisan migrate --force
+```
 
 ### 2. Backend (Laravel API)
 ```bash
 cd backend
-php artisan migrate
+cp .env.example .env
+# Configure DB credentials in .env
+php artisan key:generate
+php artisan optimize:clear
 php artisan serve --port=8000
 ```
-API active at `http://127.0.0.1:8000`
+API active locally at `http://127.0.0.1:8000` (Production live at `https://api.fsadvisory.ae/api`).
 
 ### 3. WhatsApp Gateway Daemon (Node.js Baileys)
 ```bash
@@ -112,15 +186,23 @@ cd whatsapp-gateway
 npm install
 node server.js
 ```
-Gateway active at `http://127.0.0.1:5001`
+Gateway active at `http://127.0.0.1:5001`.
 
 ### 4. Frontend (Next.js App)
 ```bash
 cd frontend
 npm install
+# Local development:
 npm run dev
 ```
-Frontend active at `http://localhost:3000` (or `http://localhost:3001`)
+Frontend active locally at `http://localhost:3000`.
+
+### 5. Vercel Production Deployment
+- **Git Repository:** `https://github.com/prince-84/crm.fsadvisory.ae.git` (branch `main`)
+- **Root Directory:** `frontend`
+- **Environment Variables:**
+  - `NEXT_PUBLIC_API_URL`: `https://api.fsadvisory.ae/api`
+  - `NEXT_PUBLIC_WHATSAPP_GATEWAY_URL`: (Optional, if WhatsApp gateway is hosted on a VPS/domain)
 
 ---
 
@@ -131,28 +213,48 @@ FSadvisory-crm/
 ├── backend/                  # Laravel 11 REST API
 │   ├── app/
 │   │   ├── Http/Controllers/Api/
-│   │   │   ├── ContactController.php
-│   │   │   ├── OpportunityController.php
-│   │   │   ├── WhatsAppController.php
-│   │   │   ├── CallController.php
+│   │   │   ├── ContactController.php          # Contact CRUD & UTM Attribution
+│   │   │   ├── OpportunityController.php      # Opportunity Lifecycle & SLA
+│   │   │   ├── LeadDistributionController.php # Round-Robin Engine & Audit Logs
+│   │   │   ├── OwnerDataController.php        # Dubai Title Deed Registry
+│   │   │   ├── UserController.php             # User Management & Permissions
+│   │   │   ├── WhatsAppController.php         # WhatsApp Web Suite & Sync
+│   │   │   ├── CallRecordingController.php    # 3CX PBX Telephony Integration
 │   │   │   └── ...
-│   │   └── Models/
-│   ├── database/migrations/  # MySQL schema migrations
-│   └── routes/api.php        # REST endpoints
-├── frontend/                 # Next.js 14+ SPA
+│   │   ├── Models/
+│   │   └── Services/
+│   │       └── LeadDistributionService.php    # Auto-Distribution Logic & Rotation
+│   ├── config/cors.php                        # CORS configuration for Vercel
+│   ├── database/migrations/                   # MySQL schema migrations
+│   └── routes/api.php                         # REST API endpoints
+├── frontend/                 # Next.js 15+ App Router SPA
+│   ├── public/
+│   │   └── logo.svg                           # Official FS Advisory vector logo
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── page.tsx               # Lead Pool
-│   │   │   ├── whatsapp/page.tsx      # WhatsApp Chat Suite
-│   │   │   ├── opportunities/         # Opportunity Workspace
-│   │   │   ├── pipeline/page.tsx      # Kanban Board
-│   │   │   ├── campaigns/page.tsx     # Marketing Campaigns
-│   │   │   ├── settings/page.tsx      # Settings & Master Catalogs
-│   │   │   └── ...
-│   │   └── components/       # Reusable UI components
+│   │   │   ├── page.tsx                       # Lead Pool master table
+│   │   │   ├── leads/create/page.tsx          # Full Create Lead Page
+│   │   │   ├── leads/[id]/edit/page.tsx       # Full Edit Lead Page
+│   │   │   ├── owner-data/page.tsx            # Title Deed Owner Registry
+│   │   │   ├── queue/page.tsx                 # Daily Telesales Desk
+│   │   │   ├── opportunities/                 # Opportunity Workspace
+│   │   │   ├── pipeline/page.tsx              # Sales Pipeline Kanban
+│   │   │   ├── call-activity/page.tsx         # 3CX Call Logs & Telephony
+│   │   │   ├── recordings/page.tsx            # Audio Recordings Player
+│   │   │   ├── whatsapp/page.tsx              # WhatsApp Multi-Device Suite
+│   │   │   ├── users/page.tsx                 # User Management & Matrix
+│   │   │   ├── settings/page.tsx              # Settings & Distribution Engine
+│   │   │   └── login/page.tsx                 # Authentication & Approval Notice
+│   │   ├── components/                        # Reusable UI & Modal components
+│   │   └── lib/
+│   │       ├── api.ts                         # Dynamic fetchApi with NEXT_PUBLIC_API_URL
+│   │       └── permissions.ts                 # Granular RBAC permission checks
+│   └── next.config.ts
 ├── whatsapp-gateway/         # Baileys WhatsApp Multi-Device Gateway
 │   ├── server.js             # Gateway Express server & Baileys socket
 │   ├── auth_sessions/        # Multi-device session credentials
 │   └── contacts_map.json     # Persistent LID-to-phone mapping store
-└── README.md
+├── logo.svg                  # Official vector logo asset
+├── README.md                 # Full project technical documentation
+└── SCOPE.md                  # Project scope and business specifications
 ```
