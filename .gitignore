@@ -2,6 +2,8 @@
 .DS_Store
 Thumbs.db
 *.log
+*.zip
+*.sql
 .vscode/
 .idea/
 

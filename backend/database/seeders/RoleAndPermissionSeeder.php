@@ -147,6 +147,23 @@ class RoleAndPermissionSeeder extends Seeder
             ]
         );
 
+        // 6. Telesales Agent Role
+        $telesalesRole = Role::updateOrCreate(
+            ['slug' => 'telesales-agent'],
+            [
+                'name' => 'Telesales Agent',
+                'description' => 'Dedicated telesales representative focused on client outreach, lead qualification, queue follow-ups, telephony calls, and WhatsApp communication.',
+                'permissions' => [
+                    'leads.view', 'leads.create', 'leads.edit',
+                    'queue.view', 'queue.update_status', 'queue.calendar',
+                    'deals.view', 'deals.create',
+                    'calls.make', 'calls.view_logs', 'calls.listen_recordings',
+                    'whatsapp.view', 'whatsapp.send_messages', 'whatsapp.send_voice',
+                ],
+                'is_system' => true,
+            ]
+        );
+
         // Seed / Update standard team members with roles and departments
         $teamUsers = [
             [
@@ -183,17 +200,6 @@ class RoleAndPermissionSeeder extends Seeder
                 'is_active' => true,
             ],
             [
-                'name' => 'Mako',
-                'email' => 'mako@fsadvisory.ae',
-                'phone' => '+971 54 777 8899',
-                'role' => 'Property Consultant',
-                'department' => 'Client Relations / Inbound',
-                'role_id' => $agentRole->id,
-                'permissions' => $agentRole->permissions,
-                'initials' => 'MK',
-                'is_active' => true,
-            ],
-            [
                 'name' => 'Zara Al-Sayed',
                 'email' => 'zara@fsadvisory.ae',
                 'phone' => '+971 52 444 8811',
@@ -202,6 +208,62 @@ class RoleAndPermissionSeeder extends Seeder
                 'role_id' => $operations->id,
                 'permissions' => $operations->permissions,
                 'initials' => 'ZA',
+                'is_active' => true,
+            ],
+            // --- TeleSales Department Agents ---
+            [
+                'name' => 'Hiba Aslam',
+                'email' => 'hiba@fsadvisory.ae',
+                'phone' => '+971 58 441 2233',
+                'role' => 'Telesales Agent',
+                'department' => 'TeleSales',
+                'role_id' => $telesalesRole->id,
+                'permissions' => $telesalesRole->permissions,
+                'initials' => 'HA',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Shafiuddin',
+                'email' => 'shafiuddin@fsadvisory.ae',
+                'phone' => '+971 55 597 7700',
+                'role' => 'Telesales Agent',
+                'department' => 'TeleSales',
+                'role_id' => $telesalesRole->id,
+                'permissions' => $telesalesRole->permissions,
+                'initials' => 'SH',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Rayyan',
+                'email' => 'rayyan@fsadvisory.ae',
+                'phone' => '+971 56 946 8277',
+                'role' => 'Telesales Agent',
+                'department' => 'TeleSales',
+                'role_id' => $telesalesRole->id,
+                'permissions' => $telesalesRole->permissions,
+                'initials' => 'RA',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Saad',
+                'email' => 'saad@fsadvisory.ae',
+                'phone' => '+971 54 330 1035',
+                'role' => 'Telesales Agent',
+                'department' => 'TeleSales',
+                'role_id' => $telesalesRole->id,
+                'permissions' => $telesalesRole->permissions,
+                'initials' => 'SA',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Mako',
+                'email' => 'mako@fsadvisory.ae',
+                'phone' => '+971 52 987 6543',
+                'role' => 'Telesales Agent',
+                'department' => 'TeleSales',
+                'role_id' => $telesalesRole->id,
+                'permissions' => $telesalesRole->permissions,
+                'initials' => 'MK',
                 'is_active' => true,
             ],
         ];

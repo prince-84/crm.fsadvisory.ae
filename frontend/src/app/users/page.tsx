@@ -301,8 +301,10 @@ export default function UserManagementPage() {
           <div>
             <label class="block font-bold text-slate-700 mb-1 uppercase text-[10px] tracking-wider">Department</label>
             <select id="swal-dept" class="w-full p-2 border border-slate-300 rounded text-xs bg-white text-slate-800 font-medium">
+              <option value="TeleSales" ${user.department === 'TeleSales' ? 'selected' : ''}>TeleSales</option>
               <option value="Off-Plan Sales" ${user.department === 'Off-Plan Sales' ? 'selected' : ''}>Off-Plan Sales</option>
               <option value="Secondary & Luxury" ${user.department === 'Secondary & Luxury' ? 'selected' : ''}>Secondary & Luxury</option>
+              <option value="Executive Management" ${user.department === 'Executive Management' ? 'selected' : ''}>Executive Management</option>
               <option value="Operations & Compliance" ${user.department === 'Operations & Compliance' ? 'selected' : ''}>Operations & Compliance</option>
               <option value="Client Relations / Inbound" ${user.department === 'Client Relations / Inbound' ? 'selected' : ''}>Client Relations / Inbound</option>
             </select>
@@ -310,6 +312,7 @@ export default function UserManagementPage() {
           <div>
             <label class="block font-bold text-slate-700 mb-1 uppercase text-[10px] tracking-wider">Designated Role</label>
             <select id="swal-role" class="w-full p-2 border border-slate-300 rounded text-xs bg-white text-slate-800 font-medium">
+              <option value="Telesales Agent">Telesales Agent</option>
               <option value="Property Consultant">Property Consultant</option>
               <option value="Senior Property Advisor">Senior Property Advisor</option>
               <option value="Sales Manager">Sales Manager</option>
@@ -745,6 +748,8 @@ export default function UserManagementPage() {
                                 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                                 : u.role === 'Senior Property Advisor'
                                 ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : u.role === 'Telesales Agent'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-300 font-bold'
                                 : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             }`}>
                               {u.role}
@@ -1158,7 +1163,7 @@ export default function UserManagementPage() {
                     {roles.map((r) => (
                       <option key={r.slug} value={r.name}>{r.name}</option>
                     ))}
-                    <option value="Telesales Lead Agent">Telesales Lead Agent</option>
+                    <option value="Telesales Agent">Telesales Agent</option>
                   </select>
                 </div>
 
@@ -1169,6 +1174,7 @@ export default function UserManagementPage() {
                     onChange={(e) => setUserFormData({ ...userFormData, department: e.target.value })}
                     className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] bg-white cursor-pointer font-semibold"
                   >
+                    <option value="TeleSales">TeleSales</option>
                     <option value="Off-Plan Sales">Off-Plan Sales</option>
                     <option value="Secondary & Luxury">Secondary & Luxury</option>
                     <option value="Executive Management">Executive Management</option>
