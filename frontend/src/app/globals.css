@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+:root {
+  --navy: #081428;
+  --navy-light: #0D1E3A;
+  --ivory: #FAF8F5;
+  --gold: #C8A147;
+  --gold-hover: #b48e35;
+  --charcoal: #1A1A1A;
+  --grey: #6E6E6E;
+  --border: #E8E4DC;
+  
+  --hot: #D93838;
+  --warm: #D97706;
+  --cold: #2563EB;
+  --success: #16A34A;
+}
+
+body {
+  background-color: #FAF8F5;
+  color: #1A1A1A;
+  font-family: 'Poppins', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-heading {
+  font-family: 'Poppins', sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Custom scrollbars for high-density tables */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #FAF8F5;
+}
+::-webkit-scrollbar-thumb {
+  background: #D8D2C5;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C8A147;
+}
+
+/* Custom table selection checkbox */
+input[type="checkbox"] {
+  accent-color: #C8A147;
+}
+
+/* Global cursor pointer enforcement for buttons, links, and interactive controls */
+button,
+a,
+[role="button"],
+input[type="submit"],
+input[type="button"],
+input[type="reset"],
+input[type="checkbox"],
+input[type="radio"],
+select,
+label[for],
+summary,
+.cursor-pointer {
+  cursor: pointer !important;
+}
+
+button:disabled,
+a:disabled,
+input:disabled,
+select:disabled {
+  cursor: not-allowed !important;
+}
+

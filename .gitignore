@@ -1,0 +1,43 @@
+# Root / OS
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# Backend (Laravel)
+backend/vendor/
+backend/node_modules/
+backend/public/storage
+backend/storage/*.key
+backend/storage/logs/*.log
+backend/storage/framework/cache/*
+!backend/storage/framework/cache/.gitignore
+backend/storage/framework/sessions/*
+!backend/storage/framework/sessions/.gitignore
+backend/storage/framework/views/*
+!backend/storage/framework/views/.gitignore
+backend/.env
+backend/.env.backup
+backend/.env.production
+backend/.phpunit.result.cache
+
+# Frontend (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.vercel/
+frontend/*.tsbuildinfo
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+frontend/.env.local
+frontend/.env*.local
+
+# WhatsApp Gateway
+whatsapp-gateway/node_modules/
+whatsapp-gateway/auth_sessions/
+whatsapp-gateway/.wwebjs_cache/
+whatsapp-gateway/*.log
