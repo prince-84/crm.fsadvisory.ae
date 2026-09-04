@@ -1200,10 +1200,8 @@ export default function LeadPoolPage() {
                 <select
                   value={selectedOwner}
                   onChange={(e) => {
-                    const newOwner = e.target.value;
-                    setSelectedOwner(newOwner);
+                    setSelectedOwner(e.target.value);
                     setCurrentPage(1);
-                    loadData(1, perPage, sortBy, sortOrder, newOwner);
                   }}
                   className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
                 >
