@@ -158,6 +158,27 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - Refactored entire frontend to eliminate hardcoded `127.0.0.1:8000` URLs in favor of dynamic `NEXT_PUBLIC_API_URL`.
   - Complete fullstack codebase pushed to GitHub repository: `https://github.com/prince-84/crm.fsadvisory.ae.git` on branch `main`.
 
+- **46 — TeleSales Department & Dedicated Telesales Agent Workforce**:
+  - Established the dedicated **TeleSales Department** and **Telesales Agent** role (`telesales-agent`) within the Enterprise User Management & RBAC system.
+  - Tailored granular permission matrix configured specifically for high-velocity lead outreach and qualification:
+    - **Leads & Bank**: `leads.view`, `leads.create`, `leads.edit`
+    - **Follow-ups & Queue**: `queue.view`, `queue.update_status`, `queue.calendar`
+    - **Deals & Pipeline**: `deals.view`, `deals.create`
+    - **Telephony (3CX PBX)**: `calls.make`, `calls.view_logs`, `calls.listen_recordings`
+    - **WhatsApp Web Multi-Device**: `whatsapp.view`, `whatsapp.send_messages`, `whatsapp.send_voice`
+  - Seeded 5 dedicated Telesales Agents with official FS Advisory email accounts, UAE mobile numbers, and active CRM access:
+    - **Hiba Aslam** (`hiba@fsadvisory.ae` | `+971 58 441 2233`) — Telesales Agent
+    - **Shafiuddin** (`shafiuddin@fsadvisory.ae` | `+971 55 597 7700`) — Telesales Agent
+    - **Rayyan** (`rayyan@fsadvisory.ae` | `+971 56 946 8277`) — Telesales Agent
+    - **Saad** (`saad@fsadvisory.ae` | `+971 54 330 1035`) — Telesales Agent
+    - **Mako** (`mako@fsadvisory.ae` | `+971 52 987 6543`) — Telesales Agent
+  - Frontend integration on User Management (`/users`):
+    - Added `TeleSales` option across Department dropdowns (Create User Modal, Edit User Modal, and Self-Registration Approval Dialog).
+    - Added `Telesales Agent` role option across Role assignment selectors.
+    - Custom UI badge styling: rich purple-indigo badge for `TeleSales` department and amber badge for `Telesales Agent` role.
+  - Integration with Round-Robin Lead Distribution Engine (`LeadDistributionService`), Lead Pool dynamic owner dropdowns, and My Queue rotation.
+  - Database Seeder persistence: permanently codified in `RoleAndPermissionSeeder.php` for one-command remote server synchronization (`php artisan db:seed --class=RoleAndPermissionSeeder --force`).
+
 ---
 
 ## ⚙️ Installation & Running Instructions
@@ -167,6 +188,7 @@ Ensure MySQL is running with database `fsadvisory_crm` (or configured database i
 ```bash
 cd backend
 php artisan migrate --force
+php artisan db:seed --class=RoleAndPermissionSeeder --force
 ```
 
 ### 2. Backend (Laravel API)
@@ -203,6 +225,18 @@ Frontend active locally at `http://localhost:3000`.
 - **Environment Variables:**
   - `NEXT_PUBLIC_API_URL`: `https://api.fsadvisory.ae/api`
   - `NEXT_PUBLIC_WHATSAPP_GATEWAY_URL`: (Optional, if WhatsApp gateway is hosted on a VPS/domain)
+
+### 6. Production Maintenance & Cache Management
+To ensure newly registered routes, configuration updates, and permission changes reflect immediately in production:
+```bash
+cd backend
+php artisan optimize:clear
+# Or clear components individually:
+# php artisan route:clear
+# php artisan config:clear
+# php artisan cache:clear
+# php artisan view:clear
+```
 
 ---
 
