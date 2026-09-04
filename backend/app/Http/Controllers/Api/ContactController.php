@@ -82,6 +82,7 @@ class ContactController extends Controller
             'assigned_owner' => 'current_owner_name',
             'next_action' => 'next_action',
             'next_action_due_at' => 'next_action_due_at',
+            'sla' => 'sla_status',
             'sla_status' => 'sla_status',
         ];
 
@@ -89,6 +90,7 @@ class ContactController extends Controller
             $dbCol = $oppSorts[$sortBy];
             $query->leftJoin('opportunities', 'contacts.id', '=', 'opportunities.contact_id')
                   ->select('contacts.*')
+                  ->distinct()
                   ->orderBy("opportunities.{$dbCol}", $sortOrder);
         } elseif (in_array($sortBy, $contactSorts)) {
             $query->orderBy("contacts.{$sortBy}", $sortOrder);

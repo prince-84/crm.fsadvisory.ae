@@ -59,8 +59,9 @@ export default function LeadPoolPage() {
   useEffect(() => {
     fetchApi('/users')
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setActiveAgents(data.filter((u: any) => u.is_active));
+        const rawUsers = Array.isArray(data) ? data : (data?.users || []);
+        if (rawUsers.length > 0) {
+          setActiveAgents(rawUsers.filter((u: any) => u.is_active));
         }
       })
       .catch(console.error);
@@ -89,10 +90,10 @@ export default function LeadPoolPage() {
     state: true,
     opportunity: true,
     sla: true,
+    assigned_owner: true,
     actions: true,
     phone: true,
     secondary_phone: false,
-    mobile_phone: true,
     email: true,
     nationality: true,
     created_at: true,
@@ -107,7 +108,6 @@ export default function LeadPoolPage() {
     budget_max: false,
     cash_or_finance: false,
     key_requirement: false,
-    assigned_owner: false,
     next_action: false,
     next_action_due_at: false,
   };
@@ -125,15 +125,16 @@ export default function LeadPoolPage() {
 
   const DEFAULT_COLUMN_ORDER = [
     'name',
-    'created_at',
     'source',
     'state',
     'opportunity',
     'sla',
+    'assigned_owner',
     'phone',
     'secondary_phone',
     'email',
     'nationality',
+    'created_at',
     'sub_source',
     'opportunity_type',
     'developer',
@@ -145,7 +146,6 @@ export default function LeadPoolPage() {
     'budget_max',
     'cash_or_finance',
     'key_requirement',
-    'assigned_owner',
     'next_action',
     'next_action_due_at',
     'actions',
@@ -164,10 +164,18 @@ export default function LeadPoolPage() {
   // Load saved column preferences from localStorage after client hydration
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const validKeys = ALL_COLUMNS.map((c) => c.key);
       const savedVis = localStorage.getItem('lead_pool_column_visibility');
       if (savedVis) {
         try {
-          setColumnVisibility({ ...DEFAULT_COLUMN_VISIBILITY, ...JSON.parse(savedVis) });
+          const parsedVis = JSON.parse(savedVis);
+          const cleanVis: Record<string, boolean> = { ...DEFAULT_COLUMN_VISIBILITY };
+          validKeys.forEach((k) => {
+            if (k in parsedVis) {
+              cleanVis[k] = !!parsedVis[k];
+            }
+          });
+          setColumnVisibility(cleanVis);
         } catch (e) {
           console.error('Error parsing column visibility:', e);
         }
@@ -177,8 +185,11 @@ export default function LeadPoolPage() {
         try {
           const parsed = JSON.parse(savedOrder);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const missing = DEFAULT_COLUMN_ORDER.filter((k) => !parsed.includes(k));
-            setColumnOrder([...parsed, ...missing]);
+            const sanitized = parsed.filter((k: string) => validKeys.includes(k));
+            const missing = DEFAULT_COLUMN_ORDER.filter((k) => !sanitized.includes(k));
+            const finalOrder = [...sanitized, ...missing];
+            setColumnOrder(finalOrder);
+            localStorage.setItem('lead_pool_column_order', JSON.stringify(finalOrder));
           }
         } catch (e) {
           console.error('Error parsing column order:', e);
@@ -255,10 +266,10 @@ export default function LeadPoolPage() {
   ];
 
   const renderHeaderCell = (colKey: string) => {
-    if (!columnVisibility[colKey]) return null;
-
     const colMeta = ALL_COLUMNS.find((c) => c.key === colKey);
-    const label = colMeta?.label || colKey;
+    if (!colMeta || !columnVisibility[colKey]) return null;
+
+    const label = colMeta.label || colKey;
     const isSortable = colKey !== 'actions';
     const isSorted = sortBy === colKey;
 
@@ -300,7 +311,8 @@ export default function LeadPoolPage() {
   };
 
   const renderBodyCell = (ct: any, opp: any, bq: any, colKey: string) => {
-    if (!columnVisibility[colKey]) return null;
+    const colMeta = ALL_COLUMNS.find((c) => c.key === colKey);
+    if (!colMeta || !columnVisibility[colKey]) return null;
 
     switch (colKey) {
       case 'name':
@@ -521,7 +533,20 @@ export default function LeadPoolPage() {
         );
 
       case 'assigned_owner':
-        return <td key={colKey} className="p-3 text-slate-700 font-semibold">{opp?.current_owner_name || 'Unassigned'}</td>;
+        const ownerName = opp?.current_owner_name || 'Unassigned';
+        const isUnassigned = !opp?.current_owner_name || opp?.current_owner_name === 'Unassigned';
+        return (
+          <td key={colKey} className="p-3">
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold ${
+              isUnassigned 
+                ? 'bg-slate-100 text-slate-500 border border-slate-200' 
+                : 'bg-[#FAF8F5] text-[#081428] border border-[#E8E4DC]'
+            }`}>
+              <UserCheck className={`w-3.5 h-3.5 ${isUnassigned ? 'text-slate-400' : 'text-[#C8A147]'}`} />
+              <span>{ownerName}</span>
+            </span>
+          </td>
+        );
 
       case 'next_action':
         return <td key={colKey} className="p-3 text-slate-600 max-w-[180px] truncate">{opp?.next_action || '—'}</td>;
@@ -600,7 +625,7 @@ export default function LeadPoolPage() {
         );
 
       default:
-        return null;
+        return <td key={colKey} className="p-3 text-slate-400 text-xs">—</td>;
     }
   };
 
@@ -653,7 +678,7 @@ export default function LeadPoolPage() {
       .catch(console.error);
   }, []);
 
-  const loadData = async (page = currentPage, limit = perPage, sBy = sortBy, sOrder = sortOrder) => {
+  const loadData = async (page = currentPage, limit = perPage, sBy = sortBy, sOrder = sortOrder, ownerOverride?: string) => {
     setLoading(true);
     try {
       let endpoint = `/contacts?page=${page}&per_page=${limit}&tab=${activeTab}&state=${selectedState}&sort_by=${sBy}&sort_order=${sOrder}`;
@@ -670,7 +695,7 @@ export default function LeadPoolPage() {
         try { user = JSON.parse(raw); } catch {}
       }
 
-      let targetOwner = selectedOwner;
+      let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
       if (targetOwner === 'auto') {
         targetOwner = user?.role === 'Super Admin' ? 'all' : (user?.name || 'all');
       }
@@ -793,8 +818,8 @@ export default function LeadPoolPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-    loadData(1, perPage, sortBy, sortOrder);
-  }, [activeTab, selectedState, selectedSource, selectedAvailability, searchQuery]);
+    loadData(1, perPage, sortBy, sortOrder, selectedOwner);
+  }, [activeTab, selectedState, selectedSource, selectedAvailability, searchQuery, selectedOwner]);
 
   const handleSort = (columnKey: string) => {
     let newOrder: 'asc' | 'desc' = 'asc';
@@ -824,6 +849,7 @@ export default function LeadPoolPage() {
     setSelectedState('all');
     setSelectedSource('all');
     setSelectedAvailability('all');
+    setSelectedOwner('all');
     setSearchQuery('');
     setSortBy('updated_at');
     setSortOrder('desc');
@@ -1174,8 +1200,10 @@ export default function LeadPoolPage() {
                 <select
                   value={selectedOwner}
                   onChange={(e) => {
-                    setSelectedOwner(e.target.value);
+                    const newOwner = e.target.value;
+                    setSelectedOwner(newOwner);
                     setCurrentPage(1);
+                    loadData(1, perPage, sortBy, sortOrder, newOwner);
                   }}
                   className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
                 >
