@@ -30,6 +30,9 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
     analyzed_records: any[];
     has_unmatched?: boolean;
     unmatched?: Record<string, any[]>;
+    auto_mapped?: Record<string, any[]>;
+    auto_mapped_lookup?: Record<string, Record<string, string>>;
+    auto_mapped_count?: number;
     catalogs?: Record<string, string[]>;
   } | null>(null);
 
@@ -194,6 +197,17 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
         };
         const initialActions: Record<string, 'map' | 'new' | 'keep'> = {};
 
+        // Pre-fill any auto-mapped values from backend
+        if (res.auto_mapped_lookup) {
+          ['developer', 'community', 'project', 'property_type'].forEach((cat) => {
+            if (res.auto_mapped_lookup[cat]) {
+              Object.entries(res.auto_mapped_lookup[cat]).forEach(([rawVal, targetVal]) => {
+                initialMappings[cat][rawVal] = targetVal as string;
+              });
+            }
+          });
+        }
+
         ['developer', 'community', 'project', 'property_type'].forEach((cat) => {
           (res.unmatched?.[cat] || []).forEach((item: any) => {
             const key = `${cat}::${item.file_value}`;
@@ -210,6 +224,9 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
         setMappingActions(initialActions);
         setStep('mapping');
       } else {
+        if (res.auto_mapped_lookup) {
+          setValueMappings(res.auto_mapped_lookup);
+        }
         setStep('preview');
       }
     } catch (err: any) {
@@ -237,6 +254,13 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
     };
 
     ['developer', 'community', 'project', 'property_type'].forEach((cat) => {
+      // Preserve auto-mapped lookup values
+      if (previewData.auto_mapped_lookup?.[cat]) {
+        Object.entries(previewData.auto_mapped_lookup[cat]).forEach(([rawVal, targetVal]) => {
+          activeMappings[cat][rawVal] = targetVal as string;
+        });
+      }
+
       (previewData.unmatched?.[cat] || []).forEach((item: any) => {
         const key = `${cat}::${item.file_value}`;
         const action = mappingActions[key] || 'keep';
@@ -426,6 +450,18 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
           {/* STEP 2: VALUE MAPPING & CATALOG STANDARDIZATION SCREEN */}
           {step === 'mapping' && previewData && (
             <div className="space-y-4">
+              {/* Auto-Mapped Notification Banner */}
+              {Boolean(previewData.auto_mapped_count && previewData.auto_mapped_count > 0) && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>
+                      <strong>{previewData.auto_mapped_count} catalog {previewData.auto_mapped_count === 1 ? 'value' : 'values'}</strong> automatically standardized with high confidence. Only ambiguous items below require your confirmation.
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Header Info Banner */}
               <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-lg flex items-start gap-2.5 text-[#081428]">
                 <Sparkles className="w-4 h-4 text-[#C8A147] shrink-0 mt-0.5" />
@@ -675,6 +711,19 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
           {/* STEP 3: PRE-IMPORT DUPLICATE REVIEW & DECISION SCREEN */}
           {step === 'preview' && previewData && (
             <div className="space-y-5">
+
+              {/* Auto-Mapping Applied Banner */}
+              {Boolean(previewData.auto_mapped_count && previewData.auto_mapped_count > 0) && (
+                <div className="p-3.5 bg-emerald-50/90 border border-emerald-200 rounded-lg flex items-start gap-2.5 text-xs text-emerald-900 shadow-2xs">
+                  <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">✨ Intelligent Auto-Mapping Applied: </span>
+                    <span>
+                      {previewData.auto_mapped_count} catalog {previewData.auto_mapped_count === 1 ? 'value' : 'values'} automatically standardized to official master names (e.g. Developers, Communities, Projects, Property Types).
+                    </span>
+                  </div>
+                </div>
+              )}
               
               {/* Summary Stats Cards */}
               <div className="grid grid-cols-3 gap-3">

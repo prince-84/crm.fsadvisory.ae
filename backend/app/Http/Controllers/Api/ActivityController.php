@@ -96,7 +96,26 @@ class ActivityController extends Controller
         }
 
         if ($request->has('call_outcome') && $request->call_outcome !== 'all') {
-            $query->where('call_outcome', $request->call_outcome);
+            $outcome = $request->call_outcome;
+            if (str_contains($outcome, 'Interested') || str_contains($outcome, 'Viewing')) {
+                $query->where(function ($q) {
+                    $q->where('call_outcome', 'like', '%Interested%')
+                      ->orWhere('call_outcome', 'like', '%Viewing%');
+                });
+            } elseif (str_contains($outcome, 'Callback')) {
+                $query->where('call_outcome', 'like', '%Callback%');
+            } elseif (str_contains($outcome, 'No Answer') || str_contains($outcome, 'Voicemail')) {
+                $query->where(function ($q) {
+                    $q->where('call_outcome', 'like', '%No Answer%')
+                      ->orWhere('call_outcome', 'like', '%Voicemail%');
+                });
+            } elseif (str_contains($outcome, 'Not Interested')) {
+                $query->where('call_outcome', 'like', '%Not Interested%');
+            } elseif (str_contains($outcome, 'Follow-up')) {
+                $query->where('call_outcome', 'like', '%Follow-up%');
+            } else {
+                $query->where('call_outcome', $outcome);
+            }
         }
 
         if ($request->has('user_name') && $request->user_name !== 'all') {
@@ -118,23 +137,46 @@ class ActivityController extends Controller
 
         $activities = $query->paginate($request->input('per_page', 25));
 
-        // Summary statistics for today
+        // Summary statistics calculated specifically for call activities
         $today = Carbon::today();
-        $totalToday = Activity::whereDate('created_at', $today)->count();
-        $callsToday = Activity::where('type', 'call')->whereDate('created_at', $today)->count();
-        $interestedToday = Activity::where('call_outcome', 'like', '%Interested%')->whereDate('created_at', $today)->count();
-        $callbackToday = Activity::where('call_outcome', 'like', '%Callback%')->whereDate('created_at', $today)->count();
-        $noAnswerToday = Activity::where('call_outcome', 'like', '%No Answer%')->whereDate('created_at', $today)->count();
+        $baseCallQuery = Activity::where('type', 'call');
+
+        $totalCalls = (clone $baseCallQuery)->count();
+        $callsToday = (clone $baseCallQuery)->whereDate('created_at', $today)->count();
+
+        $interestedTotal = (clone $baseCallQuery)->where(function ($q) {
+            $q->where('call_outcome', 'like', '%Interested%')
+              ->orWhere('call_outcome', 'like', '%Viewing%');
+        })->count();
+        $interestedToday = (clone $baseCallQuery)->where(function ($q) {
+            $q->where('call_outcome', 'like', '%Interested%')
+              ->orWhere('call_outcome', 'like', '%Viewing%');
+        })->whereDate('created_at', $today)->count();
+
+        $callbackTotal = (clone $baseCallQuery)->where('call_outcome', 'like', '%Callback%')->count();
+        $callbackToday = (clone $baseCallQuery)->where('call_outcome', 'like', '%Callback%')->whereDate('created_at', $today)->count();
+
+        $noAnswerTotal = (clone $baseCallQuery)->where(function ($q) {
+            $q->where('call_outcome', 'like', '%No Answer%')
+              ->orWhere('call_outcome', 'like', '%Voicemail%');
+        })->count();
+        $noAnswerToday = (clone $baseCallQuery)->where(function ($q) {
+            $q->where('call_outcome', 'like', '%No Answer%')
+              ->orWhere('call_outcome', 'like', '%Voicemail%');
+        })->whereDate('created_at', $today)->count();
 
         return response()->json([
             'activities' => $activities,
             'stats' => [
-                'total_today' => $totalToday,
+                'total_all_time' => $totalCalls,
+                'total_today' => Activity::whereDate('created_at', $today)->count(),
                 'calls_today' => $callsToday,
+                'interested_count' => $interestedTotal,
                 'interested_today' => $interestedToday,
+                'callback_count' => $callbackTotal,
                 'callback_today' => $callbackToday,
+                'no_answer_count' => $noAnswerTotal,
                 'no_answer_today' => $noAnswerToday,
-                'total_all_time' => Activity::count(),
             ]
         ]);
     }

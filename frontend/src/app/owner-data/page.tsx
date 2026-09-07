@@ -40,6 +40,7 @@ import {
   Zap,
   UserCheck,
   Sparkles,
+  CheckCircle2,
   ArrowLeft,
   ArrowRight
 } from 'lucide-react';
@@ -386,6 +387,9 @@ export default function OwnerDataPage() {
     total_records: number;
     has_unmatched?: boolean;
     unmatched?: Record<string, any[]>;
+    auto_mapped?: Record<string, any[]>;
+    auto_mapped_lookup?: Record<string, Record<string, string>>;
+    auto_mapped_count?: number;
     catalogs?: Record<string, string[]>;
   } | null>(null);
 
@@ -962,6 +966,17 @@ export default function OwnerDataPage() {
           };
           const initialActions: Record<string, 'map' | 'new' | 'keep'> = {};
 
+          // Pre-populate auto_mapped_lookup so it is preserved and submitted
+          if (previewRes.auto_mapped_lookup) {
+            ['community', 'project', 'property_type'].forEach((cat) => {
+              if (previewRes.auto_mapped_lookup[cat]) {
+                Object.entries(previewRes.auto_mapped_lookup[cat]).forEach(([rawVal, targetVal]) => {
+                  initialMappings[cat][rawVal] = targetVal as string;
+                });
+              }
+            });
+          }
+
           ['community', 'project', 'property_type'].forEach((cat) => {
             (previewRes.unmatched?.[cat] || []).forEach((item: any) => {
               const key = `${cat}::${item.file_value}`;
@@ -978,8 +993,8 @@ export default function OwnerDataPage() {
           setOwnerMappingActions(initialActions);
           setImportStep('mapping');
         } else {
-          // All values already matched! Directly perform import
-          await executeOwnerImport(recordsToImport, {}, []);
+          // All values already matched / auto-standardized! Directly perform seamless import
+          await executeOwnerImport(recordsToImport, previewRes.auto_mapped_lookup || {}, []);
         }
       } catch (err: any) {
         Swal.fire({ icon: 'error', title: 'Import Preview Failed', text: err.message });
@@ -1037,6 +1052,13 @@ export default function OwnerDataPage() {
     };
 
     ['community', 'project', 'property_type'].forEach((cat) => {
+      // Include any pre-existing auto-mappings
+      if (importPreviewData?.auto_mapped_lookup?.[cat]) {
+        Object.entries(importPreviewData.auto_mapped_lookup[cat]).forEach(([rawVal, targetVal]) => {
+          activeMappings[cat][rawVal] = targetVal as string;
+        });
+      }
+
       (importPreviewData?.unmatched?.[cat] || []).forEach((item: any) => {
         const key = `${cat}::${item.file_value}`;
         const action = ownerMappingActions[key] || 'keep';
@@ -2107,6 +2129,18 @@ export default function OwnerDataPage() {
             {/* STEP 2: VALUE MAPPING & CATALOG STANDARDIZATION */}
             {importStep === 'mapping' && importPreviewData && (
               <div className="p-6 space-y-4 text-xs">
+                {/* Auto-Mapped Notification Banner */}
+                {Boolean(importPreviewData?.auto_mapped_count && importPreviewData.auto_mapped_count > 0) && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>
+                        <strong>{importPreviewData.auto_mapped_count} catalog {importPreviewData.auto_mapped_count === 1 ? 'value' : 'values'}</strong> automatically standardized with high confidence. Only ambiguous items below require your confirmation.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Header Info Banner */}
                 <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-lg flex items-start gap-2.5 text-[#081428]">
                   <Sparkles className="w-4 h-4 text-[#C9A84C] shrink-0 mt-0.5" />

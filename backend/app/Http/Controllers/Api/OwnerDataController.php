@@ -27,7 +27,34 @@ class OwnerDataController extends Controller
         $bestMatch = null;
         $highestScore = 0;
 
-        $noiseWords = ['properties', 'developments', 'development', 'developer', 'realty', 'real estate', 'group', 'holding', 'holdings', 'llc', 'tower', 'towers', 'residence', 'residences', 'dubai', 'the', 'project'];
+        // Common real estate aliases / abbreviations to standard catalog representations
+        $aliases = [
+            'jvc' => 'jumeirah village circle',
+            'jlt' => 'jumeirah lake towers',
+            'jvt' => 'jumeirah village triangle',
+            'downtown' => 'downtown dubai',
+            'mbr' => 'mbr city',
+            'mbrc' => 'mbr city',
+            'bb' => 'business bay',
+            'emaar' => 'emaar properties',
+            'damac' => 'damac properties',
+            'sobha' => 'sobha realty',
+            'danube' => 'danube properties',
+            'nakheel' => 'nakheel',
+            'aldar' => 'aldar properties',
+            'azizi' => 'azizi developments',
+            'ellington' => 'ellington properties',
+            'deyaar' => 'deyaar',
+            'apt' => 'apartment',
+            'appt' => 'apartment',
+            'flat' => 'apartment',
+            'th' => 'townhouse',
+            'ph' => 'penthouse',
+            'villa' => 'villa',
+        ];
+
+        // Noise words for developers/projects/communities/property types
+        $noiseWords = ['properties', 'developments', 'development', 'developer', 'realty', 'real estate', 'group', 'holding', 'holdings', 'llc', 'tower', 'towers', 'residence', 'residences', 'dubai', 'the', 'project', 'estate', 'city'];
         $cleanVal = preg_replace('/\b(' . implode('|', $noiseWords) . ')\b/iu', '', $val);
         $cleanVal = trim(preg_replace('/\s+/u', ' ', $cleanVal));
 
@@ -35,10 +62,20 @@ class OwnerDataController extends Controller
             $cat = trim((string)$catItem);
             $catLower = mb_strtolower($cat, 'UTF-8');
 
+            // 1. Exact match (case-insensitive)
             if ($catLower === $val) {
                 return ['match' => $cat, 'confidence' => 100];
             }
 
+            // 2. Alias resolution (e.g. 'Downtown' -> 'Downtown Dubai', 'JVC' -> 'Jumeirah Village Circle (JVC)')
+            if (isset($aliases[$val])) {
+                $targetAlias = $aliases[$val];
+                if ($catLower === $targetAlias || str_contains($catLower, $targetAlias) || str_contains($targetAlias, $catLower)) {
+                    return ['match' => $cat, 'confidence' => 98];
+                }
+            }
+
+            // 3. Cleaned comparison (noise-words stripped)
             $cleanCat = preg_replace('/\b(' . implode('|', $noiseWords) . ')\b/iu', '', $catLower);
             $cleanCat = trim(preg_replace('/\s+/u', ' ', $cleanCat));
 
@@ -49,14 +86,26 @@ class OwnerDataController extends Controller
                 }
             }
 
-            if (str_contains($catLower, $val) || str_contains($val, $catLower)) {
-                $subScore = 85;
-                if ($subScore > $highestScore) {
-                    $highestScore = $subScore;
+            // 4. Word-boundary whole word match
+            if (!empty($cleanVal) && mb_strlen($cleanVal) >= 3 && preg_match('/\b' . preg_quote($cleanVal, '/') . '\b/iu', $cleanCat)) {
+                if ($highestScore < 90) {
+                    $highestScore = 90;
                     $bestMatch = $cat;
                 }
             }
 
+            // 5. Substring match (with min length 4 to avoid false matches on short fragments)
+            if (mb_strlen($val) >= 4 && mb_strlen($catLower) >= 4) {
+                if (str_contains($catLower, $val) || str_contains($val, $catLower)) {
+                    $subScore = 85;
+                    if ($subScore > $highestScore) {
+                        $highestScore = $subScore;
+                        $bestMatch = $cat;
+                    }
+                }
+            }
+
+            // 6. similar_text percentage
             similar_text($val, $catLower, $percent);
             if ($percent > $highestScore) {
                 $highestScore = (int)$percent;
@@ -468,7 +517,18 @@ class OwnerDataController extends Controller
             }
         }
 
+        // Solution A: Compute Auto-Mapped (>=80% confidence) vs Truly Unmatched (<80% confidence)
         $unmatched = [
+            'community' => [],
+            'project' => [],
+            'property_type' => [],
+        ];
+        $autoMapped = [
+            'community' => [],
+            'project' => [],
+            'property_type' => [],
+        ];
+        $autoMappedLookup = [
             'community' => [],
             'project' => [],
             'property_type' => [],
@@ -489,11 +549,30 @@ class OwnerDataController extends Controller
 
             foreach ($values as $rawVal => $count) {
                 $rawLower = mb_strtolower(trim($rawVal), 'UTF-8');
+                // 1. Exact match exists in catalog -> case-standardized
                 if (isset($catalogLowerLookup[$rawLower])) {
+                    $stdVal = $catalogLowerLookup[$rawLower];
+                    if ($stdVal !== $rawVal) {
+                        $autoMappedLookup[$category][$rawVal] = $stdVal;
+                    }
                     continue;
                 }
 
                 $best = $this->findBestMatch($rawVal, $catalogList);
+
+                // Solution A: High confidence match (>= 80%) is AUTO-MAPPED in background
+                if (!empty($best['match']) && $best['confidence'] >= 80) {
+                    $autoMapped[$category][] = [
+                        'file_value' => $rawVal,
+                        'mapped_to' => $best['match'],
+                        'confidence' => $best['confidence'],
+                        'count' => $count,
+                    ];
+                    $autoMappedLookup[$category][$rawVal] = $best['match'];
+                    continue;
+                }
+
+                // Truly ambiguous or unknown (< 80%) requires user review
                 $unmatched[$category][] = [
                     'file_value' => $rawVal,
                     'count' => $count,
@@ -509,11 +588,20 @@ class OwnerDataController extends Controller
             count($unmatched['property_type']) > 0
         );
 
+        $autoMappedCount = (
+            count($autoMapped['community']) +
+            count($autoMapped['project']) +
+            count($autoMapped['property_type'])
+        );
+
         return response()->json([
             'success' => true,
             'total_records' => count($rows),
             'has_unmatched' => $hasUnmatched,
             'unmatched' => $unmatched,
+            'auto_mapped' => $autoMapped,
+            'auto_mapped_lookup' => $autoMappedLookup,
+            'auto_mapped_count' => $autoMappedCount,
             'catalogs' => [
                 'community' => $catalogCommunities,
                 'project' => $catalogProjects,
@@ -564,6 +652,10 @@ class OwnerDataController extends Controller
                 }
             }
 
+            $fallbackComms = Community::where('is_active', true)->pluck('name')->toArray();
+            $fallbackProjs = Project::where('is_active', true)->pluck('name')->toArray();
+            $fallbackProps = PropertyType::where('is_active', true)->pluck('name')->toArray();
+
             foreach ($rows as $row) {
                 if (empty($row['owner_name'])) continue;
 
@@ -582,23 +674,52 @@ class OwnerDataController extends Controller
                     }
                 }
 
+                // Apply Value Mappings / Substitutions with Auto-Standardization Fallback
                 $area = $row['area'] ?? null;
-                if (!empty($area) && isset($valueMappings['community'][$area])) {
-                    $area = $valueMappings['community'][$area];
+                if (!empty($area)) {
+                    if (isset($valueMappings['community'][$area])) {
+                        $area = $valueMappings['community'][$area];
+                    } else {
+                        $match = $this->findBestMatch($area, $fallbackComms);
+                        if (!empty($match['match']) && $match['confidence'] >= 80) {
+                            $area = $match['match'];
+                        }
+                    }
                 }
 
                 $building = $row['building_name'] ?? null;
-                if (!empty($building) && isset($valueMappings['project'][$building])) {
-                    $building = $valueMappings['project'][$building];
+                if (!empty($building)) {
+                    if (isset($valueMappings['project'][$building])) {
+                        $building = $valueMappings['project'][$building];
+                    } else {
+                        $match = $this->findBestMatch($building, $fallbackProjs);
+                        if (!empty($match['match']) && $match['confidence'] >= 80) {
+                            $building = $match['match'];
+                        }
+                    }
                 }
 
                 $propName = $row['property_name'] ?? null;
-                if (!empty($propName) && isset($valueMappings['project'][$propName])) {
-                    $propName = $valueMappings['project'][$propName];
+                if (!empty($propName)) {
+                    if (isset($valueMappings['project'][$propName])) {
+                        $propName = $valueMappings['project'][$propName];
+                    } else {
+                        $match = $this->findBestMatch($propName, $fallbackProjs);
+                        if (!empty($match['match']) && $match['confidence'] >= 80) {
+                            $propName = $match['match'];
+                        }
+                    }
                 }
 
-                if (!empty($rawPropType) && isset($valueMappings['property_type'][$rawPropType])) {
-                    $rawPropType = $valueMappings['property_type'][$rawPropType];
+                if (!empty($rawPropType)) {
+                    if (isset($valueMappings['property_type'][$rawPropType])) {
+                        $rawPropType = $valueMappings['property_type'][$rawPropType];
+                    } else {
+                        $match = $this->findBestMatch($rawPropType, $fallbackProps);
+                        if (!empty($match['match']) && $match['confidence'] >= 80) {
+                            $rawPropType = $match['match'];
+                        }
+                    }
                 }
 
                 $assignedTo = !empty($row['assigned_to']) && $row['assigned_to'] !== 'Unassigned' && $row['assigned_to'] !== 'auto' ? trim($row['assigned_to']) : null;

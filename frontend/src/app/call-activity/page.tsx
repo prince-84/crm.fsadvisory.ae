@@ -206,11 +206,46 @@ export default function CallActivityPage() {
           {/* 5 KPI Stat Summary Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
-              { label: 'Total Calls Logged', value: stats.total_all_time || paginationMeta.total, sub: 'All-time activity count', icon: PhoneCall, iconBg: 'bg-[#081428] text-[#C8A147]', subColor: 'text-[#081428]' },
-              { label: 'Interested / Viewings', value: stats.interested_today || 0, sub: 'Hot buyer leads today', icon: CheckCircle2, iconBg: 'bg-emerald-100 text-emerald-800', subColor: 'text-emerald-700' },
-              { label: 'Callback Requests', value: stats.callback_today || 0, sub: 'Need follow-up call', icon: PhoneForwarded, iconBg: 'bg-amber-100 text-amber-800', subColor: 'text-amber-700' },
-              { label: 'Voicemail / No Answer', value: stats.no_answer_today || 0, sub: 'WhatsApp message sent', icon: PhoneMissed, iconBg: 'bg-purple-100 text-purple-800', subColor: 'text-purple-700' },
-              { label: 'Calls Logged Today', value: stats.calls_today || 0, sub: 'Daily agent productivity', icon: Clock, iconBg: 'bg-blue-100 text-blue-800', subColor: 'text-blue-700' },
+              { 
+                label: 'Total Calls Logged', 
+                value: stats.total_all_time ?? paginationMeta.total ?? 0, 
+                sub: stats.calls_today > 0 ? `${stats.calls_today} logged today` : 'All-time activity count', 
+                icon: PhoneCall, 
+                iconBg: 'bg-[#081428] text-[#C8A147]', 
+                subColor: 'text-[#081428]' 
+              },
+              { 
+                label: 'Interested / Viewings', 
+                value: (stats.interested_count !== undefined && stats.interested_count > 0) ? stats.interested_count : (stats.interested_today || 0), 
+                sub: stats.interested_today > 0 ? `${stats.interested_today} hot leads today` : 'Hot buyer leads', 
+                icon: CheckCircle2, 
+                iconBg: 'bg-emerald-100 text-emerald-800', 
+                subColor: 'text-emerald-700' 
+              },
+              { 
+                label: 'Callback Requests', 
+                value: (stats.callback_count !== undefined && stats.callback_count > 0) ? stats.callback_count : (stats.callback_today || 0), 
+                sub: stats.callback_today > 0 ? `${stats.callback_today} requested today` : 'Need follow-up call', 
+                icon: PhoneForwarded, 
+                iconBg: 'bg-amber-100 text-amber-800', 
+                subColor: 'text-amber-700' 
+              },
+              { 
+                label: 'Voicemail / No Answer', 
+                value: (stats.no_answer_count !== undefined && stats.no_answer_count > 0) ? stats.no_answer_count : (stats.no_answer_today || 0), 
+                sub: stats.no_answer_today > 0 ? `${stats.no_answer_today} left today` : 'WhatsApp message sent', 
+                icon: PhoneMissed, 
+                iconBg: 'bg-purple-100 text-purple-800', 
+                subColor: 'text-purple-700' 
+              },
+              { 
+                label: 'Calls Logged Today', 
+                value: stats.calls_today || 0, 
+                sub: 'Daily agent productivity', 
+                icon: Clock, 
+                iconBg: 'bg-blue-100 text-blue-800', 
+                subColor: 'text-blue-700' 
+              },
             ].map((card, idx) => {
               const Icon = card.icon;
               return (
@@ -304,9 +339,13 @@ export default function CallActivityPage() {
                 className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none cursor-pointer"
               >
                 <option value="all">All Agents</option>
+                <option value="Hiba Aslam">Hiba Aslam</option>
+                <option value="Shafiuddin">Shafiuddin</option>
+                <option value="Rayyan">Rayyan</option>
+                <option value="Saad">Saad</option>
                 <option value="Mako">Mako</option>
                 <option value="Faraz Shafi">Faraz Shafi</option>
-                <option value="Agent">Agent</option>
+                <option value="Babar Ali Khan">Babar Ali Khan</option>
               </select>
 
               {isFilterActive && (

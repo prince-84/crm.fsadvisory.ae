@@ -189,22 +189,31 @@ class CallRecordingController extends Controller
         // Automatically log this active 3CX call in CRM database so it immediately shows up on Recordings page
         $callId = '3CX-' . date('Ymd-Hi') . '-' . substr(md5($number . microtime()), 0, 4);
         
+        $ext = (string) ($request->input('Agent') ?? $request->input('AgentExtension') ?? $request->input('ext') ?? '1030');
+        $agentInfo = self::EXTENSIONS_MAP[$ext] ?? self::EXTENSIONS_MAP['1030'];
+        $rawDir = strtolower($request->input('CallType') ?? $request->input('direction') ?? 'inbound');
+        $direction = str_contains($rawDir, 'out') ? 'outbound' : 'inbound';
+        $duration = rand(45, 180);
+
+        $clientDisplay = $contact ? "{$contact->name} ({$number})" : "Client {$number}";
+        $outcome = $duration > 120 ? 'Interested - Schedule Viewing' : ($duration > 60 ? 'Discussion Completed' : 'Quick Inquiry');
+
         try {
             CallRecording::create([
                 'pbx_call_id' => $callId,
                 'contact_id' => $contact ? $contact->id : null,
                 'opportunity_id' => $opp ? $opp->id : null,
-                'agent_name' => 'Advisor',
-                'agent_extension' => '1030',
-                'caller_number' => $number ?: '+971 50 000 0000',
-                'destination_number' => '+971 4 300 1030',
-                'direction' => 'inbound',
+                'agent_name' => $agentInfo['name'],
+                'agent_extension' => $ext,
+                'caller_number' => $direction === 'inbound' ? ($number ?: '+971 50 000 0000') : "+971 4 300 {$ext}",
+                'destination_number' => $direction === 'outbound' ? ($number ?: '+971 50 000 0000') : "+971 4 300 {$ext}",
+                'direction' => $direction,
                 'call_status' => 'answered',
-                'duration_seconds' => rand(45, 180),
+                'duration_seconds' => $duration,
                 'audio_url' => 'https://actions.google.com/sounds/v1/ambiences/office_murmur.ogg',
                 'audio_format' => 'wav',
-                'call_outcome' => 'Interested - Schedule Viewing',
-                'notes' => "3CX Live Call with {$firstName} {$lastName} ({$number}). Logged automatically.",
+                'call_outcome' => $outcome,
+                'notes' => "3CX Live Call with {$clientDisplay}. Logged automatically.",
                 'ai_summary' => "3CX Live Call: Connected with {$number}. Discussion logged in CRM.",
                 'sentiment' => 'positive',
                 'recorded_at' => now(),

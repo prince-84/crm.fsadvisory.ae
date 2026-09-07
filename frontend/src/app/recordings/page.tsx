@@ -27,7 +27,6 @@ import {
   CheckCircle2, 
   Sparkles, 
   Radio, 
-  Server, 
   Flame,
   FileAudio,
   Settings,
@@ -280,6 +279,74 @@ export default function CallRecordingsPage() {
     }
   };
 
+  const formatDisplayPhone = (rawPhone: string) => {
+    if (!rawPhone) return 'Direct Caller';
+    let clean = String(rawPhone).trim();
+    if (clean.startsWith('00')) {
+      clean = '+' + clean.substring(2);
+    } else if (!clean.startsWith('+')) {
+      if (clean.startsWith('05') || clean.startsWith('5')) {
+        clean = '+971' + (clean.startsWith('0') ? clean.substring(1) : clean);
+      } else if (clean.startsWith('971')) {
+        clean = '+' + clean;
+      }
+    }
+
+    // Format specific country prefixes with clean spacing
+    if (clean.startsWith('+971')) {
+      const rest = clean.substring(4).replace(/\s+/g, '');
+      if (rest.length === 9) {
+        return `+971 ${rest.slice(0, 2)} ${rest.slice(2, 5)} ${rest.slice(5)}`;
+      }
+      return `+971 ${rest}`;
+    }
+    if (clean.startsWith('+44')) {
+      const rest = clean.substring(3).replace(/\s+/g, '');
+      if (rest.length >= 9) {
+        return `+44 ${rest.slice(0, 4)} ${rest.slice(4)}`;
+      }
+      return `+44 ${rest}`;
+    }
+    if (clean.startsWith('+92')) {
+      const rest = clean.substring(3).replace(/\s+/g, '');
+      if (rest.length >= 10) {
+        return `+92 ${rest.slice(0, 3)} ${rest.slice(3)}`;
+      }
+      return `+92 ${rest}`;
+    }
+    if (clean.startsWith('+353')) {
+      const rest = clean.substring(4).replace(/\s+/g, '');
+      return `+353 ${rest.slice(0, 2)} ${rest.slice(2, 5)} ${rest.slice(5)}`;
+    }
+    return clean;
+  };
+
+  const cleanCallSummary = (notes: string, aiSummary: string, clientPhone: string) => {
+    const formatted = formatDisplayPhone(clientPhone);
+    let text = notes || aiSummary || '';
+    if (!text) {
+      return `3CX Call Discussion with ${formatted}. Logged automatically.`;
+    }
+    text = text.replace(/Client\s+([0-9+]+)\s*\(\1\)/gi, `Client ${formatted}`);
+    text = text.replace(/Client\s+([0-9+]+)/gi, `Client ${formatted}`);
+    text = text.replace(/\(([0-9+]{8,15})\)\s*\(\1\)/gi, `(${formatted})`);
+    return text;
+  };
+
+  const getOutcomeBadgeStyle = (outcome: string) => {
+    const lower = (outcome || '').toLowerCase();
+    if (lower.includes('schedule') || lower.includes('viewing') || lower.includes('contract')) {
+      return 'bg-amber-100 text-amber-900 border border-amber-300';
+    }
+    if (lower.includes('callback') || lower.includes('follow-up')) {
+      return 'bg-blue-100 text-blue-900 border border-blue-300';
+    }
+    if (lower.includes('qualified') || lower.includes('completed') || lower.includes('consultation')) {
+      return 'bg-emerald-100 text-emerald-900 border border-emerald-300';
+    }
+    return 'bg-slate-100 text-slate-800 border border-slate-200';
+  };
+
   const formatSeconds = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const remainingSecs = Math.floor(secs % 60);
@@ -417,49 +484,6 @@ export default function CallRecordingsPage() {
             </div>
           </div>
 
-          {/* 5 Configured 3CX Extensions Status Grid */}
-          <div className="bg-white border border-[#E8E4DC] rounded-lg p-3.5 shadow-2xs space-y-2">
-            <div className="flex items-center justify-between text-xs border-b border-[#E8E4DC] pb-2">
-              <div className="flex items-center gap-2 font-bold text-[#081428]">
-                <Server className="w-4 h-4 text-[#C8A147]" />
-                <span>Active 3CX PBX Team Extensions (5 Users Configured)</span>
-              </div>
-              <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Gateway Connected: 3cx.fsadvisory.ae</span>
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 pt-1">
-              {PBX_USERS.map((usr) => (
-                <div
-                  key={usr.ext}
-                  onClick={() => {
-                    setSelectedAgent(usr.name);
-                    setSelectedExtToSync(usr.ext);
-                  }}
-                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                    selectedAgent === usr.name
-                      ? 'bg-amber-50/80 border-[#C8A147] shadow-xs ring-1 ring-[#C8A147]'
-                      : 'bg-[#FAF8F5] border-[#E8E4DC] hover:border-[#C8A147]/60'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-xs text-[#081428] bg-white px-1.5 py-0.5 rounded border border-[#E8E4DC]">
-                      Ext {usr.ext}
-                    </span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" title="Online in 3CX"></span>
-                  </div>
-                  <div className="font-bold text-xs text-[#081428] mt-1.5 truncate">{usr.name}</div>
-                  <div className="text-[10px] text-[#6E6E6E] truncate">{usr.email}</div>
-                  <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-between">
-                    <span>{usr.role}</span>
-                    <span className="text-[#C8A147] font-semibold">Filter 🔍</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
 
           {/* 4 Top KPI Stat Summary Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -617,6 +641,17 @@ export default function CallRecordingsPage() {
                       const isThisActive = activeRecording?.id === rec.id;
                       const isCurrentlyPlaying = isThisActive && isPlaying;
 
+                      const isOutbound = rec.direction === 'outbound';
+                      const clientRawNumber = isOutbound
+                        ? (rec.destination_number || rec.caller_number)
+                        : (rec.caller_number || rec.destination_number);
+                      const clientFormatted = formatDisplayPhone(clientRawNumber);
+
+                      const pbxAgent = PBX_USERS.find((u) => u.ext === String(rec.agent_extension));
+                      const advisorDisplayName = (rec.agent_name && rec.agent_name !== 'Advisor')
+                        ? rec.agent_name
+                        : (pbxAgent?.name || 'Mako Real Estate');
+
                       return (
                         <tr
                           key={rec.id}
@@ -672,21 +707,26 @@ export default function CallRecordingsPage() {
                           <td className="p-3 whitespace-nowrap">
                             <div className="font-semibold text-[#081428] flex items-center gap-1">
                               <User className="w-3 h-3 text-[#C8A147]" />
-                              <span>{rec.agent_name}</span>
+                              <span>{advisorDisplayName}</span>
                             </div>
                             <div className="text-[10px] font-mono text-slate-500">
-                              3CX Ext: <strong className="text-[#081428]">{rec.agent_extension}</strong>
+                              3CX Ext: <strong className="text-[#081428]">{rec.agent_extension || '1030'}</strong>
                             </div>
                           </td>
 
                           {/* Client Contact */}
                           <td className="p-3">
-                            <div className="font-bold text-[#081428]">
-                              {contact.name || `Client (${rec.destination_number || rec.caller_number || 'Direct'})`}
+                            <div className="font-bold text-[#081428] flex items-center gap-1.5 flex-wrap">
+                              <span>{contact.name || `Client (${clientFormatted})`}</span>
+                              {contact.id && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Lead
+                                </span>
+                              )}
                             </div>
                             <div className="text-[10px] font-mono text-[#6E6E6E] flex items-center gap-1 mt-0.5">
                               <Phone className="w-2.5 h-2.5 text-slate-400" />
-                              <span>{rec.direction === 'outbound' ? rec.destination_number : rec.caller_number}</span>
+                              <span>{clientFormatted}</span>
                             </div>
                           </td>
 
@@ -700,12 +740,12 @@ export default function CallRecordingsPage() {
                           {/* Outcome & AI Summary */}
                           <td className="p-3 max-w-md">
                             <div className="font-semibold text-xs text-[#081428] flex items-center gap-1.5">
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-amber-100 text-amber-800">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border ${getOutcomeBadgeStyle(rec.call_outcome)}`}>
                                 {rec.call_outcome || 'Discussion'}
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-700 mt-1 leading-relaxed">
-                              {rec.notes || rec.ai_summary}
+                              {cleanCallSummary(rec.notes, rec.ai_summary, clientRawNumber)}
                             </p>
                           </td>
 
@@ -719,8 +759,12 @@ export default function CallRecordingsPage() {
                                 <Briefcase className="w-3 h-3 text-[#C8A147]" />
                                 <span>Opportunity #{opp.id}</span>
                               </Link>
+                            ) : contact.id ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                Contact Record
+                              </span>
                             ) : (
-                              <span className="text-[11px] text-slate-400">Direct Lead</span>
+                              <span className="text-[11px] text-slate-400">Direct {isOutbound ? 'Outbound' : 'Inbound'} Lead</span>
                             )}
                           </td>
 
@@ -838,24 +882,41 @@ export default function CallRecordingsPage() {
       </div>
 
       {/* STICKY BOTTOM AUDIO PLAYER */}
-      {activeRecording && (
-        <div className="fixed bottom-0 left-56 right-0 z-50 bg-[#081428] text-white border-t border-[#C8A147]/50 shadow-2xl p-3.5 px-6 animate-in slide-in-from-bottom duration-200">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            {/* Left: Call Info */}
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-[#122444] border border-[#C8A147]/30 flex items-center justify-center text-[#C8A147] shrink-0">
-                <Mic className="w-5 h-5 animate-pulse" />
-              </div>
-              <div className="min-w-0">
-                <div className="font-bold text-xs text-white truncate flex items-center gap-2">
-                  <span>{activeRecording.contact?.name || activeRecording.destination_number || 'Client'}</span>
-                  <span className="text-[10px] font-mono text-[#C8A147]">({activeRecording.pbx_call_id})</span>
+      {activeRecording && (() => {
+        const activeClientNum = activeRecording.direction === 'outbound'
+          ? (activeRecording.destination_number || activeRecording.caller_number)
+          : (activeRecording.caller_number || activeRecording.destination_number);
+        const formattedActiveClient = formatDisplayPhone(activeClientNum);
+        const activePbxUser = PBX_USERS.find(u => u.ext === String(activeRecording.agent_extension));
+        const activeAdvisorName = (activeRecording.agent_name && activeRecording.agent_name !== 'Advisor')
+          ? activeRecording.agent_name
+          : (activePbxUser?.name || 'Mako Real Estate');
+
+        return (
+          <div className="fixed bottom-0 left-56 right-0 z-50 bg-[#081428] text-white border-t border-[#C8A147]/50 shadow-2xl p-3.5 px-6 animate-in slide-in-from-bottom duration-200">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+              {/* Left: Call Info */}
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-lg bg-[#122444] border border-[#C8A147]/30 flex items-center justify-center text-[#C8A147] shrink-0">
+                  <Mic className="w-5 h-5 animate-pulse" />
                 </div>
-                <div className="text-[11px] text-slate-400 truncate">
-                  3CX User: <strong className="text-white">{activeRecording.agent_name}</strong> (Ext {activeRecording.agent_extension}) · {activeRecording.call_outcome}
+                <div className="min-w-0">
+                  <div className="font-bold text-xs text-white truncate flex items-center gap-2">
+                    <span>{activeRecording.contact?.name || `Client (${formattedActiveClient})`}</span>
+                    <span className="text-[10px] font-mono text-[#C8A147]">({activeRecording.pbx_call_id})</span>
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                      activeRecording.direction === 'outbound'
+                        ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-blue-950/80 text-blue-300 border border-blue-500/40'
+                    }`}>
+                      {activeRecording.direction === 'outbound' ? 'Outbound 📤' : 'Inbound 📥'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 truncate mt-0.5">
+                    3CX Advisor: <strong className="text-white font-semibold">{activeAdvisorName}</strong> (Ext {activeRecording.agent_extension || '1030'}) · <span className="text-[#C8A147]">{activeRecording.call_outcome || 'Discussion'}</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
             {/* Center: Playback Controls & Scrubber */}
             <div className="flex flex-col items-center gap-1.5 flex-1 max-w-xl">
@@ -925,7 +986,8 @@ export default function CallRecordingsPage() {
             </div>
           </div>
         </div>
-      )}
+      );
+    })()}
 
       {/* 3CX WEBHOOK SETUP INSTRUCTION MODAL */}
       {isSetupModalOpen && (
