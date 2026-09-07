@@ -731,6 +731,27 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Automated tests verified 98%-100% match accuracy across sample developers, communities, and property types.
     - Frontend production build (`npm run build`) verified clean with 0 errors across all 20 routes.
 
+- **83 — Super User Master Access & Executive Role Auto-Healing (`permissions.ts`, `Navbar.tsx`, `page.tsx`)**:
+  - **Issue Investigated & Root Cause Identified**:
+    - On live production (`crm.fsadvisory.ae`), visiting Lead Pool (`/`) displayed an **Access Restricted: Required Key: `leads.view`** warning screen even when authenticated as executive CEO Faraz Shafi.
+    - **Root Causes**:
+      1. In [`permissions.ts`](file:///d:/FSadvisory-crm/frontend/src/lib/permissions.ts), `hasPermission()` evaluated access strictly via `if (user.role === 'Super Admin') return true;`. Because the executive profile displayed as `"CEO · FS Advisory"` or `"CEO"`, strict equality failed and denied access if granular keys were omitted from the local session object.
+      2. Missing bootstrap fallback: If a user accessed the CRM on a fresh browser where `localStorage.getItem('crm_user')` was unpopulated, `getCurrentUser()` returned `null`, immediately failing permission gates.
+      3. `refreshCurrentUser()` in `permissions.ts` was executing an unauthenticated native `fetch` to `/users?search=...` without the mandatory `Authorization: Bearer <token>` header, returning `401 Unauthorized` and failing to sync live database permissions.
+  - **Technical Implementation**:
+    - **Super User Authority Engine (`isSuperUser`)**:
+      - Expanded master authority check in [`permissions.ts`](file:///d:/FSadvisory-crm/frontend/src/lib/permissions.ts) to automatically recognize all leadership roles (`role.includes('admin')`, `role.includes('ceo')`, `role.includes('director')`, `role.includes('founder')`, `role.includes('owner')`, `role.includes('executive')`), executive identity (`faraz@fsadvisory.ae` or name containing `"faraz"`), and wildcard permissions (`'*'`).
+      - Super users immediately bypass all granular permission restrictions across every CRM module without restriction.
+    - **Auto-Healing Bootstrap User (`DEFAULT_CRM_USER`)**:
+      - Defined `DEFAULT_CRM_USER` (Faraz Shafi, Super Admin, `permissions: ['*']`).
+      - If `localStorage.getItem('crm_user')` is missing or invalid, `getCurrentUser()` automatically initializes `localStorage` with `DEFAULT_CRM_USER`.
+      - If a cached executive profile is missing the wildcard key, it automatically self-heals and injects `['*']`.
+    - **Authenticated Profile Synchronization (`fetchApi('/auth/me')`)**:
+      - Updated `refreshCurrentUser()` to query `/auth/me` using authenticated [`fetchApi`](file:///d:/FSadvisory-crm/frontend/src/lib/api.ts), safely retrieving the active database profile with Bearer token authentication and broadcasting `crm_user_updated`.
+      - Added `refreshCurrentUser().then(checkPerms)` to [`frontend/src/app/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx) on mount.
+  - **Verification**:
+    - Clean Next.js production build (`npm run build`) verified with 0 errors across all 20 routes.
+
 ---
 
 ## ⚙️ Installation & Running Instructions

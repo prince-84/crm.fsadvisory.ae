@@ -18,7 +18,7 @@ import {
   Eye, Edit3, MessageSquare, Check, Zap, Filter
 } from 'lucide-react';
 import Link from 'next/link';
-import { hasPermission } from '@/lib/permissions';
+import { hasPermission, refreshCurrentUser } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 
 export default function LeadPoolPage() {
@@ -48,6 +48,7 @@ export default function LeadPoolPage() {
       setCanViewLeads(hasPermission('leads.view'));
     };
     checkPerms();
+    refreshCurrentUser().then(checkPerms);
     window.addEventListener('crm_user_updated', checkPerms);
     window.addEventListener('storage', checkPerms);
     return () => {

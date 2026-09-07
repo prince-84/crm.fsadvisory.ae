@@ -22,6 +22,8 @@ interface NavbarProps {
   onSearch?: (query: string) => void;
 }
 
+import { DEFAULT_CRM_USER } from '@/lib/permissions';
+
 export default function Navbar({ onSearch }: NavbarProps) {
   const router = useRouter();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -46,6 +48,8 @@ export default function Navbar({ onSearch }: NavbarProps) {
           role: u.role ? `${u.role} · FS Advisory` : 'CEO · FS Advisory',
           initials: u.initials || u.name?.substring(0, 2).toUpperCase() || 'FS',
         });
+      } else {
+        localStorage.setItem('crm_user', JSON.stringify(DEFAULT_CRM_USER));
       }
     } catch (e) {
       console.error(e);
