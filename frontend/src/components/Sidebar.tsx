@@ -22,7 +22,8 @@ import {
   Mic, 
   MessageSquare,
   Building2,
-  ShieldCheck 
+  ShieldCheck,
+  Flame 
 } from 'lucide-react';
 
 function SidebarInner() {
@@ -69,6 +70,7 @@ function SidebarInner() {
     {
       title: 'SALES',
       items: [
+        { key: 'new_leads', name: 'New Leads', href: '/new-leads', icon: Flame, badge: 'New', permission: 'leads.view' },
         { key: 'lead_pool', name: 'Lead Pool', href: '/', icon: Users, permission: 'leads.view' },
         { key: 'owner_data', name: 'Owner Data', href: '/owner-data', icon: Building2, permission: 'owner_data.view' },
         { key: 'queue', name: 'My Queue', href: '/queue', icon: ListOrdered, permission: 'queue.view' },

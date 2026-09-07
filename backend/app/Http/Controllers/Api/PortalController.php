@@ -80,6 +80,7 @@ class PortalController extends Controller
             'phone' => $validated['client_phone'],
             'email' => $validated['client_email'] ?? strtolower(str_replace(' ', '.', $validated['client_name'])) . '@portal-lead.ae',
             'source' => $portalName,
+            'is_imported' => false,
             'state' => $state,
             'last_activity_at' => now(),
             'landing_page_url' => $validated['landing_page_url'] ?? null,
@@ -117,24 +118,22 @@ class PortalController extends Controller
             ], 201);
         }
 
-        // Brand New Unique Lead: Auto-assign via dynamic agent rotation pool
-        $assignedAgent = LeadDistributionService::autoAssignContact($contact);
-        $agentName = $assignedAgent ? $assignedAgent->name : 'Unassigned';
-
+        // Brand New Inbound Lead: Not auto-assigned (auto-assign is restricted strictly to batch file imports)
+        // Stays available/unassigned for review in the New Leads page
         Activity::create([
             'contact_id' => $contact->id,
             'opportunity_id' => null,
             'user_name' => 'System / Webhook',
             'type' => 'note',
-            'description' => "New Lead Ingested from {$portalName}. Contact #{$contact->id} auto-assigned to {$agentName} (Awaiting qualification call).",
+            'description' => "New Inbound Lead ingested from {$portalName}. Placed in New Leads pool awaiting allocation.",
         ]);
 
         return response()->json([
             'success' => true,
             'is_duplicate' => false,
-            'message' => "New Lead ingested. Contact created & auto-assigned to {$agentName}.",
+            'message' => "New Lead ingested from {$portalName}. Contact #{$contact->id} placed in New Leads pool.",
             'contact' => $contact->fresh(),
-            'assigned_agent' => $agentName,
+            'assigned_agent' => null,
         ], 201);
     }
 }

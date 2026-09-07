@@ -27,7 +27,7 @@ class ContactController extends Controller
         }
 
         // Apply Tab Filter Logic
-        if ($tab === 'unassigned') {
+        if ($tab === 'unassigned' || $tab === 'new') {
             $query->where('contacts.state', '!=', 'duplicate')
                   ->where(function($q) {
                       $q->where(function($sub) {
@@ -43,11 +43,31 @@ class ContactController extends Controller
                               });
                       });
                   });
+        } elseif ($tab === 'assigned') {
+            $query->where('contacts.state', '!=', 'duplicate')
+                  ->where(function($q) {
+                      $q->where(function($sub) {
+                          $sub->whereNotNull('contacts.assigned_to')
+                              ->where('contacts.assigned_to', '!=', '')
+                              ->where('contacts.assigned_to', '!=', 'Unassigned');
+                      })->orWhereHas('opportunities', function($oppQ) {
+                          $oppQ->whereNotNull('current_owner_name')
+                               ->where('current_owner_name', '!=', '')
+                               ->where('current_owner_name', '!=', 'Unassigned');
+                      });
+                  });
         } elseif ($tab === 'duplicate') {
             $query->where('contacts.state', 'duplicate');
         } elseif ($tab === 'all') {
             // 'all' tab displays all primary/non-duplicate leads
             $query->where('contacts.state', '!=', 'duplicate');
+        }
+
+        // Filter by Inbound Only (non-imported leads: portals, campaign landing pages, webhooks, manual entries)
+        if ($request->boolean('inbound_only') || $request->get('source_type') === 'inbound') {
+            $query->where('contacts.is_imported', false);
+        } elseif ($request->boolean('imported_only') || $request->get('source_type') === 'imported') {
+            $query->where('contacts.is_imported', true);
         }
 
         if ($request->has('state') && !empty($request->state) && $request->state !== 'all') {
@@ -260,17 +280,47 @@ class ContactController extends Controller
         $contacts = $query->paginate($perPage);
 
         // Stats calculation for Top KPI Cards & Tab Badge Counts
-        $stats = [
-            'total' => Contact::where('state', '!=', 'duplicate')->count(),
-            'available' => Contact::where('state', 'available')->count(),
-            'active' => Contact::where('state', 'active')->count(),
-            'reactivation' => Contact::where('state', 'reactivation')->count(),
-            'duplicates' => Contact::where('state', 'duplicate')->count(),
-        ];
+        $isInboundOnly = $request->boolean('inbound_only') || $request->get('source_type') === 'inbound';
+        $baseCountQuery = Contact::query();
+        if ($isInboundOnly) {
+            $baseCountQuery->where('is_imported', false);
+        }
 
-        $tabCounts = [
-            'all' => Contact::where('state', '!=', 'duplicate')->count(),
-            'unassigned' => Contact::where('state', '!=', 'duplicate')->where(function($q) {
+        $unassignedCount = (clone $baseCountQuery)->where('state', '!=', 'duplicate')->where(function($q) {
+            $q->where(function($sub) {
+                $sub->whereNull('assigned_to')
+                    ->orWhere('assigned_to', '')
+                    ->orWhere('assigned_to', 'Unassigned');
+            })->where(function($sub) {
+                $sub->whereDoesntHave('opportunities')
+                    ->orWhereHas('opportunities', function($oppQ) {
+                        $oppQ->whereNull('current_owner_name')
+                             ->orWhere('current_owner_name', '')
+                             ->orWhere('current_owner_name', 'Unassigned');
+                    });
+            });
+        })->count();
+
+        $assignedCount = (clone $baseCountQuery)->where('state', '!=', 'duplicate')->where(function($q) {
+            $q->where(function($sub) {
+                $sub->whereNotNull('assigned_to')
+                    ->where('assigned_to', '!=', '')
+                    ->where('assigned_to', '!=', 'Unassigned');
+            })->orWhereHas('opportunities', function($oppQ) {
+                $oppQ->whereNotNull('current_owner_name')
+                     ->where('current_owner_name', '!=', '')
+                     ->where('current_owner_name', '!=', 'Unassigned');
+            });
+        })->count();
+
+        $stats = [
+            'total' => (clone $baseCountQuery)->where('state', '!=', 'duplicate')->count(),
+            'available' => (clone $baseCountQuery)->where('state', 'available')->count(),
+            'active' => (clone $baseCountQuery)->where('state', 'active')->count(),
+            'reactivation' => (clone $baseCountQuery)->where('state', 'reactivation')->count(),
+            'duplicates' => (clone $baseCountQuery)->where('state', 'duplicate')->count(),
+            'inbound_total' => Contact::where('is_imported', false)->where('state', '!=', 'duplicate')->count(),
+            'inbound_unassigned' => Contact::where('is_imported', false)->where('state', '!=', 'duplicate')->where(function($q) {
                 $q->where(function($sub) {
                     $sub->whereNull('assigned_to')
                         ->orWhere('assigned_to', '')
@@ -284,8 +334,27 @@ class ContactController extends Controller
                         });
                 });
             })->count(),
-            'duplicate' => Contact::where('state', 'duplicate')->count(),
-            'deleted' => Contact::onlyTrashed()->count(),
+            'inbound_portals' => Contact::where('is_imported', false)->where('state', '!=', 'duplicate')->where(function($q) {
+                $q->where('source', 'like', '%Property Finder%')
+                  ->orWhere('source', 'like', '%Bayut%')
+                  ->orWhere('source', 'like', '%Dubizzle%');
+            })->count(),
+            'inbound_campaigns' => Contact::where('is_imported', false)->where('state', '!=', 'duplicate')->where(function($q) {
+                $q->where('source', 'like', '%Meta%')
+                  ->orWhere('source', 'like', '%Facebook%')
+                  ->orWhere('source', 'like', '%Google%')
+                  ->orWhere('source', 'like', '%Website%')
+                  ->orWhereNotNull('utm_source');
+            })->count(),
+        ];
+
+        $tabCounts = [
+            'all' => (clone $baseCountQuery)->where('state', '!=', 'duplicate')->count(),
+            'unassigned' => $unassignedCount,
+            'new' => $unassignedCount,
+            'assigned' => $assignedCount,
+            'duplicate' => (clone $baseCountQuery)->where('state', 'duplicate')->count(),
+            'deleted' => $isInboundOnly ? Contact::onlyTrashed()->where('is_imported', false)->count() : Contact::onlyTrashed()->count(),
         ];
 
         return response()->json([
@@ -374,7 +443,7 @@ class ContactController extends Controller
             'phone' => $validated['phone'],
             'secondary_phone' => $validated['secondary_phone'] ?? null,
             'email' => $validated['email'],
-            'nationality' => $validated['nationality'] ?? null,
+            'nationality' => !empty($validated['nationality']) ? $validated['nationality'] : 'Expat / UAE Resident',
             'emirates_id' => $validated['emirates_id'] ?? null,
             'source' => $validated['source'],
             'initials' => $validated['initials'],
@@ -384,6 +453,7 @@ class ContactController extends Controller
             'utm_term' => $validated['utm_term'] ?? null,
             'utm_content' => $validated['utm_content'] ?? null,
             'landing_page_url' => $validated['landing_page_url'] ?? null,
+            'is_imported' => false,
             'state' => $validated['state'],
         ];
 
@@ -397,7 +467,8 @@ class ContactController extends Controller
                 'description' => "Duplicate contact created. Matches existing Contact #{$existingContact->id} ({$existingContact->name}, Phone: {$existingContact->phone}). Routed to Duplicate tab.",
             ]);
         } else {
-            // Real-Time Lead Distribution: Assign directly if specific advisor provided, otherwise trigger Round-Robin Auto-Distribution
+            // Real-Time Lead Distribution: Assign directly if specific advisor explicitly provided
+            // Note: Auto-assignment is strictly restricted to batch file imports (ImportController).
             $assignedOwner = $request->input('assigned_owner');
             if (!empty($assignedOwner) && $assignedOwner !== 'auto' && $assignedOwner !== 'Unassigned') {
                 $contact->update([
@@ -413,8 +484,13 @@ class ContactController extends Controller
                     'description' => "Lead assigned to {$assignedOwner} (Awaiting qualification call).",
                 ]);
             } else {
-                // Automatically distribute via Intelligent Round-Robin Lead Distribution Engine
-                LeadDistributionService::autoAssignContact($contact);
+                // Not auto-assigned. Kept unassigned/available for review and manual allocation in New Leads
+                Activity::create([
+                    'contact_id'  => $contact->id,
+                    'user_name'   => 'Lead Engine',
+                    'type'        => 'note',
+                    'description' => "New lead registered and placed in New Leads pool (awaiting assignment).",
+                ]);
             }
 
             // Opportunity deals are strictly created MANUALLY by agents from My Queue after calling & qualifying the client.
@@ -544,6 +620,19 @@ class ContactController extends Controller
         $ids = $request->input('contact_ids', []);
         $owner = $request->input('assigned_owner');
 
+        if ($owner === 'auto') {
+            $contacts = Contact::whereIn('id', $ids)->get();
+            $assignedCount = 0;
+            foreach ($contacts as $c) {
+                $agent = LeadDistributionService::autoAssignContact($c);
+                if ($agent) $assignedCount++;
+            }
+            return response()->json([
+                'success' => true,
+                'message' => "{$assignedCount} leads auto-distributed across available advisors.",
+            ]);
+        }
+
         $opportunities = Opportunity::whereIn('contact_id', $ids)->get();
         foreach ($opportunities as $opp) {
             $opp->update(['current_owner_name' => $owner]);
@@ -560,7 +649,7 @@ class ContactController extends Controller
                 'contact_id'  => $cid,
                 'user_name'   => 'Admin',
                 'type'        => 'ownership_change',
-                'description' => "Lead assigned to {$owner} via Lead Pool bulk assignment (Awaiting qualification call).",
+                'description' => "Lead assigned to {$owner} via bulk assignment (Awaiting qualification call).",
             ]);
         }
 

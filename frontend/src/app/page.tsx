@@ -984,6 +984,7 @@ export default function LeadPoolPage() {
     const isSorted = sortBy === columnKey;
     return (
       <th 
+        key={columnKey}
         onClick={() => handleSort(columnKey)}
         className="p-3 cursor-pointer hover:bg-[#F3EEDD] transition-colors select-none group"
       >
@@ -1097,7 +1098,7 @@ export default function LeadPoolPage() {
           <div className="bg-white border border-[#E8E4DC] rounded-lg px-4 shadow-2xs flex items-center gap-2 overflow-x-auto">
             {[
               { id: 'all', label: 'All Leads', count: tabCounts.all, color: 'text-[#081428]' },
-              { id: 'unassigned', label: 'Unassigned', count: tabCounts.unassigned, color: 'text-amber-800' },
+              { id: 'unassigned', label: 'New', count: tabCounts.unassigned, color: 'text-amber-800' },
               { id: 'duplicate', label: 'Duplicate', count: tabCounts.duplicate, color: 'text-purple-800' },
               { id: 'deleted', label: 'Deleted', count: tabCounts.deleted, color: 'text-red-800' },
             ].map((tab) => {

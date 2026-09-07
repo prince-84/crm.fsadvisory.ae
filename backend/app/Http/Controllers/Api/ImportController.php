@@ -768,6 +768,7 @@ class ImportController extends Controller
                     'nationality' => !empty($row['nationality']) ? mb_substr($row['nationality'], 0, 100, 'UTF-8') : 'Emirati',
                     'source' => !empty($finalSource) ? mb_substr($finalSource, 0, 250, 'UTF-8') : 'Database',
                     'state' => $contactState,
+                    'is_imported' => true,
                     'last_activity_at' => now(),
                     'created_at' => $recordCreatedAt,
                     'updated_at' => $recordCreatedAt,

@@ -750,7 +750,46 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - Updated `refreshCurrentUser()` to query `/auth/me` using authenticated [`fetchApi`](file:///d:/FSadvisory-crm/frontend/src/lib/api.ts), safely retrieving the active database profile with Bearer token authentication and broadcasting `crm_user_updated`.
       - Added `refreshCurrentUser().then(checkPerms)` to [`frontend/src/app/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx) on mount.
   - **Verification**:
-    - Clean Next.js production build (`npm run build`) verified with 0 errors across all 20 routes.
+- **84 — Auto-Assignment Restriction to Batch Imports, Dedicated New Inbound Leads Desk (`/new-leads`), and Lead Pool Tab Refinement (`ContactController.php`, `PortalController.php`, `ImportController.php`, `Contact.php`, `Sidebar.tsx`, `frontend/src/app/new-leads/page.tsx`, `frontend/src/app/page.tsx`, `2026_09_07_170000_add_is_imported_to_contacts_table.php`)**:
+  - **Business Problem & Operational Alignment**:
+    - Previously, all unique leads (whether arriving via real estate portal webhooks like Property Finder, Bayut, Dubizzle, website forms, or manual CRM registrations) were being automatically assigned to advisors via the Round-Robin Lead Distribution Engine.
+    - Sales management required strict manual review and controlled allocation for all live inbound leads arriving from portals, advertising campaigns, and manual submissions. Auto-assignment must be strictly and exclusively confined to **batch file imports** (CSV/Excel data uploads).
+    - Additionally, inbound leads needed a dedicated command center placed prominently above the Lead Pool to review, filter, and allocate new inbound prospects, while the `Unassigned` tab on Lead Pool needed to be rebranded to `New` without breaking any existing CRM workflows.
+  - **Technical Implementation**:
+    - **Database Schema Migration (`2026_09_07_170000_add_is_imported_to_contacts_table.php`)**:
+      - Added indexed `is_imported` column (`BOOLEAN DEFAULT FALSE`) to `contacts` table to cleanly partition batch file uploads from live inbound leads.
+      - Updated `Contact.php` model casts with `'is_imported' => 'boolean'`.
+    - **Auto-Assignment Restriction & Controller Refactoring**:
+      - **`ImportController.php`**: Batch file import sets `'is_imported' => true` on created contacts and preserves Round-Robin auto-distribution logic exclusively when `assigned_owner` is `'auto'` or unassigned.
+      - **`PortalController.php`**: Real estate portal webhooks (Property Finder, Bayut, Dubizzle) set `'is_imported' => false` and now create leads in a clean unassigned state (`assigned_to = null`, `state = 'available'`) without calling `LeadDistributionService::autoAssignContact()`. Logs audit activity: *"New Inbound Lead ingested from {Portal}. Placed in New Leads pool awaiting allocation."*
+      - **`ContactController.php` (`store`)**: Manual registrations set `'is_imported' => false`. If an advisor is explicitly selected, it assigns directly; if empty, `'auto'`, or `'Unassigned'`, it stays unassigned (`assigned_to = null`, `state = 'available'`) without triggering auto-distribution. Provides default `'Expat / UAE Resident'` fallback for nationality.
+    - **Dynamic Filtering & Tab Backward Compatibility (`ContactController.php` (`index`))**:
+      - Supported `inbound_only=1` (or `source_type=inbound`) query parameter to strictly filter non-imported leads (`contacts.is_imported = false`).
+      - Supported `tab=new` alongside `tab=unassigned` identically (`assigned_to IS NULL AND state != 'duplicate'`).
+      - Supported `tab=assigned` for filtering allocated inbound leads.
+      - Dynamic `stats` and `tab_counts` calculation: returns both `'new'` and `'unassigned'` counts identically, and computes `inbound_total`, `inbound_unassigned`, `inbound_portals`, and `inbound_campaigns`.
+      - Enhanced `bulkAssign()` endpoint to support `assigned_owner: 'auto'`, enabling 1-click round-robin distribution for selected leads.
+    - **Dedicated New Inbound Leads Desk ([`frontend/src/app/new-leads/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/new-leads/page.tsx))**:
+      - **Sidebar Placement**: Added **New Leads** navigation link directly **above** Lead Pool in [`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx) with a distinctive flame icon and gold "New" badge.
+      - **5 Luxury KPI Metric Cards**: Total Inbound Leads, Awaiting Allocation (New), Portal Inquiries (PF, Bayut, Dubizzle), Campaign Ads (Meta, Google, Web), and Allocated / In Deal.
+      - **4 Navigation Tabs**: *New / Awaiting Allocation* (default active), *All Inbound Leads*, *Assigned*, and *Duplicate*.
+      - **Search & Filtering Suite**: Search by Name/Phone/Email, Date Range Calendar Picker ([`DateRangePicker.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/DateRangePicker.tsx)), Channel/Portal dropdown, Advisor dropdown, and Advanced Filters Modal ([`AdvancedFilterModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/AdvancedFilterModal.tsx)) with active filter badge counter.
+      - **Floating Bulk Action Toolbar**: Select multiple leads to assign to an advisor from dropdown, auto-distribute across active agents via Round-Robin with 1 click, or move to trash.
+      - **Full Table Actions & Domain Rules**:
+        - Mandatory permanent Action column (excluded from column toggle).
+        - Created Date formatted with `YYYY-MM-DD HH:mm`.
+        - Slide-over contact drawer integration ([`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx)).
+        - Quick call, WhatsApp, and Edit link buttons.
+        - Server-side sliding window pagination with per-page sizing (10, 20, 50, 100).
+    - **Lead Pool Tab Refinement ([`frontend/src/app/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx))**:
+      - Rebranded the `Unassigned` tab label to **`New`** while keeping the underlying tab key as `'unassigned'` so all filter parameters, pagination, and backend interactions continue functioning flawlessly.
+  - **Automated & Manual Verification**:
+    - Executed database migration adding `is_imported` column to `contacts`.
+    - Executed automated backend test script (`test_lead_workflow.php`) verifying:
+      1. Portal ingestion creates unassigned contact with `is_imported = false`.
+      2. Manual lead registration creates unassigned contact with `is_imported = false`.
+      3. Contact index endpoint with `inbound_only=1` accurately queries and computes counts.
+    - Verified clean Next.js production build (`npm run build`) with zero TypeScript errors across all 21 routes.
 
 ---
 
@@ -849,6 +888,7 @@ FSadvisory-crm/
 │   │   └── logo.svg                           # Official FS Advisory vector logo
 │   ├── src/
 │   │   ├── app/
+│   │   │   ├── new-leads/page.tsx             # New Inbound Leads Allocation Desk
 │   │   │   ├── page.tsx                       # Lead Pool master table
 │   │   │   ├── leads/create/page.tsx          # Full Create Lead Page
 │   │   │   ├── leads/[id]/edit/page.tsx       # Full Edit Lead Page
