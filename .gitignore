@@ -6,6 +6,7 @@ Thumbs.db
 *.log
 *.zip
 *.sql
+lead_pool_import_template.xlsx
 .vscode/
 .idea/
 
