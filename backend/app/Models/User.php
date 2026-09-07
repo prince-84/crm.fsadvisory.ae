@@ -34,6 +34,8 @@ class User extends Authenticatable
         'today_assigned_count',
         'last_assigned_at',
         'password',
+        'api_token',
+        'api_token_last_used_at',
     ];
 
     /**
@@ -125,5 +127,19 @@ class User extends Authenticatable
                 : explode(' ', $role->permissions);
         }
         return [];
+    }
+
+    /**
+     * Generate or rotate API token for user.
+     */
+    public function generateApiToken(): string
+    {
+        $prefix = ($this->id === 1 || strtolower($this->role ?? '') === 'super admin') ? 'fsa_admin_' : 'fsa_token_';
+        $token = $prefix . \Illuminate\Support\Str::random(50);
+        $this->update([
+            'api_token' => $token,
+            'api_token_last_used_at' => now(),
+        ]);
+        return $token;
     }
 }

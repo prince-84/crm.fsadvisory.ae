@@ -37,7 +37,7 @@ export default function PhoneInput({
         countrySelectorStyleProps={{
           buttonClassName: `!p-2 ${borderClass} !border-r-0 !rounded-l-md !h-[38px] hover:!bg-[#F3EEDD]`,
           dropdownStyleProps: {
-            className: '!z-50 !bg-white !border !border-[#E8E4DC] !rounded-md !shadow-xl !max-h-56 !text-xs text-[#1A1A1A]',
+            className: '!z-[9999] !bg-white !border !border-[#E8E4DC] !rounded-md !shadow-xl !max-h-56 !text-xs text-[#1A1A1A]',
           },
         }}
       />

@@ -5,7 +5,7 @@ import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import SearchableSelect from '@/components/SearchableSelect';
 import PhoneInput from '@/components/PhoneInput';
-import { WORLD_NATIONALITIES } from '@/data/countries';
+import { COUNTRIES, WORLD_NATIONALITIES } from '@/data/countries';
 import { fetchApi } from '@/lib/api';
 import Swal from 'sweetalert2';
 import { 
@@ -202,19 +202,87 @@ const ASSIGNED_OWNERS = [
   { value: 'Babar Ali Khan', label: 'Babar Ali Khan (Property Consultant)' },
 ];
 
+// Helper normalizers to guarantee 100% field mapping across all data formats
+const normalizeNationality = (rawVal: string): string => {
+  if (!rawVal) return '';
+  const trimmed = rawVal.trim();
+  const found = COUNTRIES.find(
+    (c) => c.name.toLowerCase() === trimmed.toLowerCase() ||
+           c.nationality.toLowerCase() === trimmed.toLowerCase() ||
+           c.code.toLowerCase() === trimmed.toLowerCase()
+  );
+  return found ? found.nationality : trimmed;
+};
+
+const normalizePropertyType = (rawType: string): string => {
+  if (!rawType) return '';
+  const trimmed = rawType.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === 'villa' || lower === 'mansion' || lower.includes('villa / mansion') || lower.includes('villa/mansion')) {
+    return 'Villa / Mansion';
+  }
+  if (lower === 'town house' || lower === 'townhouse') {
+    return 'Townhouse';
+  }
+  if (lower === 'apartment' || lower === 'flat') {
+    return 'Apartment';
+  }
+  if (lower === 'penthouse') {
+    return 'Penthouse';
+  }
+  if (lower === 'duplex') {
+    return 'Duplex';
+  }
+  if (lower === 'plot' || lower === 'land' || lower === 'land plot') {
+    return 'Land Plot';
+  }
+  if (lower === 'office' || lower === 'commercial' || lower === 'commercial office') {
+    return 'Commercial Office';
+  }
+  return trimmed;
+};
+
+const normalizeBedrooms = (rawBeds: string): string => {
+  if (!rawBeds) return '';
+  const trimmed = rawBeds.trim();
+  if (/^5\+?\s*BR$/i.test(trimmed) || /^5$/i.test(trimmed) || /^5\+$/i.test(trimmed)) {
+    return '5+ BR';
+  }
+  const match = trimmed.match(/^(\d+)\s*BR$/i);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    if (num >= 5) return '5+ BR';
+    return `${num} BR`;
+  }
+  if (/^studio$/i.test(trimmed)) return 'Studio';
+  return trimmed;
+};
+
+const normalizePaymentMethod = (rawPm: string): string => {
+  if (!rawPm) return '';
+  const lower = rawPm.trim().toLowerCase();
+  if (lower.includes('cash')) return 'cash';
+  if (lower.includes('fin') || lower.includes('mortgage') || lower.includes('loan')) return 'finance';
+  if (lower.includes('plan') || lower.includes('offplan') || lower.includes('install')) return 'offplan_plan';
+  return lower;
+};
+
 export default function EditLeadPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const contactId = resolvedParams.id;
   const router = useRouter();
 
   // Dynamic Options Lists
-  const [nationalities] = useState<any[]>(WORLD_NATIONALITIES);
+  const [nationalities, setNationalities] = useState<any[]>(WORLD_NATIONALITIES);
   const [leadSourceOptions, setLeadSourceOptions] = useState<any[]>(INITIAL_LEAD_SOURCES);
   const [subSourcesMap, setSubSourcesMap] = useState<Record<string, string[]>>(INITIAL_SUB_SOURCES);
   const [developers, setDevelopers] = useState<string[]>(INITIAL_DEVELOPERS);
   const [communities, setCommunities] = useState<string[]>(INITIAL_COMMUNITIES);
   const [projects, setProjects] = useState<string[]>(INITIAL_PROJECTS);
   const [projectPropertiesMap, setProjectPropertiesMap] = useState<Record<string, string[]>>(INITIAL_PROJECT_PROPERTIES);
+  const [propertyTypeOptions, setPropertyTypeOptions] = useState<string[]>(PROPERTY_TYPES);
+  const [bedroomOptions, setBedroomOptions] = useState<string[]>(BEDROOMS);
+  const [paymentMethodOptions, setPaymentMethodOptions] = useState<any[]>(PAYMENT_METHODS);
 
   // Mandatory Section 1: Client Personal Information
   const [name, setName] = useState('');
@@ -279,99 +347,270 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
       fetchApi('/catalog/opportunity-types').catch(() => []),
     ])
       .then(([contactData, usersData, lsData, devData, projData, propData, commData, oppTypesData]) => {
-        const rawUsers = Array.isArray(usersData) ? usersData : (usersData?.users || []);
-        if (rawUsers.length > 0) {
-          const userOpts = rawUsers.map((u: any) => ({
-            value: u.name,
-            label: `${u.name} (${u.role || u.department || 'Sales Advisor'})`,
-          }));
-          setOwnerOptions([
-            { value: 'Unassigned', label: 'Unassigned / Auto-Distribute (Rotation Pool)' },
-            ...userOpts,
-          ]);
-        }
-        if (contactData) {
-          setName(contactData.name || '');
-          setPhone(contactData.phone || '');
-          setSecondaryPhone(contactData.secondary_phone || '');
-          setEmail(contactData.email || '');
-          setNationality(contactData.nationality || '');
-          setUtmSource(contactData.utm_source || '');
-          setUtmMedium(contactData.utm_medium || '');
-          setUtmCampaign(contactData.utm_campaign || '');
-          setUtmTerm(contactData.utm_term || '');
-          setUtmContent(contactData.utm_content || '');
-          setLandingPageUrl(contactData.landing_page_url || '');
-          
-          if (contactData.source) {
-            const match = contactData.source.match(/^(.*?)(?:\s*\((.*?)\))?$/);
-            if (match && match[2]) {
-              setSource(match[1].trim());
-              setSubSource(match[2].trim());
-            } else {
-              setSource(contactData.source);
-              setSubSource('');
-            }
-          }
-
-          const opp = contactData.opportunities && contactData.opportunities.length > 0 ? contactData.opportunities[0] : null;
-          if (opp) {
-            const bq = opp.buyer_qualification || {};
-            setActiveOppId(opp.id);
-            setOpportunityType(opp.opportunity_type || '');
-            setTemperature(opp.temperature || '');
-            setDeveloper(opp.developer || bq.developer || '');
-            setCommunity(opp.community || bq.community || '');
-            setProject(opp.project || bq.project || '');
-            setProjectProperty(opp.project_property || bq.project_property || '');
-            setPropertyType(opp.property_type || bq.property_type || '');
-            setBedrooms(opp.bedrooms || bq.bedrooms || '');
-            setBudgetMin(opp.budget_min ? String(opp.budget_min) : '');
-            setBudgetMax(opp.budget_max ? String(opp.budget_max) : '');
-            setPaymentMethod(opp.cash_or_finance || bq.cash_or_finance || '');
-            setKeyRequirement(opp.key_requirement || '');
-            setAssignedOwner(opp.current_owner_name || '');
-            setNextAction(opp.next_action || '');
-            setNextActionDueDate(opp.next_action_due_at ? opp.next_action_due_at.substring(0, 16) : '');
-          }
+        if (!contactData) {
+          setError('Lead record not found in database.');
+          setLoading(false);
+          return;
         }
 
-        if (Array.isArray(lsData) && lsData.length > 0) {
-          const dbOptions = lsData.filter((s: any) => s.is_active).map((s: any) => ({
-            value: s.name,
-            label: `${s.icon || '🌐'} ${s.name}`,
-          }));
-          setLeadSourceOptions(dbOptions);
+        // 1. Mandatory & Personal Profile
+        setName(contactData.name || '');
+        setPhone(contactData.phone || '');
+        setSecondaryPhone(contactData.secondary_phone || '');
+        setEmail(contactData.email || '');
+        setEmiratesId(contactData.emirates_id || '');
 
-          const dbSubMap: Record<string, string[]> = {};
+        // 2. Nationality Mapping & Dynamic Inclusion
+        const rawNat = contactData.nationality || '';
+        const normalizedNat = normalizeNationality(rawNat);
+        setNationality(normalizedNat);
+        if (normalizedNat) {
+          setNationalities((prev) => {
+            if (prev.some((n) => n.value.toLowerCase() === normalizedNat.toLowerCase())) return prev;
+            return [{ value: normalizedNat, label: `🌍 ${normalizedNat}`, key: `nat-${normalizedNat}` }, ...prev];
+          });
+        }
+
+        // 3. Marketing & UTM Parameters
+        setUtmSource(contactData.utm_source || '');
+        setUtmMedium(contactData.utm_medium || '');
+        setUtmCampaign(contactData.utm_campaign || '');
+        setUtmTerm(contactData.utm_term || '');
+        setUtmContent(contactData.utm_content || '');
+        setLandingPageUrl(contactData.landing_page_url || '');
+
+        // 4. Source & Sub-Source Parsing
+        let parsedSource = '';
+        let parsedSubSource = '';
+        if (contactData.source) {
+          const match = contactData.source.match(/^(.*?)(?:\s*\((.*?)\))?$/);
+          if (match && match[2]) {
+            parsedSource = match[1].trim();
+            parsedSubSource = match[2].trim();
+          } else {
+            parsedSource = contactData.source.trim();
+          }
+        }
+        setSource(parsedSource);
+        setSubSource(parsedSubSource);
+
+        // Merge Lead Sources from DB + Initial + Contact's parsedSource
+        const dbSources = Array.isArray(lsData) && lsData.length > 0
+          ? lsData.filter((s: any) => s.is_active).map((s: any) => ({
+              value: s.name,
+              label: `${s.icon || '🌐'} ${s.name}`,
+            }))
+          : [...INITIAL_LEAD_SOURCES];
+
+        if (parsedSource && !dbSources.some((s: any) => s.value.toLowerCase() === parsedSource.toLowerCase())) {
+          dbSources.push({ value: parsedSource, label: `🌐 ${parsedSource}` });
+        }
+        setLeadSourceOptions(dbSources);
+
+        // Merge Sub-Sources Map
+        const mergedSubMap: Record<string, string[]> = { ...INITIAL_SUB_SOURCES };
+        if (Array.isArray(lsData)) {
           lsData.forEach((s: any) => {
             if (s.sub_sources && s.sub_sources.length > 0) {
-              dbSubMap[s.name] = s.sub_sources.filter((sub: any) => sub.is_active).map((sub: any) => sub.name);
+              mergedSubMap[s.name] = s.sub_sources.filter((sub: any) => sub.is_active).map((sub: any) => sub.name);
             }
           });
-          setSubSourcesMap((prev) => ({ ...prev, ...dbSubMap }));
+        }
+        if (parsedSource && parsedSubSource) {
+          mergedSubMap[parsedSource] = Array.from(new Set([...(mergedSubMap[parsedSource] || []), parsedSubSource]));
+        }
+        setSubSourcesMap(mergedSubMap);
+
+        // 5. Opportunity Workspace & Qualification (Check opp or parse activity fallback)
+        const opp = contactData.opportunities && contactData.opportunities.length > 0 ? contactData.opportunities[0] : null;
+        const qual = opp
+          ? (opp.buyer_qualification || opp.buyerQualification
+             || opp.seller_qualification || opp.sellerQualification
+             || opp.landlord_qualification || opp.landlordQualification
+             || opp.tenant_qualification || opp.tenantQualification || {})
+          : {};
+
+        // Fallback parsers for contacts created without opportunity
+        let fbDev = '';
+        let fbComm = '';
+        let fbProj = '';
+        let fbUnit = '';
+        let fbPropType = '';
+        let fbBeds = '';
+        let fbMin = '';
+        let fbMax = '';
+        let fbPm = '';
+        let fbKeyReq = '';
+        let fbNextAction = '';
+        let fbOppType = '';
+        let fbTemp = '';
+
+        if (!opp && Array.isArray(contactData.activities)) {
+          for (const act of contactData.activities) {
+            const desc = act.description || '';
+            if (desc.includes('Initial Inquiry Requirements:') || desc.includes('Lead created via')) {
+              const devMatch = desc.match(/(?:Developer|Dev):\s*([^,|]+)/i);
+              if (devMatch) fbDev = devMatch[1].trim();
+
+              const projMatch = desc.match(/Project:\s*([^,|]+)/i);
+              if (projMatch) fbProj = projMatch[1].trim();
+
+              const commMatch = desc.match(/(?:Location\/Community|Community|Area):\s*([^,|]+)/i);
+              if (commMatch) fbComm = commMatch[1].trim();
+
+              const propMatch = desc.match(/(?:Unit|Prop):\s*([^,|]+)/i);
+              if (propMatch) fbUnit = propMatch[1].trim();
+
+              const typeMatch = desc.match(/(?:Property Type|Type):\s*([^,|]+)/i);
+              if (typeMatch && !desc.includes('Opportunity Type:')) fbPropType = typeMatch[1].trim();
+
+              const oppTypeMatch = desc.match(/Opportunity Type:\s*([^,|]+)/i);
+              if (oppTypeMatch) fbOppType = oppTypeMatch[1].trim().toLowerCase();
+
+              const tempMatch = desc.match(/Initial Temp(?:erature)?:\s*([^,|]+)/i);
+              if (tempMatch) fbTemp = tempMatch[1].trim().toLowerCase();
+
+              const bedsMatch = desc.match(/Beds?(?:rooms)?:\s*([^,|]+)/i);
+              if (bedsMatch) fbBeds = bedsMatch[1].trim();
+
+              const budgetMatch = desc.match(/Budget:\s*(?:AED\s*)?([0-9,]+)\s*(?:–|-)\s*([0-9,]+|Max)/i);
+              if (budgetMatch) {
+                fbMin = budgetMatch[1].replace(/,/g, '');
+                if (budgetMatch[2] !== 'Max') fbMax = budgetMatch[2].replace(/,/g, '');
+              }
+
+              const payMatch = desc.match(/Payment Method:\s*([^,|]+)/i);
+              if (payMatch) fbPm = payMatch[1].trim();
+
+              const notesMatch = desc.match(/Notes:\s*([^,|]+)/i);
+              if (notesMatch) fbKeyReq = notesMatch[1].trim();
+
+              const nextMatch = desc.match(/Next Action:\s*([^,|]+)/i);
+              if (nextMatch) fbNextAction = nextMatch[1].trim();
+              break;
+            }
+          }
         }
 
-        if (Array.isArray(devData) && devData.length > 0) {
-          setDevelopers(devData.filter((d: any) => d.is_active).map((d: any) => d.name));
+        if (opp) {
+          setActiveOppId(opp.id);
         }
 
-        if (Array.isArray(projData) && projData.length > 0) {
-          setProjects(projData.filter((p: any) => p.is_active).map((p: any) => p.name));
-        }
+        // Opportunity Type
+        const oppTypeVal = (opp?.opportunity_type || fbOppType || 'buyer').toLowerCase();
+        setOpportunityType(oppTypeVal);
 
-        if (Array.isArray(commData) && commData.length > 0) {
-          setCommunities(commData.filter((c: any) => c.is_active).map((c: any) => c.name));
-        }
-
-        if (Array.isArray(oppTypesData) && oppTypesData.length > 0) {
-          setOpportunityTypeOptions(
-            oppTypesData.filter((ot: any) => ot.is_active).map((ot: any) => ({
-              value: ot.slug || ot.name,
+        const loadedOppTypes = Array.isArray(oppTypesData) && oppTypesData.length > 0
+          ? oppTypesData.filter((ot: any) => ot.is_active).map((ot: any) => ({
+              value: (ot.slug || ot.name).toLowerCase(),
               label: ot.name,
             }))
-          );
+          : [...OPPORTUNITY_TYPES];
+
+        if (oppTypeVal && !loadedOppTypes.some((t: any) => t.value === oppTypeVal)) {
+          loadedOppTypes.push({ value: oppTypeVal, label: `${oppTypeVal.toUpperCase()} Opportunity` });
         }
+        setOpportunityTypeOptions(loadedOppTypes);
+
+        // Temperature
+        const tempVal = (opp?.temperature || fbTemp || 'warm').toLowerCase();
+        setTemperature(tempVal);
+
+        // Target Developer
+        const devVal = opp ? (opp.developer || qual.developer || '') : fbDev;
+        setDeveloper(devVal);
+
+        const activeCatalogDevs = Array.isArray(devData) ? devData.filter((d: any) => d.is_active).map((d: any) => d.name) : [];
+        const allDevs = Array.from(new Set([...INITIAL_DEVELOPERS, ...activeCatalogDevs, devVal].filter(Boolean)));
+        setDevelopers(allDevs);
+
+        // Preferred Community
+        const commVal = opp ? (opp.community || qual.community || '') : fbComm;
+        setCommunity(commVal);
+
+        const activeCatalogComms = Array.isArray(commData) ? commData.filter((c: any) => c.is_active).map((c: any) => c.name) : [];
+        const allComms = Array.from(new Set([...INITIAL_COMMUNITIES, ...activeCatalogComms, commVal].filter(Boolean)));
+        setCommunities(allComms);
+
+        // Target Project
+        const projVal = opp ? (opp.project || qual.project || qual.building_name || '') : fbProj;
+        setProject(projVal);
+
+        const activeCatalogProjs = Array.isArray(projData) ? projData.filter((p: any) => p.is_active).map((p: any) => p.name) : [];
+        const allProjs = Array.from(new Set([...INITIAL_PROJECTS, ...activeCatalogProjs, projVal].filter(Boolean)));
+        setProjects(allProjs);
+
+        // Specific Property Unit
+        const propVal = opp ? (opp.project_property || qual.project_property || qual.unit_number || '') : fbUnit;
+        setProjectProperty(propVal);
+
+        const updatedPropMap: Record<string, string[]> = { ...INITIAL_PROJECT_PROPERTIES };
+        if (projVal && propVal) {
+          updatedPropMap[projVal] = Array.from(new Set([...(updatedPropMap[projVal] || []), propVal]));
+        }
+        setProjectPropertiesMap(updatedPropMap);
+
+        // Property Type
+        const rawPropType = opp ? (opp.property_type || qual.property_type || '') : fbPropType;
+        const normPropType = normalizePropertyType(rawPropType);
+        setPropertyType(normPropType);
+
+        if (normPropType && !PROPERTY_TYPES.includes(normPropType)) {
+          setPropertyTypeOptions((prev) => Array.from(new Set([...prev, normPropType])));
+        }
+
+        // Bedrooms
+        const rawBeds = opp ? (opp.bedrooms || qual.bedrooms || '') : fbBeds;
+        const normBeds = normalizeBedrooms(rawBeds);
+        setBedrooms(normBeds);
+
+        if (normBeds && !BEDROOMS.includes(normBeds)) {
+          setBedroomOptions((prev) => Array.from(new Set([...prev, normBeds])));
+        }
+
+        // Budget Min & Max
+        const bMin = opp ? (opp.budget_min ? String(opp.budget_min) : '') : fbMin;
+        const bMax = opp ? (opp.budget_max ? String(opp.budget_max) : '') : fbMax;
+        setBudgetMin(bMin);
+        setBudgetMax(bMax);
+
+        // Payment Method
+        const rawPm = opp ? (opp.cash_or_finance || qual.cash_or_finance || '') : fbPm;
+        const normPm = normalizePaymentMethod(rawPm);
+        setPaymentMethod(normPm);
+
+        if (normPm && !PAYMENT_METHODS.some((pm) => pm.value === normPm)) {
+          setPaymentMethodOptions((prev) => [...prev, { value: normPm, label: rawPm || normPm }]);
+        }
+
+        // Key Requirement / Notes
+        const keyReqVal = opp ? (opp.key_requirement || '') : fbKeyReq;
+        setKeyRequirement(keyReqVal);
+
+        // Sales Ownership
+        const ownerVal = opp ? (opp.current_owner_name || contactData.assigned_to || '') : (contactData.assigned_to || '');
+        setAssignedOwner(ownerVal);
+
+        const rawUsers = Array.isArray(usersData) ? usersData : (usersData?.users || []);
+        const userOpts = rawUsers.map((u: any) => ({
+          value: u.name,
+          label: `${u.name} (${u.role || u.department || 'Sales Advisor'})`,
+        }));
+        const allOwnerOpts = [
+          { value: 'Unassigned', label: 'Unassigned / Auto-Distribute (Rotation Pool)' },
+          ...userOpts,
+        ];
+        if (ownerVal && !allOwnerOpts.some((o: any) => o.value === ownerVal)) {
+          allOwnerOpts.push({ value: ownerVal, label: `${ownerVal} (Assigned Advisor)` });
+        }
+        setOwnerOptions(allOwnerOpts);
+
+        // Next Action & Due Date
+        const nextActionVal = opp ? (opp.next_action || '') : fbNextAction;
+        setNextAction(nextActionVal);
+
+        const dueDateVal = opp && opp.next_action_due_at ? opp.next_action_due_at.substring(0, 16) : '';
+        setNextActionDueDate(dueDateVal);
 
         setLoading(false);
       })
@@ -381,6 +620,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
         setLoading(false);
       });
   }, [contactId]);
+
   // Frontend Validation (3 mandatory fields)
   const validateForm = () => {
     const errs: Record<string, string> = {};
@@ -468,7 +708,9 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
           secondary_phone: secondaryPhone || null,
           email,
           nationality: nationality || null,
+          emirates_id: emiratesId || null,
           source: source ? (subSource ? `${source} (${subSource})` : source) : null,
+          assigned_owner: assignedOwner || null,
           utm_source: utmSource || null,
           utm_medium: utmMedium || null,
           utm_campaign: utmCampaign || null,
@@ -478,11 +720,11 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
         }),
       });
 
-      // Step 2: Create or Update Opportunity Details
+      // Step 2: If an active Opportunity exists, update its qualification details, or create one if specs are provided
       const oppPayload = {
         contact_id: contactId,
         opportunity_type: opportunityType || 'buyer',
-        temperature: temperature || 'hot',
+        temperature: temperature || 'warm',
         developer: developer || null,
         community: community || null,
         project: project || null,
@@ -495,7 +737,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
         key_requirement: keyRequirement || 'Updated Inquiry Details',
         next_action: nextAction || 'Follow up with updated lead requirements',
         next_action_due_at: nextActionDueDate || null,
-        current_owner_name: assignedOwner || 'Mako',
+        current_owner_name: assignedOwner && assignedOwner !== 'Unassigned' ? assignedOwner : 'Unassigned',
       };
 
       if (activeOppId) {
@@ -503,10 +745,13 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
           method: 'POST',
           body: JSON.stringify(oppPayload),
         });
-      } else {
+      } else if (developer || community || project || budgetMin || budgetMax || nextAction || opportunityType) {
         await fetchApi('/opportunities', {
           method: 'POST',
-          body: JSON.stringify(oppPayload),
+          body: JSON.stringify({
+            ...oppPayload,
+            stage: 'new',
+          }),
         });
       }
 
@@ -601,7 +846,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
           )}
 
           {/* MAIN FORM CONTAINER */}
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6 text-xs">
             
             {/* SECTION 1: Client Personal Profile */}
             <div className="bg-white border border-[#E8E4DC] rounded-lg p-6 space-y-4 shadow-2xs">
@@ -759,14 +1004,14 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
             {/* SECTION: Marketing & UTM Attribution Parameters */}
             <div className="bg-white border border-[#E8E4DC] rounded-lg p-6 space-y-4 shadow-2xs">
               <div className="border-b border-[#E8E4DC] pb-3 flex items-center justify-between">
-                <h2 className="font-heading font-bold text-base text-[#081428] flex items-center gap-2 uppercase tracking-wider">
+                <h2 className="font-heading font-bold text-sm text-[#081428] flex items-center gap-2 uppercase tracking-wider">
                   <Target className="w-4 h-4 text-[#C8A147]" />
                   <span>Marketing & UTM Parameters</span>
                 </h2>
                 <span className="text-[10px] text-[#C8A147] font-semibold uppercase tracking-wider bg-[#F9F6EE] px-2.5 py-1 rounded border border-[#C8A147]/30">Campaign Attribution</span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                 {/* 1. UTM Source */}
                 <div>
                   <label className="block text-[#081428] font-semibold mb-1">UTM Source</label>
@@ -888,7 +1133,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
                     Payment Plan / Funding <span className="text-slate-400 font-normal">(Optional)</span>
                   </label>
                   <SearchableSelect
-                    options={PAYMENT_METHODS}
+                    options={paymentMethodOptions}
                     value={paymentMethod}
                     onChange={setPaymentMethod}
                     placeholder="Please Select..."
@@ -943,7 +1188,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
                     Property Type <span className="text-slate-400 font-normal">(Optional)</span>
                   </label>
                   <SearchableSelect
-                    options={PROPERTY_TYPES.map((pt) => ({ value: pt, label: pt }))}
+                    options={propertyTypeOptions.map((pt) => ({ value: pt, label: pt }))}
                     value={propertyType}
                     onChange={setPropertyType}
                     placeholder="Please Select..."
@@ -955,7 +1200,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
                     Bedrooms <span className="text-slate-400 font-normal">(Optional)</span>
                   </label>
                   <SearchableSelect
-                    options={BEDROOMS.map((b) => ({ value: b, label: b }))}
+                    options={bedroomOptions.map((b) => ({ value: b, label: b }))}
                     value={bedrooms}
                     onChange={setBedrooms}
                     placeholder="Please Select..."

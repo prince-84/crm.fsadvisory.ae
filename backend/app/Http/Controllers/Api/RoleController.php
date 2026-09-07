@@ -123,6 +123,7 @@ class RoleController extends Controller
                     ['key' => 'queue.view', 'label' => 'View Sales Queue', 'desc' => 'Access My Queue and pending follow-ups'],
                     ['key' => 'queue.update_status', 'label' => 'Update Actions & Status', 'desc' => 'Log communication and schedule next actions'],
                     ['key' => 'queue.calendar', 'label' => 'Manage Calendar & Appointments', 'desc' => 'Book client viewings and calendar appointments'],
+                    ['key' => 'queue.bulk_delete', 'label' => 'Bulk Delete Queue Leads', 'desc' => 'Select multiple leads in My Queue and delete them simultaneously'],
                 ]
             ],
             [
@@ -133,6 +134,7 @@ class RoleController extends Controller
                     ['key' => 'deals.create', 'label' => 'Create Opportunities', 'desc' => 'Open deals from qualified leads'],
                     ['key' => 'deals.edit', 'label' => 'Move Stages & Financials', 'desc' => 'Advance pipeline stages and update commission numbers'],
                     ['key' => 'deals.delete', 'label' => 'Delete Opportunities', 'desc' => 'Archive or cancel ongoing deals'],
+                    ['key' => 'deals.bulk_delete', 'label' => 'Bulk Delete Opportunities', 'desc' => 'Select multiple deals and delete them simultaneously'],
                 ]
             ],
             [

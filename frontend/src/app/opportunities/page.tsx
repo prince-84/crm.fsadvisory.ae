@@ -38,10 +38,14 @@ import Swal from 'sweetalert2';
 
 export default function OpportunitiesPage() {
   const [canViewDeals, setCanViewDeals] = useState<boolean | null>(null);
+  const [canDeleteDeals, setCanDeleteDeals] = useState<boolean>(false);
+  const [canBulkDeleteDeals, setCanBulkDeleteDeals] = useState<boolean>(false);
 
   useEffect(() => {
     const checkPerms = () => {
       setCanViewDeals(hasPermission('deals.view'));
+      setCanDeleteDeals(hasPermission('deals.delete'));
+      setCanBulkDeleteDeals(hasPermission('deals.bulk_delete'));
     };
     checkPerms();
     window.addEventListener('crm_user_updated', checkPerms);
@@ -51,6 +55,10 @@ export default function OpportunitiesPage() {
       window.removeEventListener('storage', checkPerms);
     };
   }, []);
+
+  // Multi-Selection State for Bulk Actions
+  const [selectedOppIds, setSelectedOppIds] = useState<number[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
   const [pipelineData, setPipelineData] = useState<any>({
     contacted: [],
     qualified: [],
@@ -252,6 +260,68 @@ export default function OpportunitiesPage() {
       } catch (err) {
         console.error('Failed to delete opportunity:', err);
         Swal.fire('Error', 'Failed to delete opportunity.', 'error');
+      }
+    }
+  };
+
+  // Clear selection whenever view mode or filters change
+  useEffect(() => {
+    setSelectedOppIds([]);
+  }, [viewMode, searchQuery, filterTemp, filterType, selectedOwner]);
+
+  // Toggle selection for a single opportunity
+  const handleToggleSelectOpp = (id: number) => {
+    setSelectedOppIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // Toggle select all on current filtered list
+  const handleToggleSelectAllOpps = () => {
+    if (selectedOppIds.length === filteredOpps.length && filteredOpps.length > 0) {
+      setSelectedOppIds([]);
+    } else {
+      setSelectedOppIds(filteredOpps.map((o: any) => o.id));
+    }
+  };
+
+  // Bulk Delete Opportunities
+  const handleBulkDeleteOpps = async () => {
+    if (selectedOppIds.length === 0) return;
+
+    const result = await Swal.fire({
+      title: 'Delete Selected Deals?',
+      text: `Are you sure you want to permanently delete ${selectedOppIds.length} selected opportunities? Associated contact profiles will remain intact in the Lead Pool.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#D93838',
+      cancelButtonColor: '#6E6E6E',
+      confirmButtonText: `Yes, Delete ${selectedOppIds.length} Deals`,
+    });
+
+    if (result.isConfirmed) {
+      setBulkLoading(true);
+      try {
+        await fetchApi('/opportunities/bulk-delete', {
+          method: 'POST',
+          body: JSON.stringify({ ids: selectedOppIds }),
+        });
+
+        Swal.fire({
+          icon: 'success',
+          title: 'Opportunities Deleted',
+          text: `${selectedOppIds.length} opportunities have been successfully deleted.`,
+          timer: 1800,
+          showConfirmButton: false,
+        });
+
+        setSelectedOppIds([]);
+        loadOpportunitiesData();
+      } catch (err: any) {
+        console.error('Failed to bulk delete opportunities:', err);
+        Swal.fire('Error', err.message || 'Failed to delete opportunities.', 'error');
+      } finally {
+        setBulkLoading(false);
       }
     }
   };
@@ -711,6 +781,17 @@ export default function OpportunitiesPage() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-[#E8E4DC] bg-[#FAF8F5] text-[10px] tracking-wider font-bold text-[#6E6E6E] uppercase">
+                      {canBulkDeleteDeals && (
+                        <th className="py-3 px-3 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={filteredOpps.length > 0 && selectedOppIds.length === filteredOpps.length}
+                            onChange={handleToggleSelectAllOpps}
+                            className="w-4 h-4 rounded border-[#E8E4DC] accent-[#C8A147] cursor-pointer align-middle"
+                            title="Select all on current list"
+                          />
+                        </th>
+                      )}
                       <th className="py-3 px-4">Deal ID</th>
                       <th className="py-3 px-4">Client Contact</th>
                       <th className="py-3 px-4">Type & Temp</th>
@@ -725,14 +806,14 @@ export default function OpportunitiesPage() {
                   <tbody className="divide-y divide-[#E8E4DC]">
                     {loading ? (
                       <tr>
-                        <td colSpan={9} className="py-8 text-center text-[#6E6E6E]">
+                        <td colSpan={canBulkDeleteDeals ? 10 : 9} className="py-8 text-center text-[#6E6E6E]">
                           <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#C8A147] mb-2" />
                           <span>Loading Opportunities...</span>
                         </td>
                       </tr>
                     ) : filteredOpps.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="py-12 text-center text-[#6E6E6E] space-y-2">
+                        <td colSpan={canBulkDeleteDeals ? 10 : 9} className="py-12 text-center text-[#6E6E6E] space-y-2">
                           <Briefcase className="w-8 h-8 text-slate-300 mx-auto" />
                           <div className="font-bold text-sm text-[#081428]">No Opportunities Found</div>
                           <p className="text-xs text-[#6E6E6E]">Try adjusting your search or filters.</p>
@@ -740,7 +821,22 @@ export default function OpportunitiesPage() {
                       </tr>
                     ) : (
                       filteredOpps.map((opp: any) => (
-                        <tr key={opp.id} className="hover:bg-[#FAF8F5] transition-colors">
+                        <tr 
+                          key={opp.id} 
+                          className={`transition-colors ${
+                            selectedOppIds.includes(opp.id) ? 'bg-[#FAF6EC] hover:bg-[#F5EEDC]' : 'hover:bg-[#FAF8F5]'
+                          }`}
+                        >
+                          {canBulkDeleteDeals && (
+                            <td className="py-3.5 px-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedOppIds.includes(opp.id)}
+                                onChange={() => handleToggleSelectOpp(opp.id)}
+                                className="w-4 h-4 rounded border-[#E8E4DC] accent-[#C8A147] cursor-pointer align-middle"
+                              />
+                            </td>
+                          )}
                           <td className="py-3.5 px-4 font-mono font-bold text-[#081428]">#{opp.id}</td>
                           <td className="py-3.5 px-4 font-bold text-[#081428]">
                             <Link
@@ -794,15 +890,17 @@ export default function OpportunitiesPage() {
                               >
                                 View Deal
                               </Link>
-                              <button
-                                onClick={() =>
-                                  handleDeleteOpportunity(opp.id, opp.contact?.name || `Opportunity #${opp.id}`)
-                                }
-                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
-                                title="Delete Opportunity"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {canDeleteDeals && (
+                                <button
+                                  onClick={() =>
+                                    handleDeleteOpportunity(opp.id, opp.contact?.name || `Opportunity #${opp.id}`)
+                                  }
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                                  title="Delete Opportunity"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -810,6 +908,39 @@ export default function OpportunitiesPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* FLOATING BULK DELETE ACTION BAR */}
+          {canBulkDeleteDeals && selectedOppIds.length > 0 && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#081428] text-white px-5 py-3 rounded-xl shadow-2xl border border-[#C8A147]/40 flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4 duration-200">
+              <div className="flex items-center gap-2 font-bold text-xs">
+                <span className="bg-[#C8A147] text-[#081428] w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-extrabold">
+                  {selectedOppIds.length}
+                </span>
+                <span>{selectedOppIds.length === 1 ? 'Deal Selected' : 'Deals Selected'}</span>
+              </div>
+
+              <div className="h-4 w-px bg-white/20" />
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleBulkDeleteOpps}
+                  disabled={bulkLoading}
+                  className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{bulkLoading ? 'Deleting...' : 'Delete Selected'}</span>
+                </button>
+
+                <button
+                  onClick={() => setSelectedOppIds([])}
+                  className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer rounded"
+                  title="Clear selection"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
           )}

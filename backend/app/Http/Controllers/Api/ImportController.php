@@ -9,12 +9,85 @@ use App\Models\BuyerQualification;
 use App\Models\Activity;
 use App\Models\LeadSource;
 use App\Models\LeadSubSource;
+use App\Models\Developer;
+use App\Models\Community;
+use App\Models\Project;
+use App\Models\PropertyType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class ImportController extends Controller
 {
+    /**
+     * Find closest matching string from a catalog list using fuzzy / normalized scoring.
+     */
+    private function findBestMatch(string $value, array $catalogList): array
+    {
+        $val = trim(mb_strtolower($value, 'UTF-8'));
+        if (empty($val) || empty($catalogList)) {
+            return ['match' => null, 'confidence' => 0];
+        }
+
+        $bestMatch = null;
+        $highestScore = 0;
+
+        // Noise words for developers/projects/communities/property types
+        $noiseWords = ['properties', 'developments', 'development', 'developer', 'realty', 'real estate', 'group', 'holding', 'holdings', 'llc', 'tower', 'towers', 'residence', 'residences', 'dubai', 'the', 'project'];
+        $cleanVal = preg_replace('/\b(' . implode('|', $noiseWords) . ')\b/iu', '', $val);
+        $cleanVal = trim(preg_replace('/\s+/u', ' ', $cleanVal));
+
+        foreach ($catalogList as $catItem) {
+            $cat = trim((string)$catItem);
+            $catLower = mb_strtolower($cat, 'UTF-8');
+
+            // 1. Exact match (case-insensitive)
+            if ($catLower === $val) {
+                return ['match' => $cat, 'confidence' => 100];
+            }
+
+            // 2. Cleaned comparison (noise-words stripped)
+            $cleanCat = preg_replace('/\b(' . implode('|', $noiseWords) . ')\b/iu', '', $catLower);
+            $cleanCat = trim(preg_replace('/\s+/u', ' ', $cleanCat));
+
+            if (!empty($cleanVal) && !empty($cleanCat) && $cleanVal === $cleanCat) {
+                if ($highestScore < 95) {
+                    $highestScore = 95;
+                    $bestMatch = $cat;
+                }
+            }
+
+            // 3. Substring match
+            if (str_contains($catLower, $val) || str_contains($val, $catLower)) {
+                $subScore = 85;
+                if ($subScore > $highestScore) {
+                    $highestScore = $subScore;
+                    $bestMatch = $cat;
+                }
+            }
+
+            // 4. similar_text percentage
+            similar_text($val, $catLower, $percent);
+            if ($percent > $highestScore) {
+                $highestScore = (int)$percent;
+                $bestMatch = $cat;
+            }
+
+            if (!empty($cleanVal) && !empty($cleanCat)) {
+                similar_text($cleanVal, $cleanCat, $cleanPercent);
+                if ($cleanPercent > $highestScore) {
+                    $highestScore = (int)$cleanPercent;
+                    $bestMatch = $cat;
+                }
+            }
+        }
+
+        if ($highestScore >= 60) {
+            return ['match' => $bestMatch, 'confidence' => $highestScore];
+        }
+
+        return ['match' => null, 'confidence' => $highestScore];
+    }
     /**
      * Recursively convert and sanitize strings to valid UTF-8.
      */
@@ -210,37 +283,22 @@ class ImportController extends Controller
             ], 422);
         }
 
-        // Fetch all existing contact phones & names from DB
-        $existingContacts = Contact::withTrashed()->select('id', 'name', 'phone', 'secondary_phone', 'mobile_phone')->get();
+        // Duplicate check is scoped strictly within the uploaded file itself.
+        // Database duplicate checking is intentionally removed per requirement.
+        $filePhoneMap = [];
 
-        $existingPhoneMap = [];
-        foreach ($existingContacts as $c) {
-            $normPrimary = $this->normalizePhone($c->phone);
-            $normSec = $this->normalizePhone($c->secondary_phone);
-            $normMob = $this->normalizePhone($c->mobile_phone);
+        // Fetch Master Catalogs for Value Mapping and Standardization
+        $catalogDevelopers = Developer::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
+        $catalogCommunities = Community::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
+        $catalogProjects = Project::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
+        $catalogPropertyTypes = PropertyType::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
 
-            if (!empty($normPrimary)) {
-                $existingPhoneMap[$normPrimary] = [
-                    'id' => $c->id,
-                    'name' => $this->cleanUtf8($c->name),
-                    'matched_field' => 'Primary Phone (' . $c->phone . ')',
-                ];
-            }
-            if (!empty($normSec)) {
-                $existingPhoneMap[$normSec] = [
-                    'id' => $c->id,
-                    'name' => $this->cleanUtf8($c->name),
-                    'matched_field' => 'Secondary Phone (' . $c->secondary_phone . ')',
-                ];
-            }
-            if (!empty($normMob)) {
-                $existingPhoneMap[$normMob] = [
-                    'id' => $c->id,
-                    'name' => $this->cleanUtf8($c->name),
-                    'matched_field' => 'Mobile No (' . $c->mobile_phone . ')',
-                ];
-            }
-        }
+        $catValues = [
+            'developer' => [],
+            'community' => [],
+            'project' => [],
+            'property_type' => [],
+        ];
 
         $analyzedRecords = [];
         $duplicatesList = [];
@@ -251,8 +309,7 @@ class ImportController extends Controller
             $name = $this->getFieldValue($row, ['name', 'Name', 'Lead Name', 'Full Name', 'Client Name', 'Contact Name'], 'Lead #' . ($index + 1));
             
             $phone = mb_substr($this->getFieldValue($row, ['phone', 'Primary Phone', 'Phone', 'Work Phone']), 0, 250, 'UTF-8');
-            $secPhone = mb_substr($this->getFieldValue($row, ['secondary_phone', 'Secondary Phone', 'Sec Phone', 'Other Phone Number', 'Home Phone', 'Other Phone']), 0, 250, 'UTF-8');
-            $mobPhone = mb_substr($this->getFieldValue($row, ['mobile_phone', 'Mobile No', 'Mobile Number', 'Mobile', 'Mobile Phone', 'Cell No', 'Cell']), 0, 250, 'UTF-8');
+            $secPhone = mb_substr($this->getFieldValue($row, ['secondary_phone', 'Secondary Phone', 'Sec Phone', 'Other Phone Number', 'Home Phone', 'Other Phone', 'mobile_phone', 'Mobile No', 'Mobile Number', 'Mobile', 'Mobile Phone', 'Cell No', 'Cell']), 0, 250, 'UTF-8');
 
             $rawEmail = $this->getFieldValue($row, ['email', 'Email', 'Work E-mail', 'Home E-mail', 'Other E-mail', 'E-mail', 'Newsletters email']);
             if (!empty($rawEmail) && str_contains($rawEmail, '@') && str_contains($rawEmail, '.')) {
@@ -279,12 +336,26 @@ class ImportController extends Controller
             $developer = $this->getFieldValue($row, ['developer', 'Developer']);
             $community = $this->getFieldValue($row, ['community', 'Community']);
             $project = $this->getFieldValue($row, ['project', 'Project']);
-            $projectProperty = $this->getFieldValue($row, ['project_property', 'Unit / Property', 'Property']);
+            $projectProperty = $this->getFieldValue($row, ['project_property', 'Unit / Property', 'Property', 'property_type', 'Property Type']);
             $bedrooms = $this->getFieldValue($row, ['bedrooms', 'Bedrooms']);
             $budgetMin = $this->getFieldValue($row, ['budget_min', 'Min Budget', 'Budget Min']);
             $budgetMax = $this->getFieldValue($row, ['budget_max', 'Max Budget', 'Budget Max']);
             $cashOrFinance = $this->getFieldValue($row, ['cash_or_finance', 'Payment Method']);
             $keyReq = $this->getFieldValue($row, ['key_requirement', 'Key Requirement']);
+
+            // Catalog frequency counts for mapping preview
+            if (!empty($developer)) {
+                $catValues['developer'][$developer] = ($catValues['developer'][$developer] ?? 0) + 1;
+            }
+            if (!empty($community)) {
+                $catValues['community'][$community] = ($catValues['community'][$community] ?? 0) + 1;
+            }
+            if (!empty($project)) {
+                $catValues['project'][$project] = ($catValues['project'][$project] ?? 0) + 1;
+            }
+            if (!empty($projectProperty)) {
+                $catValues['property_type'][$projectProperty] = ($catValues['property_type'][$projectProperty] ?? 0) + 1;
+            }
 
             // SLA & Owner
             $assignedOwner = $this->getFieldValue($row, ['assigned_owner', 'Assigned Owner', 'Owner', 'Responsible', 'Created by'], 'Unassigned');
@@ -293,20 +364,16 @@ class ImportController extends Controller
 
             $normP = $this->normalizePhone($phone);
             $normS = $this->normalizePhone($secPhone);
-            $normM = $this->normalizePhone($mobPhone);
 
             $isDuplicate = false;
             $matchedContactInfo = null;
 
-            if (!empty($normP) && isset($existingPhoneMap[$normP])) {
+            if (!empty($normP) && isset($filePhoneMap[$normP])) {
                 $isDuplicate = true;
-                $matchedContactInfo = $existingPhoneMap[$normP];
-            } elseif (!empty($normS) && isset($existingPhoneMap[$normS])) {
+                $matchedContactInfo = $filePhoneMap[$normP];
+            } elseif (!empty($normS) && isset($filePhoneMap[$normS])) {
                 $isDuplicate = true;
-                $matchedContactInfo = $existingPhoneMap[$normS];
-            } elseif (!empty($normM) && isset($existingPhoneMap[$normM])) {
-                $isDuplicate = true;
-                $matchedContactInfo = $existingPhoneMap[$normM];
+                $matchedContactInfo = $filePhoneMap[$normS];
             }
 
             $recordData = [
@@ -314,7 +381,6 @@ class ImportController extends Controller
                 'name' => $name,
                 'phone' => $phone,
                 'secondary_phone' => $secPhone,
-                'mobile_phone' => $mobPhone,
                 'email' => $email,
                 'nationality' => $nationality,
                 'created_at' => $createdAt,
@@ -336,7 +402,7 @@ class ImportController extends Controller
                 'next_action_due_at' => $nextActionDue,
                 'is_duplicate' => $isDuplicate,
                 'matched_with' => $matchedContactInfo ? $matchedContactInfo['name'] . ' [' . $matchedContactInfo['matched_field'] . ']' : null,
-                'matched_contact_id' => $matchedContactInfo ? $matchedContactInfo['id'] : null,
+                'matched_contact_id' => null,
             ];
 
             if ($isDuplicate) {
@@ -345,18 +411,61 @@ class ImportController extends Controller
             } else {
                 $newCount++;
                 if (!empty($normP)) {
-                    $existingPhoneMap[$normP] = ['id' => null, 'name' => $name, 'matched_field' => 'Row #' . ($index + 1) . ' in File'];
+                    $filePhoneMap[$normP] = ['id' => null, 'name' => $name, 'matched_field' => 'Row #' . ($index + 1) . ' in File'];
                 }
                 if (!empty($normS)) {
-                    $existingPhoneMap[$normS] = ['id' => null, 'name' => $name, 'matched_field' => 'Row #' . ($index + 1) . ' in File'];
-                }
-                if (!empty($normM)) {
-                    $existingPhoneMap[$normM] = ['id' => null, 'name' => $name, 'matched_field' => 'Row #' . ($index + 1) . ' in File'];
+                    $filePhoneMap[$normS] = ['id' => null, 'name' => $name, 'matched_field' => 'Row #' . ($index + 1) . ' in File'];
                 }
             }
 
             $analyzedRecords[] = $recordData;
         }
+
+        // Compute Unmatched Values and Suggestions
+        $unmatched = [
+            'developer' => [],
+            'community' => [],
+            'project' => [],
+            'property_type' => [],
+        ];
+
+        $catalogsMap = [
+            'developer' => $catalogDevelopers,
+            'community' => $catalogCommunities,
+            'project' => $catalogProjects,
+            'property_type' => $catalogPropertyTypes,
+        ];
+
+        foreach ($catValues as $category => $values) {
+            $catalogList = $catalogsMap[$category];
+            $catalogLowerLookup = [];
+            foreach ($catalogList as $item) {
+                $catalogLowerLookup[mb_strtolower(trim($item), 'UTF-8')] = $item;
+            }
+
+            foreach ($values as $rawVal => $count) {
+                $rawLower = mb_strtolower(trim($rawVal), 'UTF-8');
+                // Exact match exists in catalog
+                if (isset($catalogLowerLookup[$rawLower])) {
+                    continue;
+                }
+
+                $best = $this->findBestMatch($rawVal, $catalogList);
+                $unmatched[$category][] = [
+                    'file_value' => $rawVal,
+                    'count' => $count,
+                    'suggested_match' => $best['match'],
+                    'confidence' => $best['confidence'],
+                ];
+            }
+        }
+
+        $hasUnmatched = (
+            count($unmatched['developer']) > 0 ||
+            count($unmatched['community']) > 0 ||
+            count($unmatched['project']) > 0 ||
+            count($unmatched['property_type']) > 0
+        );
 
         return response()->json($this->cleanUtf8([
             'total_records' => count($records),
@@ -364,17 +473,27 @@ class ImportController extends Controller
             'duplicate_count' => $duplicateCount,
             'duplicates' => $duplicatesList,
             'analyzed_records' => $analyzedRecords,
+            'has_unmatched' => $hasUnmatched,
+            'unmatched' => $unmatched,
+            'catalogs' => [
+                'developer' => $catalogDevelopers,
+                'community' => $catalogCommunities,
+                'project' => $catalogProjects,
+                'property_type' => $catalogPropertyTypes,
+            ],
         ]));
     }
 
     /**
-     * Execute final database import with selected duplicate strategy.
+     * Execute final database import with selected duplicate strategy and value mappings.
      */
     public function execute(Request $request)
     {
         $rawRecords = $request->input('records', []);
         $records = $this->cleanUtf8($rawRecords);
         $duplicateMode = $request->input('duplicate_mode', 'skip');
+        $valueMappings = $request->input('value_mappings', []);
+        $newCatalogItems = $request->input('new_catalog_items', []);
 
         if (empty($records)) {
             return response()->json(['message' => 'No analyzed records provided for import.'], 400);
@@ -386,6 +505,37 @@ class ImportController extends Controller
 
         DB::beginTransaction();
         try {
+            // Register any newly approved catalog items into Master Settings
+            if (!empty($newCatalogItems) && is_array($newCatalogItems)) {
+                foreach ($newCatalogItems as $newItem) {
+                    $cat = $newItem['category'] ?? '';
+                    $name = trim((string)($newItem['name'] ?? ''));
+                    if (empty($name)) continue;
+
+                    if ($cat === 'developer') {
+                        Developer::firstOrCreate(
+                            ['name' => mb_substr($name, 0, 255, 'UTF-8')],
+                            ['is_active' => true, 'sort_order' => 99]
+                        );
+                    } elseif ($cat === 'community') {
+                        Community::firstOrCreate(
+                            ['name' => mb_substr($name, 0, 255, 'UTF-8')],
+                            ['city' => 'Dubai', 'is_active' => true, 'sort_order' => 99]
+                        );
+                    } elseif ($cat === 'project') {
+                        Project::firstOrCreate(
+                            ['name' => mb_substr($name, 0, 255, 'UTF-8')],
+                            ['is_active' => true, 'sort_order' => 99]
+                        );
+                    } elseif ($cat === 'property_type') {
+                        PropertyType::firstOrCreate(
+                            ['name' => mb_substr($name, 0, 255, 'UTF-8')],
+                            ['is_active' => true, 'sort_order' => 99]
+                        );
+                    }
+                }
+            }
+
             foreach ($records as $row) {
                 $isDuplicate = !empty($row['is_duplicate']);
                 $matchedContactId = $row['matched_contact_id'] ?? null;
@@ -400,8 +550,11 @@ class ImportController extends Controller
                         if ($contact) {
                             $updateData = [];
                             if (!empty($row['email'])) $updateData['email'] = mb_substr($row['email'], 0, 250, 'UTF-8');
-                            if (!empty($row['secondary_phone'])) $updateData['secondary_phone'] = mb_substr($row['secondary_phone'], 0, 250, 'UTF-8');
-                            if (!empty($row['mobile_phone'])) $updateData['mobile_phone'] = mb_substr($row['mobile_phone'], 0, 250, 'UTF-8');
+                            if (!empty($row['secondary_phone'])) {
+                                $updateData['secondary_phone'] = mb_substr($row['secondary_phone'], 0, 250, 'UTF-8');
+                            } elseif (!empty($row['mobile_phone'])) {
+                                $updateData['secondary_phone'] = mb_substr($row['mobile_phone'], 0, 250, 'UTF-8');
+                            }
                             if (!empty($row['nationality'])) $updateData['nationality'] = mb_substr($row['nationality'], 0, 100, 'UTF-8');
                             
                             if (!empty($updateData)) {
@@ -418,6 +571,24 @@ class ImportController extends Controller
                             continue;
                         }
                     }
+                }
+
+                // Apply Value Mappings / Substitutions
+                $dev = $row['developer'] ?? null;
+                if (!empty($dev) && isset($valueMappings['developer'][$dev])) {
+                    $dev = $valueMappings['developer'][$dev];
+                }
+                $comm = $row['community'] ?? null;
+                if (!empty($comm) && isset($valueMappings['community'][$comm])) {
+                    $comm = $valueMappings['community'][$comm];
+                }
+                $proj = $row['project'] ?? null;
+                if (!empty($proj) && isset($valueMappings['project'][$proj])) {
+                    $proj = $valueMappings['project'][$proj];
+                }
+                $prop = $row['project_property'] ?? null;
+                if (!empty($prop) && isset($valueMappings['property_type'][$prop])) {
+                    $prop = $valueMappings['property_type'][$prop];
                 }
 
                 // Multibyte safe initials calculation
@@ -454,11 +625,10 @@ class ImportController extends Controller
                     'name' => mb_substr($row['name'] ?? 'Lead', 0, 250, 'UTF-8'),
                     'initials' => mb_substr($initials, 0, 10, 'UTF-8'),
                     'phone' => mb_substr($row['phone'] ?? '', 0, 250, 'UTF-8'),
-                    'secondary_phone' => !empty($row['secondary_phone']) ? mb_substr($row['secondary_phone'], 0, 250, 'UTF-8') : null,
-                    'mobile_phone' => !empty($row['mobile_phone']) ? mb_substr($row['mobile_phone'], 0, 250, 'UTF-8') : null,
+                    'secondary_phone' => !empty($row['secondary_phone']) ? mb_substr($row['secondary_phone'], 0, 250, 'UTF-8') : (!empty($row['mobile_phone']) ? mb_substr($row['mobile_phone'], 0, 250, 'UTF-8') : null),
                     'email' => (!empty($row['email']) && str_contains($row['email'], '@')) ? mb_substr($row['email'], 0, 250, 'UTF-8') : null,
-                    'nationality' => !empty($row['nationality']) ? mb_substr($row['nationality'], 0, 100, 'UTF-8') : null,
-                    'source' => !empty($finalSource) ? mb_substr($finalSource, 0, 250, 'UTF-8') : null,
+                    'nationality' => !empty($row['nationality']) ? mb_substr($row['nationality'], 0, 100, 'UTF-8') : 'Emirati',
+                    'source' => !empty($finalSource) ? mb_substr($finalSource, 0, 250, 'UTF-8') : 'Database',
                     'state' => $contactState,
                     'last_activity_at' => now(),
                     'created_at' => $recordCreatedAt,
@@ -467,55 +637,47 @@ class ImportController extends Controller
 
                 $contact = Contact::create($contactData);
 
-                // Create Opportunity workspace if specs exist
-                if (!empty($row['opportunity_type']) || !empty($row['community']) || !empty($row['project'])) {
-                    $oppData = [
-                        'contact_id' => $contact->id,
-                        'opportunity_type' => !empty($row['opportunity_type']) ? mb_substr(strtolower($row['opportunity_type']), 0, 50, 'UTF-8') : 'buyer',
-                        'stage' => 'qualified',
-                        'current_owner_name' => !empty($row['assigned_owner']) ? mb_substr($row['assigned_owner'], 0, 100, 'UTF-8') : 'Unassigned',
-                        'community' => !empty($row['community']) ? mb_substr($row['community'], 0, 250, 'UTF-8') : 'Dubai Project',
-                        'project' => !empty($row['project']) ? mb_substr($row['project'], 0, 250, 'UTF-8') : null,
-                        'project_property' => !empty($row['project_property']) ? mb_substr($row['project_property'], 0, 250, 'UTF-8') : null,
-                        'bedrooms' => !empty($row['bedrooms']) ? mb_substr($row['bedrooms'], 0, 50, 'UTF-8') : null,
-                        'budget_min' => $row['budget_min'] ?? null,
-                        'budget_max' => $row['budget_max'] ?? null,
-                        'cash_or_finance' => !empty($row['cash_or_finance']) ? mb_substr($row['cash_or_finance'], 0, 50, 'UTF-8') : null,
-                        'key_requirement' => $row['key_requirement'] ?? null,
-                        'next_action' => !empty($row['next_action']) ? mb_substr($row['next_action'], 0, 250, 'UTF-8') : null,
-                        'sla_status' => 'on_track',
-                        'sla_due_at' => now()->addHours(24),
-                        'created_at' => $recordCreatedAt,
-                        'updated_at' => $recordCreatedAt,
-                    ];
-
-                    if (!empty($row['next_action_due_at'])) {
-                        try {
-                            $oppData['next_action_due_at'] = $this->parseFlexibleDate($row['next_action_due_at']);
-                        } catch (\Exception $ex) {}
+                // Lead Assignment: Assign to specific advisor if provided, otherwise auto-assign via Round-Robin
+                // If the lead was marked as duplicate, preserve its 'duplicate' state and do not auto-assign to advisor pool
+                if ($contactState !== 'duplicate') {
+                    $assignedOwner = !empty($row['assigned_owner']) && $row['assigned_owner'] !== 'Unassigned' ? trim($row['assigned_owner']) : null;
+                    if (!empty($assignedOwner) && $assignedOwner !== 'auto') {
+                        $contact->update([
+                            'assigned_to' => $assignedOwner,
+                            'assigned_at' => now(),
+                            'state'       => 'assigned',
+                        ]);
+                    } else {
+                        \App\Services\LeadDistributionService::autoAssignContact($contact);
+                        $contact->refresh();
                     }
-
-                    $opp = Opportunity::create($oppData);
-
-                    BuyerQualification::create([
-                        'opportunity_id' => $opp->id,
-                        'developer' => $row['developer'] ?? null,
-                        'community' => $row['community'] ?? null,
-                        'project' => $row['project'] ?? null,
-                        'project_property' => $row['project_property'] ?? null,
-                        'bedrooms' => $row['bedrooms'] ?? null,
-                        'budget_min' => $row['budget_min'] ?? null,
-                        'budget_max' => $row['budget_max'] ?? null,
-                        'cash_or_finance' => $row['cash_or_finance'] ?? null,
-                        'key_requirement' => $row['key_requirement'] ?? null,
+                } else {
+                    Activity::create([
+                        'contact_id'  => $contact->id,
+                        'user_name'   => 'Excel Importer',
+                        'type'        => 'note',
+                        'description' => "Imported as duplicate record from file batch (Row #" . ($row['row_index'] ?? 'N/A') . "). Displayed in Duplicate tab.",
                     ]);
                 }
 
+                // Specification summary recorded in initial audit activity note (Opportunity is created MANUALLY by agent from My Queue)
+                $specSummary = [];
+                if (!empty($dev)) $specSummary[] = "Dev: {$dev}";
+                if (!empty($proj)) $specSummary[] = "Project: {$proj}";
+                if (!empty($comm)) $specSummary[] = "Area: {$comm}";
+                if (!empty($prop)) $specSummary[] = "Prop: {$prop}";
+                if (!empty($row['bedrooms'])) $specSummary[] = "Beds: {$row['bedrooms']}";
+                if (!empty($row['budget_min']) || !empty($row['budget_max'])) {
+                    $specSummary[] = "Budget: " . ($row['budget_min'] ?? '0') . ' - ' . ($row['budget_max'] ?? 'Max');
+                }
+                $specNote = !empty($specSummary) ? ' | ' . implode(', ', $specSummary) : '';
+
                 Activity::create([
                     'contact_id' => $contact->id,
+                    'opportunity_id' => null,
                     'user_name' => 'Excel Importer',
                     'type' => 'note',
-                    'description' => "Lead created via Batch Excel / CSV Importer.",
+                    'description' => "Lead created via Batch Excel / CSV Importer{$specNote}.",
                 ]);
 
                 $importedCount++;

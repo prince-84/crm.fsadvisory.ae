@@ -11,8 +11,13 @@ use App\Models\LandlordQualification;
 use App\Models\TenantQualification;
 use App\Models\OwnershipHistory;
 use App\Models\Activity;
+use App\Models\OwnerRecord;
+use App\Models\User;
+use App\Models\EmailSetting;
+use App\Mail\OpportunityEmailMailable;
 use App\Services\LeadDistributionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 use Carbon\Carbon;
 
 class OpportunityController extends Controller
@@ -50,8 +55,52 @@ class OpportunityController extends Controller
         ]);
     }
 
+    public function getStages()
+    {
+        $canonicalStages = [
+            ['key' => 'contacted', 'label' => '1. Contacted'],
+            ['key' => 'qualified', 'label' => '2. Qualified / Lead Qualification'],
+            ['key' => 'option_sent', 'label' => '3. Option Sent'],
+            ['key' => 'follow_up', 'label' => '4. Follow up'],
+            ['key' => 'meeting', 'label' => '5. Meeting / Viewing Scheduled'],
+            ['key' => 'future_prospectus', 'label' => '6. Future Prospectus'],
+            ['key' => 'closed', 'label' => '7. Closed Won 🏆'],
+            ['key' => 'closed_lost', 'label' => 'Closed Lost'],
+        ];
+
+        $dbStages = Opportunity::select('stage')
+            ->whereNotNull('stage')
+            ->where('stage', '!=', '')
+            ->distinct()
+            ->pluck('stage')
+            ->toArray();
+
+        $existingKeys = array_column($canonicalStages, 'key');
+        foreach ($dbStages as $st) {
+            if (!in_array($st, $existingKeys) && !in_array($st, ['new', 'qualification', 'handover_pending', 'sales_in_progress', 'closed_won'])) {
+                $canonicalStages[] = [
+                    'key' => $st,
+                    'label' => ucwords(str_replace('_', ' ', $st)),
+                ];
+                $existingKeys[] = $st;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'stages' => $canonicalStages,
+        ]);
+    }
+
     public function show($id)
     {
+        if (!is_numeric($id) || (int)$id <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => "Opportunity #{$id} does not exist. This lead has not been converted to an opportunity deal yet.",
+            ], 404);
+        }
+
         $opportunity = Opportunity::with([
             'contact',
             'buyerQualification',
@@ -61,7 +110,14 @@ class OpportunityController extends Controller
             'activities',
             'ownershipHistories',
             'slaBreaches'
-        ])->findOrFail($id);
+        ])->find($id);
+
+        if (!$opportunity) {
+            return response()->json([
+                'success' => false,
+                'message' => "Opportunity #{$id} was not found. It may have been deleted or archived.",
+            ], 404);
+        }
 
         return response()->json($opportunity);
     }
@@ -69,7 +125,9 @@ class OpportunityController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'contact_id' => 'required|exists:contacts,id',
+            'contact_id' => 'nullable|exists:contacts,id',
+            'owner_record_id' => 'nullable|exists:owner_records,id',
+            'stage' => 'nullable|string',
             'opportunity_type' => 'nullable|string',
             'temperature' => 'nullable|string',
             'budget_min' => 'nullable|numeric',
@@ -82,28 +140,55 @@ class OpportunityController extends Controller
             'community' => 'nullable|string',
             'property_type' => 'nullable|string',
             'bedrooms' => 'nullable|string',
+            'building_name' => 'nullable|string',
+            'unit_number' => 'nullable|string',
             'cash_or_finance' => 'nullable|string',
             'client_intent' => 'nullable|string',
             'project' => 'nullable|string',
             'project_property' => 'nullable|string',
         ]);
 
-        $contact = Contact::findOrFail($validated['contact_id']);
-        $contact->update(['state' => 'active']);
+        $ownerRecord = null;
+        if (!empty($validated['owner_record_id'])) {
+            $ownerRecord = OwnerRecord::find($validated['owner_record_id']);
+        }
 
-        $owner = $validated['current_owner_name'] ?? null;
+        if (!empty($validated['contact_id'])) {
+            $contact = Contact::findOrFail($validated['contact_id']);
+        } elseif ($ownerRecord) {
+            $phone = $ownerRecord->mobile_number ?: ($ownerRecord->phone_number ?: '+971500000000');
+            $contact = Contact::firstOrCreate(
+                ['phone' => $phone],
+                [
+                    'name' => $ownerRecord->owner_name ?: 'Property Owner',
+                    'email' => $ownerRecord->email,
+                    'source' => 'Owner Data',
+                    'state' => 'active',
+                    'assigned_to' => $ownerRecord->assigned_to ?: ($validated['current_owner_name'] ?? 'Unassigned'),
+                ]
+            );
+        } else {
+            return response()->json(['message' => 'Either contact_id or owner_record_id is required.'], 422);
+        }
+
+        $owner = $validated['current_owner_name'] ?? ($ownerRecord ? $ownerRecord->assigned_to : null);
+        $contact->update([
+            'state' => 'active',
+            'assigned_to' => $owner ?: ($contact->assigned_to ?: 'Unassigned'),
+        ]);
+        $oppType = $validated['opportunity_type'] ?? ($ownerRecord ? 'seller' : 'buyer');
 
         $opportunity = Opportunity::create([
             'contact_id' => $contact->id,
-            'opportunity_type' => $validated['opportunity_type'] ?? 'buyer',
+            'opportunity_type' => $oppType,
             'stage' => $validated['stage'] ?? 'contacted',
             'temperature' => $validated['temperature'] ?? 'hot',
             'current_owner_name' => $owner ?: 'Unassigned',
-            'originating_agent_name' => $owner ?: 'System Ingest',
+            'originating_agent_name' => $owner ?: ($ownerRecord ? 'Owner Data Bank' : 'System Ingest'),
             'department' => 'telesales',
             'budget_min' => $validated['budget_min'] ?? 1800000,
             'budget_max' => $validated['budget_max'] ?? 2200000,
-            'next_action' => $validated['next_action'] ?? 'Contact new lead — confirm requirement details',
+            'next_action' => $validated['next_action'] ?? 'Contact owner/lead — confirm requirement details',
             'next_action_due_at' => $validated['next_action_due_at'] ?? now()->addHours(2),
             'sla_status' => 'on_track',
             'key_requirement' => $validated['key_requirement'] ?? 'New Inquiry',
@@ -114,20 +199,38 @@ class OpportunityController extends Controller
             $opportunity->refresh();
         }
 
+        // Seamlessly link prior qualification calls logged from My Queue to this newly created Opportunity
+        \App\Models\Activity::where('contact_id', $contact->id)
+            ->whereNull('opportunity_id')
+            ->update(['opportunity_id' => $opportunity->id]);
+
+        $isSeller = $oppType === 'seller' || $ownerRecord !== null;
+
+        if ($isSeller) {
+            SellerQualification::create([
+                'opportunity_id' => $opportunity->id,
+                'community' => $validated['community'] ?? ($ownerRecord ? $ownerRecord->area : null),
+                'building_name' => $validated['building_name'] ?? ($ownerRecord ? $ownerRecord->building_name : null),
+                'unit_number' => $validated['unit_number'] ?? ($ownerRecord ? $ownerRecord->property_number : null),
+                'listing_price' => $validated['budget_min'] ?? null,
+                'seller_notes' => $validated['key_requirement'] ?? ($ownerRecord ? $ownerRecord->notes : null),
+            ]);
+        }
+
         BuyerQualification::create([
             'opportunity_id' => $opportunity->id,
-            'client_intent' => $validated['client_intent'] ?? 'end_user',
+            'client_intent' => $validated['client_intent'] ?? ($isSeller ? 'investor' : 'end_user'),
             'purchase_timeline' => '1-3 months',
             'is_first_time_buyer' => false,
-            'cash_or_finance' => $validated['cash_or_finance'] ?? null,
-            'community' => $validated['community'] ?? null,
+            'cash_or_finance' => $validated['cash_or_finance'] ?? 'cash',
+            'community' => $validated['community'] ?? ($ownerRecord ? $ownerRecord->area : null),
             'developer' => $validated['developer'] ?? null,
-            'project' => $validated['project'] ?? null,
-            'project_property' => $validated['project_property'] ?? null,
-            'property_type' => $validated['property_type'] ?? null,
-            'bedrooms' => $validated['bedrooms'] ?? null,
+            'project' => $validated['project'] ?? ($ownerRecord ? $ownerRecord->building_name : null),
+            'project_property' => $validated['project_property'] ?? ($ownerRecord ? $ownerRecord->property_number : null),
+            'property_type' => $validated['property_type'] ?? ($ownerRecord ? $ownerRecord->property_type : null),
+            'bedrooms' => $validated['bedrooms'] ?? ($ownerRecord ? $ownerRecord->bedrooms : null),
             'lead_score' => $validated['temperature'] === 'hot' ? 84 : 65,
-            'qualification_notes' => 'Newly created Buyer opportunity',
+            'qualification_notes' => $isSeller ? 'Newly created Seller opportunity from Owner Data' : 'Newly created Buyer opportunity',
         ]);
 
         Activity::create([
@@ -135,10 +238,10 @@ class OpportunityController extends Controller
             'opportunity_id' => $opportunity->id,
             'user_name' => $owner,
             'type' => 'note',
-            'description' => "Created new {$validated['opportunity_type']} opportunity. Initial temperature set to " . strtoupper($validated['temperature']) . ".",
+            'description' => "Created new {$oppType} opportunity" . ($ownerRecord ? " from Owner Data ({$ownerRecord->building_name})" : "") . ". Initial temperature set to " . strtoupper($validated['temperature'] ?? 'hot') . ".",
         ]);
 
-        return response()->json($opportunity->load(['contact', 'buyerQualification']), 201);
+        return response()->json($opportunity->load(['contact', 'buyerQualification', 'sellerQualification']), 201);
     }
 
     public function qualify(Request $request, $id)
@@ -346,14 +449,40 @@ class OpportunityController extends Controller
         ]);
     }
 
+    /**
+     * Delete an individual opportunity.
+     * Respects Real Estate Domain Rule: Contact record remains permanent in Lead Pool.
+     */
     public function destroy($id)
     {
         $opportunity = Opportunity::findOrFail($id);
+        $contactId = $opportunity->contact_id;
+        $oppId = $opportunity->id;
+
+        // Clean up qualification child records if any
+        $opportunity->buyerQualification()?->delete();
+        $opportunity->sellerQualification()?->delete();
+        $opportunity->landlordQualification()?->delete();
+        $opportunity->tenantQualification()?->delete();
+
         $opportunity->delete();
+
+        // Check if permanent Contact has any remaining active opportunities
+        if ($contactId) {
+            $contact = Contact::find($contactId);
+            if ($contact) {
+                $hasRemaining = Opportunity::where('contact_id', $contactId)
+                    ->whereNotIn('stage', ['closed_won', 'closed_lost'])
+                    ->exists();
+                if (!$hasRemaining && $contact->state === 'assigned') {
+                    $contact->update(['state' => 'available']);
+                }
+            }
+        }
 
         return response()->json([
             'success' => true,
-            'message' => "Opportunity #{$id} deleted successfully."
+            'message' => "Opportunity #{$oppId} deleted successfully."
         ]);
     }
 
@@ -479,5 +608,176 @@ class OpportunityController extends Controller
             'contact' => $contact,
             'opportunity' => $opportunity,
         ]);
+    }
+
+    /**
+     * Bulk delete selected opportunities.
+     * Respects Real Estate Domain Rule: Contact records remain permanent in Lead Pool.
+     */
+    public function bulkDelete(Request $request)
+    {
+        $ids = $request->input('ids', $request->input('opportunity_ids', []));
+
+        if (empty($ids) || !is_array($ids)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No Opportunity IDs provided for bulk deletion.',
+            ], 400);
+        }
+
+        $opportunities = Opportunity::whereIn('id', $ids)->get();
+        $contactIds = $opportunities->pluck('contact_id')->filter()->unique();
+
+        foreach ($opportunities as $opp) {
+            $opp->buyerQualification()?->delete();
+            $opp->sellerQualification()?->delete();
+            $opp->landlordQualification()?->delete();
+            $opp->tenantQualification()?->delete();
+        }
+
+        $deletedCount = Opportunity::whereIn('id', $ids)->delete();
+
+        // Update contact state if they no longer have open active opportunities
+        foreach ($contactIds as $cid) {
+            $contact = Contact::find($cid);
+            if ($contact) {
+                $hasRemaining = Opportunity::where('contact_id', $cid)
+                    ->whereNotIn('stage', ['closed_won', 'closed_lost'])
+                    ->exists();
+                if (!$hasRemaining && $contact->state === 'assigned') {
+                    $contact->update(['state' => 'available']);
+                }
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$deletedCount} opportunities deleted successfully.",
+            'count' => $deletedCount,
+        ]);
+    }
+
+    /**
+     * Dispatch an official branded property proposal / viewing email to client
+     */
+    public function sendEmail(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'recipient_email' => 'required|email',
+            'subject'         => 'required|string|max:255',
+            'body'            => 'required|string',
+            'template_name'   => 'nullable|string',
+            'attachments.*'   => 'nullable|file|max:15360', // max 15MB
+        ]);
+
+        $opportunity = Opportunity::with([
+            'contact',
+            'buyerQualification',
+            'sellerQualification',
+        ])->findOrFail($id);
+
+        $clientName = $opportunity->contact ? $opportunity->contact->name : 'Valued Client';
+        $ownerName = $opportunity->current_owner_name ?: 'Faraz Shafi';
+
+        // Resolve Agent User profile
+        $agentUser = User::where('name', $ownerName)->first();
+        $emailSetting = EmailSetting::current();
+        $domain = $emailSetting->default_domain ?: 'fsadvisory.ae';
+
+        $agentEmail = $agentUser && !empty($agentUser->email)
+            ? $agentUser->email
+            : strtolower(preg_replace('/[^a-zA-Z0-9]/', '', explode(' ', $ownerName)[0])) . '@' . $domain;
+
+        $agentPhone = $agentUser?->phone ?? '+971 4 000 0000';
+
+        // Prepare property specification details
+        $bQual = $opportunity->buyerQualification;
+        $sQual = $opportunity->sellerQualification;
+
+        $propertyDetails = [
+            'project'       => $bQual?->project ?? $sQual?->building_name ?? null,
+            'community'     => $bQual?->community ?? $sQual?->community ?? null,
+            'property_type' => $bQual?->property_type ?? null,
+            'bedrooms'      => $bQual?->bedrooms ?? null,
+            'budget'        => ($opportunity->budget_min || $opportunity->budget_max)
+                ? 'AED ' . number_format($opportunity->budget_min ?: 0) . ' – ' . number_format($opportunity->budget_max ?: 0)
+                : null,
+        ];
+
+        // Process attachments
+        $uploadedAttachments = [];
+        $tempFilePaths = [];
+        if ($request->hasFile('attachments')) {
+            foreach ($request->file('attachments') as $file) {
+                $filename = $file->getClientOriginalName();
+                $tempPath = $file->storeAs('email_attachments/' . uniqid(), $filename);
+                $fullPath = storage_path('app/' . $tempPath);
+                $uploadedAttachments[] = [
+                    'path' => $fullPath,
+                    'name' => $filename,
+                    'mime' => $file->getClientMimeType(),
+                ];
+                $tempFilePaths[] = $fullPath;
+            }
+        }
+
+        $emailSetting->applyToRuntimeConfig();
+
+        try {
+            Mail::to($validated['recipient_email'])->send(
+                new OpportunityEmailMailable(
+                    $opportunity,
+                    $clientName,
+                    $validated['subject'],
+                    $validated['body'],
+                    $ownerName,
+                    $agentEmail,
+                    $agentPhone,
+                    $propertyDetails,
+                    $uploadedAttachments
+                )
+            );
+
+            // Clean up temporary files
+            foreach ($tempFilePaths as $path) {
+                if (file_exists($path)) {
+                    @unlink($path);
+                }
+            }
+
+            // Record in Activity Timeline
+            $attachmentNames = !empty($uploadedAttachments) 
+                ? ' (Attachments: ' . implode(', ', array_column($uploadedAttachments, 'name')) . ')' 
+                : '';
+
+            $templateNote = !empty($validated['template_name']) 
+                ? " [Template: {$validated['template_name']}]" 
+                : '';
+
+            Activity::create([
+                'contact_id'     => $opportunity->contact_id,
+                'opportunity_id' => $opportunity->id,
+                'user_name'      => $ownerName,
+                'type'           => 'email',
+                'description'    => "Property Email Sent to {$validated['recipient_email']}: \"{$validated['subject']}\"{$templateNote}{$attachmentNames}",
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Official property email dispatched to {$validated['recipient_email']} successfully!",
+            ]);
+        } catch (\Throwable $e) {
+            // Clean up temp files on failure
+            foreach ($tempFilePaths as $path) {
+                if (file_exists($path)) {
+                    @unlink($path);
+                }
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send email: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

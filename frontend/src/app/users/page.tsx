@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import Swal from 'sweetalert2';
-import { API_BASE_URL } from '@/lib/api';
+import { fetchApi, API_BASE_URL } from '@/lib/api';
 import {
   Users,
   ShieldCheck,
@@ -145,8 +145,7 @@ export default function UserManagementPage() {
       if (selectedDepartment !== 'all') params.append('department', selectedDepartment);
       if (selectedStatus !== 'all') params.append('is_active', selectedStatus === 'active' ? 'true' : 'false');
 
-      const res = await fetch(`${API_BASE_URL}/users?${params.toString()}`);
-      const data = await res.json();
+      const data = await fetchApi(`/users?${params.toString()}`);
       if (data.success) {
         setUsers(data.users || []);
         if (data.stats) setStats(data.stats);
@@ -161,12 +160,10 @@ export default function UserManagementPage() {
 
   const loadRolesAndMatrix = async () => {
     try {
-      const [rolesRes, matrixRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/roles`),
-        fetch(`${API_BASE_URL}/permissions/matrix`),
+      const [rolesData, matrixData] = await Promise.all([
+        fetchApi('/roles'),
+        fetchApi('/permissions/matrix'),
       ]);
-      const rolesData = await rolesRes.json();
-      const matrixData = await matrixRes.json();
 
       if (rolesData.success) setRoles(rolesData.roles || []);
       if (matrixData.success) setPermMatrix(matrixData.matrix || []);
@@ -228,17 +225,15 @@ export default function UserManagementPage() {
     e.preventDefault();
     setSubmittingUser(true);
     try {
-      const url = userModalMode === 'create'
-        ? `${API_BASE_URL}/users`
-        : `${API_BASE_URL}/users/${activeUserId}`;
+      const path = userModalMode === 'create'
+        ? '/users'
+        : `/users/${activeUserId}`;
       const method = userModalMode === 'create' ? 'POST' : 'PUT';
 
-      const res = await fetch(url, {
+      const data = await fetchApi(path, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(userFormData),
       });
-      const data = await res.json();
 
       if (data.success) {
         setIsUserModalOpen(false);
@@ -274,8 +269,7 @@ export default function UserManagementPage() {
 
     if (confirm.isConfirmed) {
       try {
-        const res = await fetch(`${API_BASE_URL}/users/${id}`, { method: 'DELETE' });
-        const data = await res.json();
+        const data = await fetchApi(`/users/${id}`, { method: 'DELETE' });
         if (data.success) {
           Swal.fire({ icon: 'success', title: 'Removed!', text: data.message, timer: 1400, showConfirmButton: false });
           loadUsers();
@@ -337,12 +331,10 @@ export default function UserManagementPage() {
     if (!formValues) return;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${user.id}/activate`, {
+      const data = await fetchApi(`/users/${user.id}/activate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formValues),
       });
-      const data = await res.json();
       if (data.success) {
         Swal.fire({
           icon: 'success',
@@ -426,12 +418,10 @@ export default function UserManagementPage() {
     if (!permTargetUser) return;
     setSavingPermissions(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/users/${permTargetUser.id}/permissions`, {
+      const data = await fetchApi(`/users/${permTargetUser.id}/permissions`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions: selectedPermissions }),
       });
-      const data = await res.json();
 
       if (data.success) {
         // If current logged-in user's permissions were edited, sync immediately

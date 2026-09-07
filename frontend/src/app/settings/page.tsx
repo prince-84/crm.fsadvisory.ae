@@ -8,7 +8,8 @@ import { fetchApi, API_BASE_URL } from '@/lib/api';
 import { 
   Settings, Globe, Shield, Clock, Save, Layers, Building2, Plus, 
   Trash2, Edit2, Check, X, MapPin, Home, HardHat, Briefcase, Users, UserPlus, ShieldCheck, User, Search,
-  ArrowLeft, ChevronRight, ChevronLeft, Zap, Play, Cpu, RefreshCw, CheckCircle2, AlertCircle, RotateCcw
+  ArrowLeft, ChevronRight, ChevronLeft, Zap, Play, Cpu, RefreshCw, CheckCircle2, AlertCircle, RotateCcw,
+  Mail, Send, Lock, Server, Eye, EyeOff
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 
@@ -128,6 +129,25 @@ function SettingsContent() {
   const [savingDist, setSavingDist] = useState<boolean>(false);
   const [runningBatch, setRunningBatch] = useState<boolean>(false);
 
+  // 8. Email & SMTP Configuration State
+  const [emailSettings, setEmailSettings] = useState<any>({
+    mail_mailer: 'smtp',
+    mail_host: '',
+    mail_port: 587,
+    mail_username: '',
+    mail_password: '',
+    mail_encryption: 'tls',
+    mail_from_address: 'advisory@fsadvisory.ae',
+    mail_from_name: 'FS Advisory Luxury Real Estate',
+    default_domain: 'fsadvisory.ae',
+    is_active: true,
+  });
+  const [showEmailPassword, setShowEmailPassword] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [testEmailRecipient, setTestEmailRecipient] = useState('');
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testEmailFeedback, setTestEmailFeedback] = useState<{ success: boolean; message: string } | null>(null);
+
   const fetchDistLogs = async (page = 1, perPage = distLogsPerPage) => {
     try {
       setLoadingLogs(true);
@@ -149,7 +169,7 @@ function SettingsContent() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [sData, pData, lsData, devData, projData, propData, commData, oppTypesData, uData, distData] = await Promise.all([
+      const [sData, pData, lsData, devData, projData, propData, commData, oppTypesData, uData, distData, emailData] = await Promise.all([
         fetchApi('/settings'),
         fetchApi('/portals'),
         fetchApi('/lead-sources'),
@@ -160,6 +180,7 @@ function SettingsContent() {
         fetchApi('/catalog/opportunity-types'),
         fetchApi('/users'),
         fetchApi('/distribution/settings').catch(() => null),
+        fetchApi('/settings/email').catch(() => null),
       ]);
       setSettings(sData);
       setPortals(pData || []);
@@ -184,10 +205,74 @@ function SettingsContent() {
         }
       }
 
+      if (emailData && emailData.success && emailData.settings) {
+        setEmailSettings(emailData.settings);
+      }
+
       setLoading(false);
     } catch (err) {
       console.error('Failed to load settings catalog data:', err);
       setLoading(false);
+    }
+  };
+
+  const handleSaveEmailSettings = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSavingEmail(true);
+    setTestEmailFeedback(null);
+    try {
+      const res = await fetchApi('/settings/email', {
+        method: 'POST',
+        body: JSON.stringify(emailSettings),
+      });
+      if (res && res.success) {
+        setEmailSettings(res.settings);
+        Swal.fire({
+          icon: 'success',
+          title: 'Email Settings Saved',
+          text: 'Corporate SMTP settings and domain defaults updated successfully.',
+          timer: 1800,
+          showConfirmButton: false,
+        });
+      }
+    } catch (err: any) {
+      Swal.fire('Error', err.message || 'Failed to save email settings', 'error');
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!testEmailRecipient.trim()) {
+      Swal.fire('Recipient Missing', 'Please enter a target email address to receive the test verification email.', 'warning');
+      return;
+    }
+    setTestingEmail(true);
+    setTestEmailFeedback(null);
+    try {
+      const res = await fetchApi('/settings/email/test', {
+        method: 'POST',
+        body: JSON.stringify({ test_email: testEmailRecipient.trim() }),
+      });
+      if (res && res.success) {
+        setTestEmailFeedback({ success: true, message: res.message || 'Test email dispatched successfully!' });
+        Swal.fire({
+          icon: 'success',
+          title: 'Test Email Sent!',
+          text: `Verification email delivered to ${testEmailRecipient}`,
+          timer: 2500,
+          showConfirmButton: false,
+        });
+      } else {
+        setTestEmailFeedback({ success: false, message: res.message || 'Test email delivery failed.' });
+        Swal.fire('Delivery Issue', res.message || 'Could not verify delivery', 'error');
+      }
+    } catch (err: any) {
+      const errMsg = err.message || 'SMTP Connection Error';
+      setTestEmailFeedback({ success: false, message: errMsg });
+      Swal.fire('SMTP Error', errMsg, 'error');
+    } finally {
+      setTestingEmail(false);
     }
   };
 
@@ -872,6 +957,14 @@ function SettingsContent() {
                     description: 'Dynamic automated lead routing for Lead Pool & Owner Data across active sales advisors.',
                     badge: 'Automation',
                   },
+                  {
+                    id: 'email',
+                    title: 'Email & SMTP Server',
+                    count: emailSettings?.mail_host ? `${emailSettings.mail_host}:${emailSettings.mail_port}` : 'Configured',
+                    icon: Mail,
+                    description: 'Corporate SMTP relay (@fsadvisory.ae), SSL/TLS ports, credentials and instant connection tester.',
+                    badge: 'Email',
+                  },
                 ].map((card) => {
                   const Icon = card.icon;
 
@@ -944,6 +1037,7 @@ function SettingsContent() {
                         {selectedModule === 'portals' && '🔌 Property Portals Webhook Sync'}
                         {selectedModule === 'sla' && '⏱️ SLA Response & Escalation Governance'}
                         {selectedModule === 'distribution' && '⚡ Lead Distribution & Dynamic Auto-Assignment'}
+                        {selectedModule === 'email' && '✉️ Corporate Email & SMTP Server Configuration'}
                       </span>
                     </h2>
                   </div>
@@ -967,6 +1061,7 @@ function SettingsContent() {
                     <option value="portals">🔌 Portals Webhooks</option>
                     <option value="sla">⏱️ SLA Governance</option>
                     <option value="distribution">⚡ Lead Distribution & Automation</option>
+                    <option value="email">✉️ Email & SMTP Server</option>
                   </select>
                 </div>
               </div>
@@ -2410,6 +2505,338 @@ function SettingsContent() {
                 </div>
               </div>
             )}
+
+            {/* TAB 8: EMAIL & SMTP SERVER CONFIGURATION */}
+            {activeTab === 'email' && (
+              <div className="space-y-6 animate-in fade-in duration-150">
+                {/* Header Banner */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 border border-[#E8E4DC] rounded-xl shadow-2xs">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#081428] text-[#C9A84C] tracking-wider uppercase font-mono">
+                        Enterprise Relay
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500 font-mono">
+                        Domain: @{emailSettings.default_domain || 'fsadvisory.ae'}
+                      </span>
+                    </div>
+                    <h3 className="font-heading font-bold text-xl text-[#081428]">
+                      Corporate Email & SMTP Server Configuration
+                    </h3>
+                    <p className="text-xs text-[#6E6E6E] mt-0.5 max-w-2xl">
+                      Configure authenticated corporate SMTP credentials to dispatch off-plan brochures, viewing invitations, and CMA valuations directly to VIP clients with official FS Advisory branding.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveEmailSettings}
+                      disabled={savingEmail}
+                      className="px-5 py-2.5 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold text-xs rounded-lg shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <Save className="w-4 h-4 text-[#C8A147]" />
+                      <span>{savingEmail ? 'Saving...' : 'Save Email Configuration'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Main Settings Grid */}
+                <form onSubmit={handleSaveEmailSettings} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Left Column (2 Cols): Connection & Credentials */}
+                  <div className="lg:col-span-2 space-y-6">
+                    {/* SMTP Credentials Card */}
+                    <div className="bg-white border border-[#E8E4DC] rounded-xl p-6 shadow-2xs space-y-5">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Server className="w-5 h-5 text-[#C9A84C]" />
+                          <h4 className="font-heading font-bold text-base text-[#081428]">
+                            SMTP Server Connection
+                          </h4>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(emailSettings.is_active)}
+                            onChange={(e) => setEmailSettings({ ...emailSettings, is_active: e.target.checked })}
+                            className="rounded text-[#081428] focus:ring-[#C9A84C] h-4 w-4"
+                          />
+                          <span className="text-xs font-bold text-slate-700">Relay Enabled</span>
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            Mail Driver / Protocol
+                          </label>
+                          <select
+                            value={emailSettings.mail_mailer || 'smtp'}
+                            onChange={(e) => setEmailSettings({ ...emailSettings, mail_mailer: e.target.value })}
+                            className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-semibold text-[#081428] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                          >
+                            <option value="smtp">SMTP (Standard Mail Protocol)</option>
+                            <option value="sendmail">Sendmail</option>
+                            <option value="log">Log Only (Testing / Staging)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            SMTP Host / Mail Server <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={emailSettings.mail_host || ''}
+                            onChange={(e) => setEmailSettings({ ...emailSettings, mail_host: e.target.value })}
+                            placeholder="e.g. smtp.titan.email or mail.fsadvisory.ae"
+                            className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-semibold text-[#081428] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                          />
+                          <span className="text-[10px] text-slate-400 mt-1 block">Enterprise SMTP hostname or IP</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            SMTP Port <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            required
+                            value={emailSettings.mail_port || 587}
+                            onChange={(e) => setEmailSettings({ ...emailSettings, mail_port: parseInt(e.target.value) || 587 })}
+                            placeholder="587 or 465"
+                            className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-semibold text-[#081428] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                          />
+                          <span className="text-[10px] text-slate-400 mt-1 block">587 for TLS, 465 for SSL</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            Encryption Security
+                          </label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {['tls', 'ssl', 'none'].map((enc) => (
+                              <button
+                                key={enc}
+                                type="button"
+                                onClick={() => setEmailSettings({ ...emailSettings, mail_encryption: enc })}
+                                className={`py-2 text-xs font-bold uppercase rounded-lg border transition-all cursor-pointer ${
+                                  emailSettings.mail_encryption === enc
+                                    ? 'bg-[#081428] text-[#C9A84C] border-[#081428] shadow-xs'
+                                    : 'bg-[#FAF8F5] text-slate-600 border-[#E8E4DC] hover:bg-slate-100'
+                                }`}
+                              >
+                                {enc}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            SMTP Username <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={emailSettings.mail_username || ''}
+                            onChange={(e) => setEmailSettings({ ...emailSettings, mail_username: e.target.value })}
+                            placeholder="advisory@fsadvisory.ae"
+                            className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-semibold text-[#081428] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                          />
+                          <span className="text-[10px] text-slate-400 mt-1 block">Official corporate mailbox account</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            SMTP Password <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showEmailPassword ? 'text' : 'password'}
+                              value={emailSettings.mail_password || ''}
+                              onChange={(e) => setEmailSettings({ ...emailSettings, mail_password: e.target.value })}
+                              placeholder="••••••••••••"
+                              className="w-full p-2.5 pr-10 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-semibold text-[#081428] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowEmailPassword(!showEmailPassword)}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                              title={showEmailPassword ? 'Hide password' : 'Show password'}
+                            >
+                              {showEmailPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                          <span className="text-[10px] text-slate-400 mt-1 block">Leave unchanged to keep current password</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sender Identity & Domain Configuration */}
+                    <div className="bg-white border border-[#E8E4DC] rounded-xl p-6 shadow-2xs space-y-5">
+                      <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                        <Mail className="w-5 h-5 text-[#C9A84C]" />
+                        <h4 className="font-heading font-bold text-base text-[#081428]">
+                          Sender Identity & Domain Defaults
+                        </h4>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            Default "From" Address <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="email"
+                            required
+                            value={emailSettings.mail_from_address || ''}
+                            onChange={(e) => setEmailSettings({ ...emailSettings, mail_from_address: e.target.value })}
+                            placeholder="advisory@fsadvisory.ae"
+                            className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-semibold text-[#081428] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            Default "From" Display Name <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={emailSettings.mail_from_name || ''}
+                            onChange={(e) => setEmailSettings({ ...emailSettings, mail_from_name: e.target.value })}
+                            placeholder="FS Advisory Luxury Real Estate"
+                            className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-semibold text-[#081428] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            Corporate Domain Policy
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={emailSettings.default_domain || 'fsadvisory.ae'}
+                              onChange={(e) => setEmailSettings({ ...emailSettings, default_domain: e.target.value })}
+                              placeholder="fsadvisory.ae"
+                              className="w-full max-w-xs p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-bold text-[#081428] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                            />
+                            <span className="px-3 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold flex items-center gap-1.5">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              Official Agent Domain
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                            Sales advisors with an email matching <strong className="text-[#081428]">@{emailSettings.default_domain || 'fsadvisory.ae'}</strong> will have client replies automatically routed directly to their corporate mailbox via the <code className="text-[#081428] font-bold">Reply-To</code> email header.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column (1 Col): Live Tester & Quick Help */}
+                  <div className="space-y-6">
+                    {/* Live Connection Tester Card */}
+                    <div className="bg-white border border-[#E8E4DC] rounded-xl p-6 shadow-2xs space-y-4">
+                      <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                        <Send className="w-5 h-5 text-[#C9A84C]" />
+                        <h4 className="font-heading font-bold text-base text-[#081428]">
+                          Live Connection Tester
+                        </h4>
+                      </div>
+
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Verify SMTP credentials and server handshake by sending a live verification email to any test recipient.
+                      </p>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          Recipient Email Address
+                        </label>
+                        <input
+                          type="email"
+                          value={testEmailRecipient}
+                          onChange={(e) => setTestEmailRecipient(e.target.value)}
+                          placeholder="e.g. yourname@fsadvisory.ae or client@gmail.com"
+                          className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-semibold text-[#081428] focus:outline-none focus:ring-2 focus:ring-[#C9A84C]"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSendTestEmail}
+                        disabled={testingEmail}
+                        className="w-full py-2.5 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold text-xs rounded-lg transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {testingEmail ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin text-[#C9A84C]" />
+                            <span>Connecting to SMTP...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4 text-[#C9A84C]" />
+                            <span>Send Verification Email</span>
+                          </>
+                        )}
+                      </button>
+
+                      {testEmailFeedback && (
+                        <div
+                          className={`p-3 rounded-lg text-xs border animate-in fade-in duration-200 ${
+                            testEmailFeedback.success
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                              : 'bg-rose-50 border-rose-200 text-rose-800'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {testEmailFeedback.success ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                            ) : (
+                              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                            )}
+                            <div className="space-y-0.5">
+                              <span className="font-bold">
+                                {testEmailFeedback.success ? 'Delivery Success' : 'Connection Failed'}
+                              </span>
+                              <p className="text-[11px] leading-relaxed break-words">
+                                {testEmailFeedback.message}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* How It Works Explainer Card */}
+                    <div className="bg-[#081428] text-white rounded-xl p-5 shadow-sm space-y-3">
+                      <div className="flex items-center gap-2 text-[#C9A84C] text-xs font-bold uppercase tracking-wider">
+                        <Lock className="w-4 h-4" />
+                        <span>Security & Routing Policy</span>
+                      </div>
+                      <h5 className="font-heading font-bold text-sm text-white">
+                        Executive Brokerage Standards
+                      </h5>
+                      <ul className="text-xs text-slate-300 space-y-2 leading-relaxed list-disc list-inside">
+                        <li>
+                          <strong className="text-white">Encrypted Relay:</strong> Passwords are encrypted at rest and never returned in plaintext to the browser.
+                        </li>
+                        <li>
+                          <strong className="text-white">Automated Timeline:</strong> Every dispatched email automatically logs as an activity with timestamps, recipient, and subject.
+                        </li>
+                        <li>
+                          <strong className="text-white">Dedicated Inboxes:</strong> Clients reply straight to the assigned property advisor's personal mailbox.
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            )}
+
 
               </div>
             </div>

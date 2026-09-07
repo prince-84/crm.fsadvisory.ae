@@ -14,6 +14,7 @@ class Contact extends Model
 
     protected $casts = [
         'last_activity_at' => 'datetime',
+        'assigned_at' => 'datetime',
     ];
 
     public function opportunities()

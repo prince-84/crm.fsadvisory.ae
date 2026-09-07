@@ -31,10 +31,13 @@ class AuthController extends Controller
             }
 
             if ($user) {
+                $token = $user->api_token ?: $user->generateApiToken();
+                $user->update(['api_token_last_used_at' => now()]);
+
                 return response()->json([
                     'success' => true,
                     'message' => "Logged in as {$user->name} ({$user->role})",
-                    'token' => Str::random(64),
+                    'token' => $token,
                     'user' => [
                         'id' => $user->id,
                         'name' => $user->name,
@@ -75,10 +78,13 @@ class AuthController extends Controller
             ], 403);
         }
 
+        $token = $user->api_token ?: $user->generateApiToken();
+        $user->update(['api_token_last_used_at' => now()]);
+
         return response()->json([
             'success' => true,
             'message' => 'Login successful.',
-            'token' => Str::random(64),
+            'token' => $token,
             'user' => [
                 'id' => $user->id,
                 'name' => $user->name,

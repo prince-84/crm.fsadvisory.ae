@@ -4,6 +4,7 @@ import { useState, useEffect, use } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import SalesHandoverModal from '@/components/SalesHandoverModal';
+import SendEmailModal from '@/components/SendEmailModal';
 import SearchableSelect from '@/components/SearchableSelect';
 import { fetchApi } from '@/lib/api';
 import { 
@@ -152,9 +153,11 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
   const [predictingAi, setPredictingAi] = useState(false);
   const [releasing, setReleasing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [updatingStageId, setUpdatingStageId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'history'>('overview');
   const [isHandoverModalOpen, setIsHandoverModalOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
 
   // Section 3: Opportunity Requirements & Deal Specs (matching Lead Pool form)
   const [opportunityType, setOpportunityType] = useState('buyer');
@@ -193,8 +196,21 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
 
   const loadOpportunity = async (silent = false) => {
     if (!silent) setLoading(true);
+    setLoadError(null);
     try {
+      if (!oppId || Number(oppId) <= 0 || isNaN(Number(oppId))) {
+        setLoadError(`Opportunity #${oppId} does not exist. This lead has not been converted to an opportunity deal yet.`);
+        setOpp(null);
+        setLoading(false);
+        return;
+      }
       const data = await fetchApi(`/opportunities/${oppId}`);
+      if (!data || data.message || data.error) {
+        setLoadError(data.message || 'Opportunity record not found.');
+        setOpp(null);
+        setLoading(false);
+        return;
+      }
       setOpp(data);
       
       const bQual = data.buyer_qualification || {};
@@ -218,8 +234,10 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
       if (data.next_action) setNextAction(data.next_action);
       if (data.next_action_due_at) setNextDueDate(data.next_action_due_at.slice(0, 16));
       setLoading(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load opportunity workspace:', err);
+      setLoadError(err.message || 'Opportunity record could not be loaded.');
+      setOpp(null);
       setLoading(false);
     }
   };
@@ -417,10 +435,36 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
     );
   }
 
-  if (!opp) {
+  if (loadError || (!loading && !opp)) {
     return (
-      <div className="min-h-screen bg-[#FAF8F5] flex items-center justify-center text-xs text-[#6E6E6E]">
-        Opportunity record not found.
+      <div className="min-h-screen bg-[#FAF8F5] text-[#1A1A1A] flex font-['Poppins',sans-serif]">
+        <Sidebar />
+        <div className="flex-1 pl-56 flex flex-col min-w-0">
+          <Navbar />
+          <div className="p-8 max-w-md mx-auto my-auto text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 text-[#C8A147] flex items-center justify-center mx-auto shadow-xs">
+              <Briefcase className="w-8 h-8" />
+            </div>
+            <h2 className="font-heading font-bold text-xl text-[#081428]">Opportunity Not Found</h2>
+            <p className="text-xs text-[#6E6E6E] leading-relaxed">
+              {loadError || 'This opportunity deal does not exist or has not been created yet.'}
+            </p>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <Link
+                href="/queue"
+                className="px-4 py-2 bg-[#081428] hover:bg-[#122444] text-white font-bold text-xs rounded-lg shadow-xs transition-colors"
+              >
+                Return to My Queue
+              </Link>
+              <Link
+                href="/opportunities"
+                className="px-4 py-2 bg-white hover:bg-slate-50 text-[#081428] border border-[#E8E4DC] font-bold text-xs rounded-lg transition-colors"
+              >
+                All Deals
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -466,31 +510,40 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
                 </p>
               </div>
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
                 <button
                   onClick={handleReleaseToBank}
                   disabled={releasing}
-                  className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-[#081428] border border-slate-300 font-bold text-xs rounded-md shadow-xs transition-colors flex items-center gap-1.5"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#081428] border border-slate-300 font-bold text-xs rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
                   title="Close deal and revert Contact to Available state in Lead Bank"
                 >
-                  <RotateCcw className="w-4 h-4 text-slate-700" />
-                  <span>{releasing ? 'Releasing...' : 'Release to Lead Bank'}</span>
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-700 shrink-0" />
+                  <span className="whitespace-nowrap">{releasing ? 'Releasing...' : 'Release to Bank'}</span>
                 </button>
 
                 <button
                   onClick={handleSendWhatsApp}
-                  className="px-3.5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-md shadow-xs transition-colors flex items-center gap-1.5"
+                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  <MessageSquare className="w-4 h-4" />
-                  <span>WhatsApp Brochure</span>
+                  <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                  <span className="whitespace-nowrap">WhatsApp Brochure</span>
+                </button>
+
+                <button
+                  onClick={() => setIsEmailModalOpen(true)}
+                  className="px-3 py-1.5 bg-[#0F2244] hover:bg-[#1A335E] text-[#C9A84C] border border-[#C9A84C]/40 font-bold text-xs rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                  title="Send luxury property proposal, viewing invitation, or CMA valuation via official SMTP"
+                >
+                  <Mail className="w-3.5 h-3.5 text-[#C9A84C] shrink-0" />
+                  <span className="whitespace-nowrap">Send Property Email</span>
                 </button>
 
                 <button
                   onClick={() => setIsHandoverModalOpen(true)}
-                  className="px-5 py-2.5 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold text-xs rounded-md shadow-xs transition-colors flex items-center gap-2"
+                  className="px-3.5 py-1.5 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold text-xs rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Hand Over to Sales</span>
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                  <span className="whitespace-nowrap">Hand Over to Sales</span>
                 </button>
               </div>
             </div>
@@ -1083,6 +1136,14 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
         isOpen={isHandoverModalOpen}
         onClose={() => setIsHandoverModalOpen(false)}
         onSuccess={() => loadOpportunity()}
+      />
+
+      {/* Send Luxury Property Email Modal */}
+      <SendEmailModal
+        opportunity={opp}
+        isOpen={isEmailModalOpen}
+        onClose={() => setIsEmailModalOpen(false)}
+        onSuccess={() => loadOpportunity(true)}
       />
     </div>
   );

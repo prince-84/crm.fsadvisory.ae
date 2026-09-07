@@ -6,6 +6,7 @@ import { fetchApi } from '@/lib/api';
 import SearchableSelect from './SearchableSelect';
 import PhoneInput from './PhoneInput';
 import { WORLD_NATIONALITIES } from '@/data/countries';
+import Swal from 'sweetalert2';
 
 interface CreateLeadModalProps {
   isOpen: boolean;
@@ -333,55 +334,64 @@ export default function CreateLeadModal({ isOpen, onClose, onSuccess }: CreateLe
     setLoading(true);
 
     try {
-      // Step 2: Create Contact in Lead Pool
-      const contactRes = await fetchApi('/contacts', {
-        method: 'POST',
-        body: JSON.stringify({
-          name,
-          phone,
-          secondary_phone: secondaryPhone || null,
-          email,
-          nationality: nationality || null,
-          source: source ? (subSource ? `${source} (${subSource})` : source) : null,
-          utm_source: utmSource || null,
-          utm_medium: utmMedium || null,
-          utm_campaign: utmCampaign || null,
-          utm_term: utmTerm || null,
-          utm_content: utmContent || null,
-          landing_page_url: landingPageUrl || null,
-        }),
-      });
+      // Step 2: Compile optional inquiry preferences into activity notes
+      const requirementNotes = [
+        opportunityType ? `Type: ${opportunityType}` : null,
+        temperature ? `Initial Temp: ${temperature}` : null,
+        developer ? `Developer: ${developer}` : null,
+        project ? `Project: ${project}` : null,
+        projectProperty ? `Unit: ${projectProperty}` : null,
+        budgetMin || budgetMax ? `Budget: AED ${budgetMin ? Number(budgetMin).toLocaleString() : '0'} – ${budgetMax ? Number(budgetMax).toLocaleString() : 'Max'}` : null,
+        keyRequirement ? `Notes: ${keyRequirement}` : null,
+        nextAction ? `Next Action: ${nextAction}` : null,
+      ].filter(Boolean).join(' | ');
 
-      const contactId = contactRes.id;
+      // Step 3: Create Contact in Lead Pool & Auto-Assign with linked Opportunity
+      const payload: Record<string, any> = {
+        name,
+        phone,
+        secondary_phone: secondaryPhone || null,
+        email,
+        nationality: nationality || null,
+        source: source ? (subSource ? `${source} (${subSource})` : source) : null,
+        assigned_owner: 'auto',
+        utm_source: utmSource || null,
+        utm_medium: utmMedium || null,
+        utm_campaign: utmCampaign || null,
+        utm_term: utmTerm || null,
+        utm_content: utmContent || null,
+        landing_page_url: landingPageUrl || null,
+        // Opportunity workspace fields
+        opportunity_type: opportunityType || 'buyer',
+        temperature: temperature || 'warm',
+        developer: developer || null,
+        project: project || null,
+        project_property: projectProperty || null,
+        budget_min: budgetMin ? Number(budgetMin) : null,
+        budget_max: budgetMax ? Number(budgetMax) : null,
+        key_requirement: keyRequirement || null,
+        next_action: nextAction || null,
+      };
 
-      // Step 3: Create Opportunity for Contact
-      await fetchApi('/opportunities', {
+      if (requirementNotes) {
+        payload.activity_description = `Initial Inquiry Requirements: ${requirementNotes}`;
+      }
+
+      await fetchApi('/contacts', {
         method: 'POST',
-        body: JSON.stringify({
-          contact_id: contactId,
-          opportunity_type: opportunityType || 'buyer',
-          temperature: temperature || 'hot',
-          developer: developer || null,
-          project: project || null,
-          project_property: projectProperty || null,
-          budget_min: budgetMin ? Number(budgetMin) : null,
-          budget_max: budgetMax ? Number(budgetMax) : null,
-          key_requirement: keyRequirement || 'New Inquiry',
-          next_action: nextAction || 'Contact new lead — confirm requirement details',
-          next_action_due_at: nextActionDueDate || null,
-          current_owner_name: (() => {
-            try {
-              const raw = localStorage.getItem('crm_user');
-              if (raw) return JSON.parse(raw).name || 'Faraz Shafi';
-            } catch {}
-            return 'Faraz Shafi';
-          })(),
-        }),
+        body: JSON.stringify(payload),
       });
 
       setLoading(false);
       onSuccess();
       onClose();
+      Swal.fire({
+        title: 'Lead Created!',
+        text: `Lead for "${name}" has been registered successfully.`,
+        icon: 'success',
+        timer: 1800,
+        showConfirmButton: false,
+      });
     } catch (err: any) {
       setLoading(false);
 
@@ -434,13 +444,15 @@ export default function CreateLeadModal({ isOpen, onClose, onSuccess }: CreateLe
 
           {/* Section 1: Lead Source & Contact Info */}
           <div className="bg-white border border-[#E8E4DC] rounded-md p-4 space-y-3 shadow-2xs">
-            <h3 className="font-bold text-[#081428] border-b border-[#E8E4DC] pb-2 uppercase tracking-wider flex items-center gap-1.5">
+            <h3 className="font-bold text-sm text-[#081428] border-b border-[#E8E4DC] pb-2 uppercase tracking-wider flex items-center gap-1.5">
               <User className="w-4 h-4 text-[#C8A147]" />
               <span>Client Contact & Source Details</span>
             </h3>
 
             <div>
-              <label className="block text-[#081428] font-bold mb-1">Client Full Name *</label>
+              <label className="block text-[#081428] font-semibold mb-1">
+                Client Full Name <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 placeholder="e.g. Tariq Al Hassan"
@@ -465,7 +477,9 @@ export default function CreateLeadModal({ isOpen, onClose, onSuccess }: CreateLe
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="block text-[#081428] font-bold mb-1">Primary Phone Number *</label>
+                <label className="block text-[#081428] font-semibold mb-1">
+                  Primary Phone Number <span className="text-red-500">*</span>
+                </label>
                 <PhoneInput
                   value={phone}
                   onChange={(val) => {
@@ -495,7 +509,9 @@ export default function CreateLeadModal({ isOpen, onClose, onSuccess }: CreateLe
             </div>
 
             <div>
-              <label className="block text-[#081428] font-bold mb-1">Email Address *</label>
+              <label className="block text-[#081428] font-semibold mb-1">
+                Email Address <span className="text-red-500">*</span>
+              </label>
               <input
                 type="email"
                 placeholder="client@example.com"
@@ -555,7 +571,7 @@ export default function CreateLeadModal({ isOpen, onClose, onSuccess }: CreateLe
           {/* Section: Marketing & UTM Parameters */}
           <div className="bg-white border border-[#E8E4DC] rounded-md p-4 space-y-3 shadow-2xs">
             <div className="flex items-center justify-between border-b border-[#E8E4DC] pb-2">
-              <h3 className="font-bold text-[#081428] uppercase tracking-wider flex items-center gap-1.5">
+              <h3 className="font-bold text-sm text-[#081428] uppercase tracking-wider flex items-center gap-1.5">
                 <Target className="w-4 h-4 text-[#C8A147]" />
                 <span>Marketing & UTM Parameters</span>
               </h3>
@@ -636,7 +652,7 @@ export default function CreateLeadModal({ isOpen, onClose, onSuccess }: CreateLe
 
           {/* Section 2: Opportunity & Deal Requirements */}
           <div className="bg-[#FAF8F4] border border-[#E8E4DC] rounded-md p-4 space-y-3 shadow-2xs">
-            <h3 className="font-bold text-[#081428] border-b border-[#E8E4DC] pb-2 uppercase tracking-wider flex items-center gap-1.5">
+            <h3 className="font-bold text-sm text-[#081428] border-b border-[#E8E4DC] pb-2 uppercase tracking-wider flex items-center gap-1.5">
               <Briefcase className="w-4 h-4 text-[#C8A147]" />
               <span>Opportunity Requirements & Temperature</span>
             </h3>
@@ -785,7 +801,7 @@ export default function CreateLeadModal({ isOpen, onClose, onSuccess }: CreateLe
               disabled={loading}
               className="px-5 py-2.5 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold rounded text-xs shadow-xs transition-colors flex items-center gap-1.5"
             >
-              {loading ? 'Processing Lead...' : '+ Save Lead to Pool'}
+              {loading ? 'Saving Lead...' : 'Save Lead'}
             </button>
           </div>
         </form>

@@ -13,6 +13,25 @@ class ActivityController extends Controller
 {
     public function store(Request $request)
     {
+        if (!$request->contact_id && ($request->phone || $request->owner_record_id)) {
+            $phone = $request->phone;
+            $name = $request->contact_name ?? 'Owner Client';
+            if ($request->owner_record_id) {
+                $ownerRec = \App\Models\OwnerRecord::find($request->owner_record_id);
+                if ($ownerRec) {
+                    $phone = $ownerRec->mobile_number ?: ($ownerRec->phone_number ?: $phone);
+                    $name = $ownerRec->name ?: $name;
+                }
+            }
+            if ($phone) {
+                $contact = Contact::firstOrCreate(
+                    ['phone' => $phone],
+                    ['name' => $name, 'source' => 'Owner Data']
+                );
+                $request->merge(['contact_id' => $contact->id]);
+            }
+        }
+
         $validated = $request->validate([
             'contact_id' => 'required|exists:contacts,id',
             'opportunity_id' => 'nullable|exists:opportunities,id',

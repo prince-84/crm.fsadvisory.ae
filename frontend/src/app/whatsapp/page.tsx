@@ -46,7 +46,7 @@ import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import { hasPermission } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
-import { API_BASE_URL } from '@/lib/api';
+import { fetchApi, API_BASE_URL } from '@/lib/api';
 
 const GATEWAY_URL = (process.env.NEXT_PUBLIC_WHATSAPP_GATEWAY_URL || 'http://127.0.0.1:5001').replace(/\/+$/, '');
 
@@ -283,8 +283,7 @@ export default function WhatsAppPage() {
 
       // Also fetch new messages for current active chat silently
       if (selectedChatIdRef.current) {
-        fetch(`${API_BASE_URL}/whatsapp/chats/${selectedChatIdRef.current}/messages`)
-          .then((r) => r.json())
+        fetchApi(`/whatsapp/chats/${selectedChatIdRef.current}/messages`)
           .then((data) => {
             if (data.messages && data.chat?.id === selectedChatIdRef.current) {
               setMessages(data.messages);
@@ -316,8 +315,7 @@ export default function WhatsAppPage() {
 
   const loadChannels = async (checkAutoQr = false) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/whatsapp/channels`);
-      const data = await res.json();
+      const data = await fetchApi('/whatsapp/channels');
       const chList = data.channels || [];
       setChannels(chList);
 
@@ -340,11 +338,10 @@ export default function WhatsAppPage() {
   const loadChats = async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
     try {
-      let url = `${API_BASE_URL}/whatsapp/chats?channel_id=${selectedChannelId}`;
-      if (unreadOnly) url += '&unread_only=true';
+      let endpoint = `/whatsapp/chats?channel_id=${selectedChannelId}`;
+      if (unreadOnly) endpoint += '&unread_only=true';
 
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await fetchApi(endpoint);
       const chatList = data.chats || [];
       setChats(chatList);
 
@@ -405,10 +402,9 @@ export default function WhatsAppPage() {
     selectedChatIdRef.current = chat.id;
     setSelectedChat(chat);
     setLoadingMessages(true);
-      try {
-        const res = await fetch(`${API_BASE_URL}/whatsapp/chats/${chat.id}/messages`);
-        const data = await res.json();
-        setMessages(data.messages || []);
+    try {
+      const data = await fetchApi(`/whatsapp/chats/${chat.id}/messages`);
+      setMessages(data.messages || []);
         
         // If the backend fetched a new avatar, update it locally
         if (data.chat?.avatar_url) {
@@ -439,12 +435,10 @@ export default function WhatsAppPage() {
     setSending(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/whatsapp/chats/${selectedChat.id}/send`, {
+      const data = await fetchApi(`/whatsapp/chats/${selectedChat.id}/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: outgoingText }),
       });
-      const data = await res.json();
       if (data.success && data.message) {
         setMessages((prev) => [...prev, data.message]);
         setChats((prev) =>
@@ -590,12 +584,10 @@ export default function WhatsAppPage() {
   const handleSavePhone = async () => {
     if (!selectedChat || !phoneInput.trim()) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/whatsapp/chats/${selectedChat.id}/update-contact-info`, {
+      const data = await fetchApi(`/whatsapp/chats/${selectedChat.id}/update-contact-info`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: phoneInput.trim() }),
       });
-      const data = await res.json();
       if (data.success && data.chat) {
         setSelectedChat(data.chat);
         setChats((prev) =>
@@ -685,15 +677,13 @@ export default function WhatsAppPage() {
     if (!qrChannelId) return;
     setPairingLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/whatsapp/channels/${qrChannelId}/pair-confirm`, {
+      const data = await fetchApi(`/whatsapp/channels/${qrChannelId}/pair-confirm`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone_number: '+971 50 ' + Math.floor(100 + Math.random() * 900) + ' ' + Math.floor(1000 + Math.random() * 9000),
           platform: 'iOS (iPhone 16 Pro Max)'
         }),
       });
-      const data = await res.json();
       setPairingLoading(false);
       setIsQrModalOpen(false);
 
@@ -726,7 +716,7 @@ export default function WhatsAppPage() {
 
     if (result.isConfirmed) {
       try {
-        await fetch(`${API_BASE_URL}/whatsapp/channels/${channelId}/disconnect`, {
+        await fetchApi(`/whatsapp/channels/${channelId}/disconnect`, {
           method: 'POST',
         });
         Swal.fire('Disconnected', 'WhatsApp device has been unlinked.', 'success');

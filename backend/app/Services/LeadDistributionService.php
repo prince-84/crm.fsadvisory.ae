@@ -206,10 +206,16 @@ class LeadDistributionService
     }
 
     /**
-     * Auto-assign a Contact from Lead Pool
+     * Auto-assign a Contact from Lead Pool WITHOUT auto-creating an Opportunity.
+     * The sales advisor will qualify the contact first from My Queue and create an opportunity manually.
      */
     public static function autoAssignContact(Contact $contact): ?User
     {
+        // Never auto-assign duplicate contacts; keep them isolated in the Duplicate tab
+        if ($contact->state === 'duplicate') {
+            return null;
+        }
+
         $settings = static::getSettings();
         if (!$settings->is_enabled || !$settings->apply_to_lead_pool) {
             return null;
@@ -217,49 +223,38 @@ class LeadDistributionService
 
         $agent = static::getNextAgent('lead_pool');
         if (!$agent) {
+            if (!empty($settings->fallback_user_name)) {
+                $contact->update([
+                    'assigned_to' => $settings->fallback_user_name,
+                    'assigned_at' => Carbon::now(),
+                    'state'       => 'assigned',
+                ]);
+            }
             return null;
         }
 
+        // Auto-assign the contact to the chosen advisor
+        $contact->update([
+            'assigned_to' => $agent->name,
+            'assigned_at' => Carbon::now(),
+            'state'       => 'assigned',
+        ]);
+
+        // If an opportunity already exists for this contact, synchronize its owner
         $opp = $contact->opportunities()->first();
         if ($opp) {
             $opp->update([
                 'current_owner_name' => $agent->name,
             ]);
-        } else {
-            $opp = Opportunity::create([
-                'contact_id'             => $contact->id,
-                'opportunity_type'       => 'buyer',
-                'stage'                  => 'qualified',
-                'temperature'            => 'warm',
-                'current_owner_name'     => $agent->name,
-                'originating_agent_name' => $agent->name,
-                'department'             => 'telesales',
-                'budget_min'             => 1500000,
-                'budget_max'             => 3000000,
-                'next_action'            => 'Contact new lead — confirm requirement details',
-                'next_action_due_at'     => Carbon::now()->addHours(2),
-                'sla_status'             => 'on_track',
-                'key_requirement'        => 'Lead Pool Auto-Assigned',
-            ]);
-
-            BuyerQualification::create([
-                'opportunity_id'      => $opp->id,
-                'community'           => 'Downtown Dubai',
-                'client_intent'       => 'end_user',
-                'purchase_timeline'   => '1-3 months',
-                'qualification_notes' => 'Auto-created and assigned via Lead Distribution Engine',
-            ]);
         }
-
-        $contact->update(['state' => 'active']);
 
         // Audit Activity
         Activity::create([
             'contact_id'     => $contact->id,
-            'opportunity_id' => $opp->id,
+            'opportunity_id' => $opp?->id,
             'user_name'      => 'Auto-Distribution Engine',
             'type'           => 'ownership_change',
-            'description'    => "Lead assigned to {$agent->name} via {$settings->distribution_mode} auto-distribution.",
+            'description'    => "Lead assigned to {$agent->name} via {$settings->distribution_mode} auto-distribution (Awaiting qualification call).",
         ]);
 
         // Distribution Log
@@ -282,13 +277,9 @@ class LeadDistributionService
     public static function batchDistributeLeadPool(int $limit = 50): array
     {
         $unassignedContactsQuery = Contact::where(function ($q) {
-            $q->whereDoesntHave('opportunities')
-              ->orWhereHas('opportunities', function ($oppQ) {
-                  $oppQ->whereNull('current_owner_name')
-                       ->orWhere('current_owner_name', '')
-                       ->orWhere('current_owner_name', 'Mako')
-                       ->orWhere('current_owner_name', 'Unassigned');
-              });
+            $q->whereNull('assigned_to')
+              ->orWhere('assigned_to', '')
+              ->orWhere('assigned_to', 'Unassigned');
         });
 
         $totalUnassigned = $unassignedContactsQuery->count();

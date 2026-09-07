@@ -308,7 +308,6 @@ class CallRecordingController extends Controller
         $clientPhone = $direction === 'inbound' ? $callerNum : $destNum;
         $contact = Contact::where('phone', 'like', "%{$clientPhone}%")
             ->orWhere('secondary_phone', 'like', "%{$clientPhone}%")
-            ->orWhere('mobile_phone', 'like', "%{$clientPhone}%")
             ->first();
 
         $opportunity = null;
@@ -455,7 +454,6 @@ class CallRecordingController extends Controller
             if ($last7) {
                 $contact = Contact::where('phone', 'like', "%{$last7}%")
                     ->orWhere('secondary_phone', 'like', "%{$last7}%")
-                    ->orWhere('mobile_phone', 'like', "%{$last7}%")
                     ->first();
             }
 

@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\OwnerRecord;
+use App\Models\Community;
+use App\Models\Project;
+use App\Models\PropertyType;
 use App\Services\LeadDistributionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +14,70 @@ use Illuminate\Support\Facades\Validator;
 
 class OwnerDataController extends Controller
 {
+    /**
+     * Find closest matching string from a catalog list using fuzzy / normalized scoring.
+     */
+    private function findBestMatch(string $value, array $catalogList): array
+    {
+        $val = trim(mb_strtolower($value, 'UTF-8'));
+        if (empty($val) || empty($catalogList)) {
+            return ['match' => null, 'confidence' => 0];
+        }
+
+        $bestMatch = null;
+        $highestScore = 0;
+
+        $noiseWords = ['properties', 'developments', 'development', 'developer', 'realty', 'real estate', 'group', 'holding', 'holdings', 'llc', 'tower', 'towers', 'residence', 'residences', 'dubai', 'the', 'project'];
+        $cleanVal = preg_replace('/\b(' . implode('|', $noiseWords) . ')\b/iu', '', $val);
+        $cleanVal = trim(preg_replace('/\s+/u', ' ', $cleanVal));
+
+        foreach ($catalogList as $catItem) {
+            $cat = trim((string)$catItem);
+            $catLower = mb_strtolower($cat, 'UTF-8');
+
+            if ($catLower === $val) {
+                return ['match' => $cat, 'confidence' => 100];
+            }
+
+            $cleanCat = preg_replace('/\b(' . implode('|', $noiseWords) . ')\b/iu', '', $catLower);
+            $cleanCat = trim(preg_replace('/\s+/u', ' ', $cleanCat));
+
+            if (!empty($cleanVal) && !empty($cleanCat) && $cleanVal === $cleanCat) {
+                if ($highestScore < 95) {
+                    $highestScore = 95;
+                    $bestMatch = $cat;
+                }
+            }
+
+            if (str_contains($catLower, $val) || str_contains($val, $catLower)) {
+                $subScore = 85;
+                if ($subScore > $highestScore) {
+                    $highestScore = $subScore;
+                    $bestMatch = $cat;
+                }
+            }
+
+            similar_text($val, $catLower, $percent);
+            if ($percent > $highestScore) {
+                $highestScore = (int)$percent;
+                $bestMatch = $cat;
+            }
+
+            if (!empty($cleanVal) && !empty($cleanCat)) {
+                similar_text($cleanVal, $cleanCat, $cleanPercent);
+                if ($cleanPercent > $highestScore) {
+                    $highestScore = (int)$cleanPercent;
+                    $bestMatch = $cat;
+                }
+            }
+        }
+
+        if ($highestScore >= 60) {
+            return ['match' => $bestMatch, 'confidence' => $highestScore];
+        }
+
+        return ['match' => null, 'confidence' => $highestScore];
+    }
     /**
      * Display a listing of owner records with filtering, search, and KPI stats
      */
@@ -29,24 +96,39 @@ class OwnerDataController extends Controller
             $query->search($request->search);
         }
 
-        // Area Filter
-        if ($request->filled('area') && $request->area !== 'all') {
-            $query->where('area', $request->area);
+        // Area Filter (Supports Multi or Single)
+        if ($request->has('area') && !empty($request->area) && $request->area !== 'all') {
+            $areas = is_array($request->area) ? $request->area : explode(',', $request->area);
+            $areas = array_filter(array_map('trim', $areas));
+            if (!empty($areas)) {
+                $query->whereIn('area', $areas);
+            }
         }
 
-        // Property Type Filter
-        if ($request->filled('property_type') && $request->property_type !== 'all') {
-            $query->where('property_type', $request->property_type);
+        // Property Type Filter (Supports Multi or Single)
+        if ($request->has('property_type') && !empty($request->property_type) && $request->property_type !== 'all') {
+            $types = is_array($request->property_type) ? $request->property_type : explode(',', $request->property_type);
+            $types = array_filter(array_map('trim', $types));
+            if (!empty($types)) {
+                $query->whereIn('property_type', $types);
+            }
         }
 
-        // Bedrooms Filter
-        if ($request->filled('bedrooms') && $request->bedrooms !== 'all') {
-            $query->where('bedrooms', $request->bedrooms);
+        // Bedrooms Filter (Supports Multi or Single)
+        if ($request->has('bedrooms') && !empty($request->bedrooms) && $request->bedrooms !== 'all') {
+            $beds = is_array($request->bedrooms) ? $request->bedrooms : explode(',', $request->bedrooms);
+            $beds = array_filter(array_map('trim', $beds));
+            if (!empty($beds)) {
+                $query->whereIn('bedrooms', $beds);
+            }
         }
 
-        // Status Filter
-        if ($request->filled('status') && $request->status !== 'all') {
-            $query->where('status', $request->status);
+        // Date Range Filter on created_at
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
         }
 
         // Tab: unassigned
@@ -58,9 +140,10 @@ class OwnerDataController extends Controller
 
         // KPI Summary Statistics
         $totalAll = OwnerRecord::count();
-        $totalAvailable = OwnerRecord::where('status', 'Available')->count();
-        $totalRented = OwnerRecord::where('status', 'Rented')->count();
-        $totalSold = OwnerRecord::where('status', 'Sold')->count();
+        $totalAssigned = OwnerRecord::whereNotNull('assigned_to')->where('assigned_to', '!=', '')->count();
+        $totalUnassigned = OwnerRecord::where(function ($q) {
+            $q->whereNull('assigned_to')->orWhere('assigned_to', '');
+        })->count();
         $totalAreas = OwnerRecord::distinct('area')->whereNotNull('area')->where('area', '!=', '')->count('area');
         $totalDeleted = OwnerRecord::onlyTrashed()->count();
 
@@ -72,25 +155,35 @@ class OwnerDataController extends Controller
             ->orderBy('area')
             ->pluck('area');
 
+        $defaultTypes = ['Apartment', 'Villa', 'Townhouse', 'Penthouse', 'Duplex', 'Commercial', 'Plot'];
+        $defaultBedrooms = ['Studio', '1 Bedroom', '2 Bedrooms', '3 Bedrooms', '4 Bedrooms', '5+ Bedrooms'];
+
         $distinctPropertyTypes = OwnerRecord::select('property_type')
             ->whereNotNull('property_type')
             ->where('property_type', '!=', '')
             ->distinct()
             ->orderBy('property_type')
-            ->pluck('property_type');
+            ->pluck('property_type')
+            ->merge($defaultTypes)
+            ->unique()
+            ->values();
 
         $distinctBedrooms = OwnerRecord::select('bedrooms')
             ->whereNotNull('bedrooms')
             ->where('bedrooms', '!=', '')
+            ->whereNotIn('bedrooms', ['Apartment', 'Villa', 'Townhouse', 'Penthouse', 'Duplex', 'Plot'])
             ->distinct()
             ->orderBy('bedrooms')
-            ->pluck('bedrooms');
+            ->pluck('bedrooms')
+            ->merge($defaultBedrooms)
+            ->unique()
+            ->values();
 
         // Sorting
         $allowedSorts = [
             'id', 'property_name', 'area', 'property_number', 'building_name',
             'bedrooms', 'property_type', 'owner_name', 'phone_number', 'mobile_number',
-            'email', 'status', 'created_at', 'updated_at'
+            'email', 'created_at', 'updated_at'
         ];
         $sortBy = in_array($request->get('sort_by'), $allowedSorts) ? $request->get('sort_by') : 'created_at';
         $sortOrder = strtolower($request->get('sort_order', 'desc')) === 'asc' ? 'asc' : 'desc';
@@ -108,9 +201,8 @@ class OwnerDataController extends Controller
             'total' => $records->total(),
             'stats' => [
                 'total' => $totalAll,
-                'available' => $totalAvailable,
-                'rented' => $totalRented,
-                'sold' => $totalSold,
+                'assigned' => $totalAssigned,
+                'unassigned' => $totalUnassigned,
                 'areas_count' => $totalAreas,
                 'deleted' => $totalDeleted,
             ],
@@ -150,9 +242,19 @@ class OwnerDataController extends Controller
             ], 422);
         }
 
-        $record = OwnerRecord::create($validator->validated());
+        $data = $validator->validated();
+        $isExplicitUnassigned = isset($data['assigned_to']) && $data['assigned_to'] === 'Unassigned';
 
-        if (empty($record->assigned_to)) {
+        if (array_key_exists('assigned_to', $data)) {
+            if ($data['assigned_to'] === '' || $data['assigned_to'] === 'Unassigned') {
+                $data['assigned_to'] = null;
+            }
+        }
+
+        $record = OwnerRecord::create($data);
+
+        // Auto-distribute if empty/rotation selected, unless explicitly set to 'Unassigned'
+        if (empty($record->assigned_to) && !$isExplicitUnassigned) {
             LeadDistributionService::autoAssignOwnerRecord($record);
             $record->refresh();
         }
@@ -215,7 +317,12 @@ class OwnerDataController extends Controller
             ], 422);
         }
 
-        $record->update($validator->validated());
+        $data = $validator->validated();
+        if (array_key_exists('assigned_to', $data) && $data['assigned_to'] === '') {
+            $data['assigned_to'] = null;
+        }
+
+        $record->update($data);
 
         return response()->json([
             'success' => true,
@@ -284,11 +391,145 @@ class OwnerDataController extends Controller
     }
 
     /**
-     * Bulk import owner records from CSV / array payload
+     * Bulk assign selected owner records to an advisor.
+     */
+    public function bulkAssign(Request $request)
+    {
+        $ids = $request->input('ids', []);
+        $assignedTo = $request->input('assigned_to');
+
+        if (empty($ids) || !is_array($ids)) {
+            return response()->json(['success' => false, 'message' => 'No IDs provided'], 400);
+        }
+
+        if ($assignedTo === 'Unassigned') {
+            $assignedTo = null;
+        }
+
+        $count = OwnerRecord::whereIn('id', $ids)->update(['assigned_to' => $assignedTo]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$count} property record(s) assigned successfully.",
+            'count'   => $count,
+        ]);
+    }
+
+    /**
+     * Preview and analyze CSV / Excel owner records against Master Catalogs before saving.
+     */
+    public function preview(Request $request)
+    {
+        $rows = $request->input('records', []);
+
+        if (empty($rows) || !is_array($rows)) {
+            return response()->json(['success' => false, 'message' => 'No import rows provided'], 400);
+        }
+
+        // Fetch Master Catalogs
+        $catalogCommunities = Community::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
+        $catalogProjects = Project::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
+        $catalogPropertyTypes = PropertyType::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
+
+        $catValues = [
+            'community' => [],
+            'project' => [],
+            'property_type' => [],
+        ];
+
+        $propertyTypeKeywords = ['apartment', 'villa', 'townhouse', 'penthouse', 'duplex', 'commercial', 'office', 'plot', 'mansion'];
+
+        foreach ($rows as $row) {
+            $area = trim((string)($row['area'] ?? ''));
+            $building = trim((string)($row['building_name'] ?? ''));
+            $propName = trim((string)($row['property_name'] ?? ''));
+            $rawBedrooms = trim((string)($row['bedrooms'] ?? ''));
+            $rawPropType = trim((string)($row['property_type'] ?? ''));
+
+            if (!empty($rawBedrooms) && empty($rawPropType)) {
+                foreach ($propertyTypeKeywords as $kw) {
+                    if (stripos($rawBedrooms, $kw) !== false) {
+                        $rawPropType = $rawBedrooms;
+                        break;
+                    }
+                }
+            }
+
+            if (!empty($area)) {
+                $catValues['community'][$area] = ($catValues['community'][$area] ?? 0) + 1;
+            }
+            if (!empty($building)) {
+                $catValues['project'][$building] = ($catValues['project'][$building] ?? 0) + 1;
+            } elseif (!empty($propName)) {
+                $catValues['project'][$propName] = ($catValues['project'][$propName] ?? 0) + 1;
+            }
+            if (!empty($rawPropType)) {
+                $catValues['property_type'][$rawPropType] = ($catValues['property_type'][$rawPropType] ?? 0) + 1;
+            }
+        }
+
+        $unmatched = [
+            'community' => [],
+            'project' => [],
+            'property_type' => [],
+        ];
+
+        $catalogsMap = [
+            'community' => $catalogCommunities,
+            'project' => $catalogProjects,
+            'property_type' => $catalogPropertyTypes,
+        ];
+
+        foreach ($catValues as $category => $values) {
+            $catalogList = $catalogsMap[$category];
+            $catalogLowerLookup = [];
+            foreach ($catalogList as $item) {
+                $catalogLowerLookup[mb_strtolower(trim($item), 'UTF-8')] = $item;
+            }
+
+            foreach ($values as $rawVal => $count) {
+                $rawLower = mb_strtolower(trim($rawVal), 'UTF-8');
+                if (isset($catalogLowerLookup[$rawLower])) {
+                    continue;
+                }
+
+                $best = $this->findBestMatch($rawVal, $catalogList);
+                $unmatched[$category][] = [
+                    'file_value' => $rawVal,
+                    'count' => $count,
+                    'suggested_match' => $best['match'],
+                    'confidence' => $best['confidence'],
+                ];
+            }
+        }
+
+        $hasUnmatched = (
+            count($unmatched['community']) > 0 ||
+            count($unmatched['project']) > 0 ||
+            count($unmatched['property_type']) > 0
+        );
+
+        return response()->json([
+            'success' => true,
+            'total_records' => count($rows),
+            'has_unmatched' => $hasUnmatched,
+            'unmatched' => $unmatched,
+            'catalogs' => [
+                'community' => $catalogCommunities,
+                'project' => $catalogProjects,
+                'property_type' => $catalogPropertyTypes,
+            ],
+        ]);
+    }
+
+    /**
+     * Bulk import owner records from CSV / array payload with value mappings.
      */
     public function import(Request $request)
     {
         $rows = $request->input('records', []);
+        $valueMappings = $request->input('value_mappings', []);
+        $newCatalogItems = $request->input('new_catalog_items', []);
 
         if (empty($rows) || !is_array($rows)) {
             return response()->json(['success' => false, 'message' => 'No import rows provided'], 400);
@@ -297,26 +538,89 @@ class OwnerDataController extends Controller
         $imported = 0;
         DB::beginTransaction();
         try {
+            // Register any newly approved catalog items into Master Settings
+            if (!empty($newCatalogItems) && is_array($newCatalogItems)) {
+                foreach ($newCatalogItems as $newItem) {
+                    $cat = $newItem['category'] ?? '';
+                    $name = trim((string)($newItem['name'] ?? ''));
+                    if (empty($name)) continue;
+
+                    if ($cat === 'community') {
+                        Community::firstOrCreate(
+                            ['name' => mb_substr($name, 0, 255, 'UTF-8')],
+                            ['city' => 'Dubai', 'is_active' => true, 'sort_order' => 99]
+                        );
+                    } elseif ($cat === 'project') {
+                        Project::firstOrCreate(
+                            ['name' => mb_substr($name, 0, 255, 'UTF-8')],
+                            ['is_active' => true, 'sort_order' => 99]
+                        );
+                    } elseif ($cat === 'property_type') {
+                        PropertyType::firstOrCreate(
+                            ['name' => mb_substr($name, 0, 255, 'UTF-8')],
+                            ['is_active' => true, 'sort_order' => 99]
+                        );
+                    }
+                }
+            }
+
             foreach ($rows as $row) {
                 if (empty($row['owner_name'])) continue;
 
+                $rawBedrooms = $row['bedrooms'] ?? null;
+                $rawPropType = $row['property_type'] ?? null;
+
+                // Smart detection: if bedrooms contains a property type word and property_type is empty, reassign
+                $propertyTypeKeywords = ['apartment', 'villa', 'townhouse', 'penthouse', 'duplex', 'commercial', 'office', 'plot', 'mansion'];
+                if (!empty($rawBedrooms) && empty($rawPropType)) {
+                    foreach ($propertyTypeKeywords as $kw) {
+                        if (stripos($rawBedrooms, $kw) !== false) {
+                            $rawPropType = $rawBedrooms;
+                            $rawBedrooms = null;
+                            break;
+                        }
+                    }
+                }
+
+                $area = $row['area'] ?? null;
+                if (!empty($area) && isset($valueMappings['community'][$area])) {
+                    $area = $valueMappings['community'][$area];
+                }
+
+                $building = $row['building_name'] ?? null;
+                if (!empty($building) && isset($valueMappings['project'][$building])) {
+                    $building = $valueMappings['project'][$building];
+                }
+
+                $propName = $row['property_name'] ?? null;
+                if (!empty($propName) && isset($valueMappings['project'][$propName])) {
+                    $propName = $valueMappings['project'][$propName];
+                }
+
+                if (!empty($rawPropType) && isset($valueMappings['property_type'][$rawPropType])) {
+                    $rawPropType = $valueMappings['property_type'][$rawPropType];
+                }
+
+                $assignedTo = !empty($row['assigned_to']) && $row['assigned_to'] !== 'Unassigned' && $row['assigned_to'] !== 'auto' ? trim($row['assigned_to']) : null;
+
                 $createdRecord = OwnerRecord::create([
-                    'property_name'   => $row['property_name'] ?? null,
-                    'area'            => $row['area'] ?? null,
+                    'property_name'   => $propName,
+                    'area'            => $area,
                     'property_number' => $row['property_number'] ?? null,
-                    'building_name'   => $row['building_name'] ?? null,
-                    'bedrooms'        => $row['bedrooms'] ?? null,
-                    'property_type'   => $row['property_type'] ?? null,
+                    'building_name'   => $building,
+                    'bedrooms'        => $rawBedrooms,
+                    'property_type'   => $rawPropType,
                     'owner_name'      => $row['owner_name'],
                     'phone_number'    => $row['phone_number'] ?? null,
                     'mobile_number'   => $row['mobile_number'] ?? null,
                     'email'           => $row['email'] ?? null,
                     'notes'           => $row['notes'] ?? null,
                     'status'          => $row['status'] ?? 'active',
-                    'assigned_to'     => $row['assigned_to'] ?? null,
+                    'assigned_to'     => $assignedTo,
                 ]);
 
-                if (empty($row['assigned_to'])) {
+                // Auto-assign to sales advisors via Round-Robin if not explicitly assigned in CSV
+                if (empty($assignedTo)) {
                     LeadDistributionService::autoAssignOwnerRecord($createdRecord);
                 }
 

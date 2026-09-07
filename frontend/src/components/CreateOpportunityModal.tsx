@@ -16,6 +16,7 @@ interface CreateOpportunityModalProps {
     source?: string;
     nationality?: string;
   } | null;
+  ownerRecord?: any | null;
 }
 
 const OPPORTUNITY_TYPES = [
@@ -55,6 +56,7 @@ export default function CreateOpportunityModal({
   onClose,
   onSuccess,
   contact,
+  ownerRecord,
 }: CreateOpportunityModalProps) {
   const [contactsList, setContactsList] = useState<any[]>([]);
   const [selectedContactId, setSelectedContactId] = useState<string>('');
@@ -92,8 +94,18 @@ export default function CreateOpportunityModal({
 
   useEffect(() => {
     if (isOpen) {
-      if (contact) {
+      if (ownerRecord) {
+        setOpportunityType('seller');
+        setDeveloper('Other / General');
+        setBudgetMin('1500000');
+        setBudgetMax('2500000');
+        setKeyRequirement(
+          `Selling / Leasing ${ownerRecord.bedrooms || ''} ${ownerRecord.property_type || 'Property'} in ${ownerRecord.building_name || ownerRecord.area || 'Dubai'}${ownerRecord.property_number ? ` (Unit #${ownerRecord.property_number})` : ''}`
+        );
+        setNextAction(`Call owner (${ownerRecord.owner_name}) to confirm listing agreement & expected price`);
+      } else if (contact) {
         setSelectedContactId(String(contact.id));
+        setOpportunityType('buyer');
       } else {
         // Fetch contacts if creating without a specific contact selected
         fetchApi('/contacts')
@@ -105,7 +117,7 @@ export default function CreateOpportunityModal({
           .catch(() => {});
       }
     }
-  }, [isOpen, contact]);
+  }, [isOpen, contact, ownerRecord]);
 
   if (!isOpen) return null;
 
@@ -114,35 +126,47 @@ export default function CreateOpportunityModal({
     setLoading(true);
     setError('');
 
-    const targetContactId = contact ? contact.id : Number(selectedContactId);
+    const targetContactId = contact ? contact.id : (selectedContactId ? Number(selectedContactId) : null);
 
-    if (!targetContactId) {
-      setError('Please select a contact from Lead Bank');
+    if (!targetContactId && !ownerRecord) {
+      setError('Please select a contact from Lead Bank or an Owner Record');
       setLoading(false);
       return;
     }
 
     try {
+      const payload: any = {
+        opportunity_type: opportunityType,
+        temperature,
+        developer,
+        budget_min: Number(budgetMin),
+        budget_max: Number(budgetMax),
+        key_requirement: keyRequirement,
+        next_action: nextAction,
+        next_action_due_at: nextActionDueDate,
+        current_owner_name: (() => {
+          try {
+            const raw = localStorage.getItem('crm_user');
+            if (raw) return JSON.parse(raw).name || 'Faraz Shafi';
+          } catch {}
+          return 'Faraz Shafi';
+        })(),
+      };
+
+      if (ownerRecord) {
+        payload.owner_record_id = ownerRecord.id;
+        payload.community = ownerRecord.area;
+        payload.building_name = ownerRecord.building_name;
+        payload.unit_number = ownerRecord.property_number;
+        payload.property_type = ownerRecord.property_type;
+        payload.bedrooms = ownerRecord.bedrooms;
+      } else {
+        payload.contact_id = targetContactId;
+      }
+
       await fetchApi('/opportunities', {
         method: 'POST',
-        body: JSON.stringify({
-          contact_id: targetContactId,
-          opportunity_type: opportunityType,
-          temperature,
-          developer,
-          budget_min: Number(budgetMin),
-          budget_max: Number(budgetMax),
-          key_requirement: keyRequirement,
-          next_action: nextAction,
-          next_action_due_at: nextActionDueDate,
-          current_owner_name: (() => {
-            try {
-              const raw = localStorage.getItem('crm_user');
-              if (raw) return JSON.parse(raw).name || 'Faraz Shafi';
-            } catch {}
-            return 'Faraz Shafi';
-          })(),
-        }),
+        body: JSON.stringify(payload),
       });
 
       setLoading(false);
@@ -169,11 +193,17 @@ export default function CreateOpportunityModal({
               <UserCheck className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-heading font-semibold text-base">Create New Active Opportunity</h2>
-              <p className="text-xs text-[#C8A147]">Instantiate a new deal under an existing Lead Bank contact.</p>
+              <h2 className="font-heading font-semibold text-base">
+                {ownerRecord ? 'Create Opportunity for Property Owner' : 'Create New Active Opportunity'}
+              </h2>
+              <p className="text-xs text-[#C8A147]">
+                {ownerRecord
+                  ? `Instantiate a deal for ${ownerRecord.owner_name} (${ownerRecord.building_name || ownerRecord.area || 'Owner Registry'})`
+                  : 'Instantiate a new deal under an existing Lead Bank contact.'}
+              </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded text-slate-300 hover:text-white">
+          <button onClick={onClose} className="p-1 rounded text-slate-300 hover:text-white cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -188,8 +218,32 @@ export default function CreateOpportunityModal({
           )}
 
           <div>
-            <label className="block text-[#081428] font-bold mb-1">Select Existing Contact from Lead Bank *</label>
-            {contact ? (
+            <label className="block text-[#081428] font-bold mb-1">
+              {ownerRecord ? 'Property Owner & Asset Info *' : 'Select Existing Contact from Lead Bank *'}
+            </label>
+            {ownerRecord ? (
+              <div className="p-3 bg-[#FAF8F5] border border-[#C8A147]/70 rounded-md font-bold text-[#081428] text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">👤 {ownerRecord.owner_name}</span>
+                  <span className="px-2 py-0.5 bg-[#081428] text-[#C8A147] rounded text-[10px] font-bold uppercase">
+                    Owner Data Bank
+                  </span>
+                </div>
+                <div className="text-xs text-slate-700 font-mono font-normal">
+                  📱 {ownerRecord.mobile_number || ownerRecord.phone_number || '—'}{' '}
+                  {ownerRecord.email ? `· ✉️ ${ownerRecord.email}` : ''}
+                </div>
+                <div className="text-[11px] text-slate-600 font-medium pt-1.5 border-t border-[#E8E4DC] flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                  <span>
+                    <strong>{ownerRecord.building_name || 'Building'}</strong>
+                    {ownerRecord.property_number ? ` · Unit: ${ownerRecord.property_number}` : ''}
+                    {ownerRecord.area ? ` · ${ownerRecord.area}` : ''}
+                    {ownerRecord.bedrooms ? ` (${ownerRecord.bedrooms} ${ownerRecord.property_type || ''})` : ''}
+                  </span>
+                </div>
+              </div>
+            ) : contact ? (
               <div className="p-2.5 bg-[#FAF8F5] border border-emerald-300 rounded font-bold text-[#081428] text-xs">
                 {contact.name} ({contact.phone}) — <span className="text-emerald-700 font-normal">{contact.nationality || 'Emirati'}</span>
               </div>

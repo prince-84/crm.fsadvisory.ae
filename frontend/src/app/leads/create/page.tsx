@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import Swal from 'sweetalert2';
 
 const INITIAL_LEAD_SOURCES = [
   { value: 'Website', label: 'Official Website Form' },
@@ -403,52 +404,73 @@ export default function CreateLeadPage() {
     setLoading(true);
 
     try {
-      // Step 2: Create Contact in Lead Bank
+      // Step 2: Compile optional inquiry preferences into activity notes
+      const requirementNotes = [
+        opportunityType ? `Opportunity Type: ${opportunityType}` : null,
+        temperature ? `Initial Temperature: ${temperature}` : null,
+        developer ? `Developer: ${developer}` : null,
+        community ? `Location/Community: ${community}` : null,
+        project ? `Project: ${project}` : null,
+        projectProperty ? `Unit: ${projectProperty}` : null,
+        propertyType ? `Property Type: ${propertyType}` : null,
+        bedrooms ? `Bedrooms: ${bedrooms}` : null,
+        budgetMin || budgetMax ? `Budget: AED ${budgetMin ? Number(budgetMin).toLocaleString() : '0'} – ${budgetMax ? Number(budgetMax).toLocaleString() : 'Max'}` : null,
+        paymentMethod ? `Payment Method: ${paymentMethod}` : null,
+        keyRequirement ? `Notes: ${keyRequirement}` : null,
+        nextAction ? `Next Action: ${nextAction}` : null,
+      ].filter(Boolean).join(' | ');
+
+      // Step 3: Create Contact in Lead Bank & Auto-Assign to My Queue with linked Opportunity
+      const payload: Record<string, any> = {
+        name,
+        phone,
+        secondary_phone: secondaryPhone || null,
+        email,
+        nationality: nationality || null,
+        emirates_id: emiratesId || null,
+        source: source ? (subSource ? `${source} (${subSource})` : source) : null,
+        assigned_owner: assignedOwner && assignedOwner !== 'Unassigned' ? assignedOwner : 'auto',
+        utm_source: utmSource || null,
+        utm_medium: utmMedium || null,
+        utm_campaign: utmCampaign || null,
+        utm_term: utmTerm || null,
+        utm_content: utmContent || null,
+        landing_page_url: landingPageUrl || null,
+        // Opportunity workspace details
+        opportunity_type: opportunityType || 'buyer',
+        temperature: temperature || 'warm',
+        developer: developer || null,
+        community: community || null,
+        project: project || null,
+        project_property: projectProperty || null,
+        property_type: propertyType || null,
+        bedrooms: bedrooms || null,
+        budget_min: budgetMin ? Number(budgetMin) : null,
+        budget_max: budgetMax ? Number(budgetMax) : null,
+        cash_or_finance: paymentMethod || null,
+        key_requirement: keyRequirement || null,
+        next_action: nextAction || null,
+        next_action_due_at: nextActionDueDate || null,
+      };
+
+      if (requirementNotes) {
+        payload.activity_description = `Initial Inquiry Requirements: ${requirementNotes}`;
+      }
+
       const contactRes = await fetchApi('/contacts', {
         method: 'POST',
-        body: JSON.stringify({
-          name,
-          phone,
-          secondary_phone: secondaryPhone || null,
-          email,
-          nationality: nationality || null,
-          source: source ? (subSource ? `${source} (${subSource})` : source) : null,
-          utm_source: utmSource || null,
-          utm_medium: utmMedium || null,
-          utm_campaign: utmCampaign || null,
-          utm_term: utmTerm || null,
-          utm_content: utmContent || null,
-          landing_page_url: landingPageUrl || null,
-        }),
-      });
-
-      const contactId = contactRes.id;
-
-      // Step 3: Create Opportunity for Contact
-      const oppRes = await fetchApi('/opportunities', {
-        method: 'POST',
-        body: JSON.stringify({
-          contact_id: contactId,
-          opportunity_type: opportunityType || 'buyer',
-          temperature: temperature || 'hot',
-          developer: developer || null,
-          community: community || null,
-          project: project || null,
-          project_property: projectProperty || null,
-          property_type: propertyType || null,
-          bedrooms: bedrooms || null,
-          cash_or_finance: paymentMethod || null,
-          budget_min: budgetMin ? Number(budgetMin) : null,
-          budget_max: budgetMax ? Number(budgetMax) : null,
-          key_requirement: keyRequirement || 'New Inquiry',
-          next_action: nextAction || 'Contact new lead — confirm requirement details',
-          next_action_due_at: nextActionDueDate || null,
-          current_owner_name: assignedOwner || 'Mako',
-        }),
+        body: JSON.stringify(payload),
       });
 
       setLoading(false);
-      router.push(`/opportunities/${oppRes.id}`);
+      Swal.fire({
+        title: 'Lead Created!',
+        text: `Lead for "${name}" has been registered successfully.`,
+        icon: 'success',
+        timer: 1800,
+        showConfirmButton: false,
+      });
+      router.push('/');
     } catch (err: any) {
       setLoading(false);
 
@@ -490,10 +512,10 @@ export default function CreateLeadPage() {
                 <span>Back to Lead Pool</span>
               </Link>
               <h1 className="font-heading font-bold text-2xl text-[#081428]">
-                Create New Lead & Opportunity
+                Create New Lead
               </h1>
               <p className="text-xs text-[#6E6E6E] mt-0.5">
-                Register contact into Lead Bank and instantiate an active deal. Mandatory fields: Full Name, Primary Phone & Email.
+                Register contact into Lead Pool and route to My Queue. Mandatory fields: Full Name, Primary Phone & Email.
               </p>
             </div>
           </div>
@@ -508,14 +530,16 @@ export default function CreateLeadPage() {
 
             {/* SECTION 1: Client Personal Information */}
             <div className="bg-white border border-[#E8E4DC] rounded-lg p-6 space-y-4 shadow-2xs">
-              <h2 className="font-heading font-bold text-base text-[#081428] border-b border-[#E8E4DC] pb-3 flex items-center gap-2 uppercase tracking-wider">
+              <h2 className="font-heading font-bold text-sm text-[#081428] border-b border-[#E8E4DC] pb-3 flex items-center gap-2 uppercase tracking-wider">
                 <User className="w-4 h-4 text-[#C8A147]" />
                 <span>1. Client Personal Details</span>
               </h2>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-[#081428] font-bold mb-1">Client Full Name *</label>
+                  <label className="block text-[#081428] font-semibold mb-1">
+                    Client Full Name <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     placeholder="e.g. Tariq Al Hassan"
@@ -540,7 +564,9 @@ export default function CreateLeadPage() {
 
                 {/* Primary Phone */}
                 <div>
-                  <label className="block text-[#081428] font-bold mb-1">Primary Phone Number *</label>
+                  <label className="block text-[#081428] font-semibold mb-1">
+                    Primary Phone Number <span className="text-red-500">*</span>
+                  </label>
                   <PhoneInput
                     value={phone}
                     onChange={(val) => {
@@ -573,7 +599,9 @@ export default function CreateLeadPage() {
               {/* Row 2: Email Address, Nationality, Emirates ID */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-[#081428] font-bold mb-1">Email Address *</label>
+                  <label className="block text-[#081428] font-semibold mb-1">
+                    Email Address <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="email"
                     placeholder="tariq@example.com"
@@ -622,7 +650,7 @@ export default function CreateLeadPage() {
 
             {/* SECTION 2: Lead Origin & Channel Source */}
             <div className="bg-white border border-[#E8E4DC] rounded-lg p-6 space-y-4 shadow-2xs">
-              <h2 className="font-heading font-bold text-base text-[#081428] border-b border-[#E8E4DC] pb-3 flex items-center gap-2 uppercase tracking-wider">
+              <h2 className="font-heading font-bold text-sm text-[#081428] border-b border-[#E8E4DC] pb-3 flex items-center gap-2 uppercase tracking-wider">
                 <Globe className="w-4 h-4 text-[#C8A147]" />
                 <span>2. Lead Origin & Channel Source</span>
               </h2>
@@ -654,14 +682,14 @@ export default function CreateLeadPage() {
             {/* SECTION: Marketing & UTM Attribution Parameters */}
             <div className="bg-white border border-[#E8E4DC] rounded-lg p-6 space-y-4 shadow-2xs">
               <div className="border-b border-[#E8E4DC] pb-3 flex items-center justify-between">
-                <h2 className="font-heading font-bold text-base text-[#081428] flex items-center gap-2 uppercase tracking-wider">
+                <h2 className="font-heading font-bold text-sm text-[#081428] flex items-center gap-2 uppercase tracking-wider">
                   <Target className="w-4 h-4 text-[#C8A147]" />
                   <span>Marketing & UTM Parameters</span>
                 </h2>
                 <span className="text-[10px] text-[#C8A147] font-semibold uppercase tracking-wider bg-[#F9F6EE] px-2.5 py-1 rounded border border-[#C8A147]/30">Campaign Attribution</span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                 {/* 1. UTM Source */}
                 <div>
                   <label className="block text-[#081428] font-semibold mb-1">UTM Source</label>
@@ -747,7 +775,7 @@ export default function CreateLeadPage() {
 
             {/* SECTION 3: Opportunity Requirements & Deal Specs */}
             <div className="bg-white border border-[#E8E4DC] rounded-lg p-6 space-y-4 shadow-2xs">
-              <h2 className="font-heading font-bold text-base text-[#081428] border-b border-[#E8E4DC] pb-3 flex items-center gap-2 uppercase tracking-wider">
+              <h2 className="font-heading font-bold text-sm text-[#081428] border-b border-[#E8E4DC] pb-3 flex items-center gap-2 uppercase tracking-wider">
                 <Briefcase className="w-4 h-4 text-[#C8A147]" />
                 <span>3. Opportunity Requirements & Property Preferences</span>
               </h2>
@@ -918,7 +946,7 @@ export default function CreateLeadPage() {
 
             {/* SECTION 4: SLA Action & Ownership */}
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 space-y-4 shadow-2xs">
-              <h2 className="font-heading font-bold text-base text-[#081428] border-b border-amber-200 pb-3 flex items-center gap-2 uppercase tracking-wider">
+              <h2 className="font-heading font-bold text-sm text-[#081428] border-b border-amber-200 pb-3 flex items-center gap-2 uppercase tracking-wider">
                 <Clock className="w-4 h-4 text-amber-700" />
                 <span>4. SLA Next Action & Ownership Assignment</span>
               </h2>
@@ -971,7 +999,7 @@ export default function CreateLeadPage() {
                 className="px-6 py-2.5 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold text-xs rounded-md shadow-md transition-all flex items-center gap-2"
               >
                 <Plus className="w-4 h-4 text-white" />
-                <span>{loading ? 'Creating Lead...' : 'Save Lead & Create Opportunity Workspace'}</span>
+                <span>{loading ? 'Saving Lead...' : 'Save Lead'}</span>
               </button>
             </div>
           </form>

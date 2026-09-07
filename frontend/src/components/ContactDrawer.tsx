@@ -11,7 +11,7 @@ interface ContactDrawerProps {
   contact: any | null;
   isOpen: boolean;
   onClose: () => void;
-  onCreateOpportunity: (contact: any) => void;
+  onCreateOpportunity?: (contact: any) => void;
   onEditLead?: (contact: any) => void;
 }
 
@@ -30,7 +30,8 @@ export default function ContactDrawer({
 
   if (!isOpen || !contact) return null;
 
-  const activeOpp = contact.opportunities?.find((o: any) => o.stage !== 'closed_won' && o.stage !== 'closed_lost') || contact.active_opportunity;
+  const rawOpp = contact.opportunities?.find((o: any) => o.stage !== 'closed_won' && o.stage !== 'closed_lost') || contact.active_opportunity;
+  const activeOpp = (rawOpp && Number(rawOpp.id) > 0 && rawOpp.has_opportunity !== false) ? rawOpp : null;
   const qual = activeOpp?.buyer_qualification || {};
 
   const maskPhone = (phoneStr: string) => {
@@ -142,14 +143,20 @@ export default function ContactDrawer({
                 </div>
               </div>
             ) : (
-              <div className="p-4 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-center space-y-3">
-                <p className="text-xs text-[#6E6E6E]">No active opportunity currently linked to this contact.</p>
-                <button
-                  onClick={() => onCreateOpportunity(contact)}
-                  className="w-full py-2 bg-[#C8A147] hover:bg-[#b48e35] text-white font-bold text-xs rounded transition-colors shadow-2xs"
-                >
-                  Create Opportunity
-                </button>
+              <div className="p-4 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-center space-y-2">
+                <div className="flex items-center justify-center gap-1.5 text-[#C8A147]">
+                  <Clock className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wide">Awaiting Qualification</span>
+                </div>
+                <p className="text-[11px] text-[#6E6E6E]">
+                  This contact has no active deal yet. Deals are qualified and created from the <strong className="text-[#081428]">My Queue</strong> calling desk.
+                </p>
+                {contact.assigned_to && (
+                  <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-[#E8E4DC] rounded text-[11px] text-[#081428] font-medium mt-1">
+                    <span className="text-[#6E6E6E]">Assigned Advisor:</span>
+                    <strong className="text-[#C8A147] font-semibold">{contact.assigned_to}</strong>
+                  </div>
+                )}
               </div>
             )}
 

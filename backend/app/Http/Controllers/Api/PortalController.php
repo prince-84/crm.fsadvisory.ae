@@ -59,100 +59,82 @@ class PortalController extends Controller
             $portal->update(['last_synced_at' => now()]);
         }
 
-        // Match existing contact by phone or create new
-        $contact = Contact::where('phone', $validated['client_phone'])->first();
+        $portalName = ucfirst(str_replace('_', ' ', $validated['portal_name']));
 
-        if ($contact) {
-            // Existing Contact Re-inquiry
-            $contact->update([
-                'state' => 'active',
-                'last_activity_at' => now(),
-                'landing_page_url' => $validated['landing_page_url'] ?? $contact->landing_page_url,
-                'utm_source' => $validated['utm_source'] ?? $contact->utm_source,
-                'utm_medium' => $validated['utm_medium'] ?? $contact->utm_medium,
-                'utm_campaign' => $validated['utm_campaign'] ?? $contact->utm_campaign,
-                'utm_term' => $validated['utm_term'] ?? $contact->utm_term,
-                'utm_content' => $validated['utm_content'] ?? $contact->utm_content,
-            ]);
-            $isReInquiry = true;
-        } else {
-            // Brand New Contact
-            $words = explode(' ', $validated['client_name']);
-            $initials = strtoupper(substr($words[0] ?? 'C', 0, 1) . substr($words[1] ?? 'T', 0, 1));
+        // Check if phone matches any existing contact in database
+        $existingContact = Contact::where('phone', $validated['client_phone'])
+            ->orWhere('secondary_phone', $validated['client_phone'])
+            ->first();
 
-            $contact = Contact::create([
-                'name' => $validated['client_name'],
-                'initials' => $initials,
-                'nationality' => 'Expat / UAE Resident',
-                'phone' => $validated['client_phone'],
-                'email' => $validated['client_email'] ?? strtolower(str_replace(' ', '.', $validated['client_name'])) . '@portal-lead.ae',
-                'source' => ucfirst(str_replace('_', ' ', $validated['portal_name'])),
-                'state' => 'active',
-                'last_activity_at' => now(),
-                'landing_page_url' => $validated['landing_page_url'] ?? null,
-                'utm_source' => $validated['utm_source'] ?? null,
-                'utm_medium' => $validated['utm_medium'] ?? null,
-                'utm_campaign' => $validated['utm_campaign'] ?? null,
-                'utm_term' => $validated['utm_term'] ?? null,
-                'utm_content' => $validated['utm_content'] ?? null,
-            ]);
-            $isReInquiry = false;
-        }
+        $words = explode(' ', $validated['client_name']);
+        $initials = strtoupper(substr($words[0] ?? 'C', 0, 1) . substr($words[1] ?? 'T', 0, 1));
 
-        $budget = $validated['budget'] ?? 2500000;
+        $isDuplicate = (bool) $existingContact;
+        $state = $isDuplicate ? 'duplicate' : 'available';
 
-        // Auto create Opportunity
-        $opp = Opportunity::create([
-            'contact_id' => $contact->id,
-            'opportunity_type' => 'buyer',
-            'stage' => 'qualification',
-            'temperature' => 'hot',
-            'current_owner_name' => 'Faraz Shafi',
-            'originating_agent_name' => 'Portal Ingest',
-            'department' => 'sales',
-            'budget_min' => $budget * 0.9,
-            'budget_max' => $budget * 1.1,
-            'next_action' => 'Contact lead re-inquiry from ' . ucfirst(str_replace('_', ' ', $validated['portal_name'])),
-            'next_action_due_at' => Carbon::now()->addMinutes(15), // Urgent SLA
-            'sla_status' => 'due_soon',
-            'key_requirement' => 'Inquiry from ' . ucfirst(str_replace('_', ' ', $validated['portal_name'])) . ' for ' . ($validated['community'] ?? 'Downtown Dubai'),
+        // ALWAYS create a new permanent Contact profile for incoming leads (no overwrite or merging)
+        $contact = Contact::create([
+            'name' => $validated['client_name'],
+            'initials' => $initials,
+            'nationality' => 'Expat / UAE Resident',
+            'phone' => $validated['client_phone'],
+            'email' => $validated['client_email'] ?? strtolower(str_replace(' ', '.', $validated['client_name'])) . '@portal-lead.ae',
+            'source' => $portalName,
+            'state' => $state,
+            'last_activity_at' => now(),
+            'landing_page_url' => $validated['landing_page_url'] ?? null,
+            'utm_source' => $validated['utm_source'] ?? null,
+            'utm_medium' => $validated['utm_medium'] ?? null,
+            'utm_campaign' => $validated['utm_campaign'] ?? null,
+            'utm_term' => $validated['utm_term'] ?? null,
+            'utm_content' => $validated['utm_content'] ?? null,
         ]);
 
-        // Auto-assign to dynamic agent rotation pool
-        $assignedAgent = LeadDistributionService::autoAssignOpportunity($opp);
-        if ($assignedAgent) {
-            $opp->refresh();
+        if ($isDuplicate) {
+            // Duplicate Lead: routed to dedicated Duplicate tab for review; not auto-assigned to advisor rotation
+            Activity::create([
+                'contact_id' => $contact->id,
+                'opportunity_id' => null,
+                'user_name' => 'System / Webhook',
+                'type' => 'note',
+                'description' => "Duplicate inquiry received via {$portalName}. Matches existing Contact #{$existingContact->id} ({$existingContact->name}, Phone: {$existingContact->phone}). Displayed in Duplicate tab for review.",
+            ]);
+
+            Activity::create([
+                'contact_id' => $existingContact->id,
+                'opportunity_id' => null,
+                'user_name' => 'System / Webhook',
+                'type' => 'note',
+                'description' => "Re-inquiry received from {$portalName}. A new duplicate profile #{$contact->id} was created and displayed in Duplicate tab.",
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'is_duplicate' => true,
+                'message' => "Duplicate inquiry received from {$portalName}. Profile #{$contact->id} created and displayed in Duplicate tab.",
+                'contact' => $contact,
+                'matched_contact_id' => $existingContact->id,
+            ], 201);
         }
 
-        BuyerQualification::create([
-            'opportunity_id' => $opp->id,
-            'client_intent' => 'end_user',
-            'purchase_timeline' => 'Immediate',
-            'community' => $validated['community'] ?? 'Downtown Dubai',
-            'property_type' => 'Apartment',
-            'bedrooms' => '2 BR',
-            'lead_score' => 90,
-            'qualification_notes' => 'Ingested from portal ' . $validated['portal_name'] . ($isReInquiry ? ' (Re-inquiry matched to existing Contact)' : ''),
-        ]);
+        // Brand New Unique Lead: Auto-assign via dynamic agent rotation pool
+        $assignedAgent = LeadDistributionService::autoAssignContact($contact);
+        $agentName = $assignedAgent ? $assignedAgent->name : 'Unassigned';
 
         Activity::create([
             'contact_id' => $contact->id,
-            'opportunity_id' => $opp->id,
+            'opportunity_id' => null,
             'user_name' => 'System / Webhook',
             'type' => 'note',
-            'description' => $isReInquiry 
-                ? "Re-inquiry received via " . ucfirst(str_replace('_', ' ', $validated['portal_name'])) . ". Matched to existing Contact #{$contact->id}. Created new Opportunity #{$opp->id} & 15-min SLA assigned to Mako."
-                : "New Lead Ingested from " . ucfirst(str_replace('_', ' ', $validated['portal_name'])) . ". Created Contact #{$contact->id} & 15-min SLA assigned to Mako.",
+            'description' => "New Lead Ingested from {$portalName}. Contact #{$contact->id} auto-assigned to {$agentName} (Awaiting qualification call).",
         ]);
 
         return response()->json([
             'success' => true,
-            'is_re_inquiry' => $isReInquiry,
-            'message' => $isReInquiry 
-                ? "Re-inquiry matched to existing Contact {$contact->name}. Created Opportunity #{$opp->id} & assigned to Telesales."
-                : "New Lead ingested. Created Contact & Opportunity #{$opp->id}.",
-            'contact' => $contact,
-            'opportunity' => $opp,
+            'is_duplicate' => false,
+            'message' => "New Lead ingested. Contact created & auto-assigned to {$agentName}.",
+            'contact' => $contact->fresh(),
+            'assigned_agent' => $agentName,
         ], 201);
     }
 }

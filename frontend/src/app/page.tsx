@@ -1,21 +1,21 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import ContactDrawer from '@/components/ContactDrawer';
 import CreateContactModal from '@/components/CreateContactModal';
 import CreateLeadModal from '@/components/CreateLeadModal';
-import CreateOpportunityModal from '@/components/CreateOpportunityModal';
 import ImportLeadsModal from '@/components/ImportLeadsModal';
-import EditContactModal from '@/components/EditContactModal';
+import AdvancedFilterModal, { AdvancedFiltersState, INITIAL_ADVANCED_FILTERS } from '@/components/AdvancedFilterModal';
+import DateRangePicker, { DateRangeValue } from '@/components/DateRangePicker';
 import { fetchApi } from '@/lib/api';
 import Swal from 'sweetalert2';
 import { 
   Search, Download, Upload, Plus, Users, CheckCircle2, Briefcase, 
   RotateCcw, Copy, ChevronLeft, ChevronRight, RefreshCw, Trash2, Undo2, UserX,
   ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, GripVertical, UserCheck, X,
-  Eye, Edit3, MessageSquare, Check, Zap
+  Eye, Edit3, MessageSquare, Check, Zap, Filter
 } from 'lucide-react';
 import Link from 'next/link';
 import { hasPermission } from '@/lib/permissions';
@@ -75,21 +75,29 @@ export default function LeadPoolPage() {
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Secondary Filters State
-  const [selectedState, setSelectedState] = useState('all');
-  const [selectedSource, setSelectedSource] = useState('all');
-  const [selectedAvailability, setSelectedAvailability] = useState('all');
+  // Secondary Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
-  const [availableSourcesList, setAvailableSourcesList] = useState<string[]>([
-    'Website', 'Meta Ads', 'Google Ads', 'Property Finder', 'Bayut', 'Dubizzle', 'Referral', 'Walk-in', 'Database'
-  ]);
+  
+  // Date Range Calendar State (filters created_at in database)
+  const [dateRange, setDateRange] = useState<DateRangeValue>({
+    from: '',
+    to: '',
+    preset: 'all',
+  });
+
+  // Advanced Filters State & Modal (includes Lifecycle State & Availability)
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFiltersState>(INITIAL_ADVANCED_FILTERS);
+  const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
+
+  const activeAdvancedCount = useMemo(() => {
+    return Object.values(advancedFilters).filter((v) => v && v.trim() !== '' && v !== 'all').length;
+  }, [advancedFilters]);
 
   const DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = {
     name: true,
     source: true,
     state: true,
     opportunity: true,
-    sla: true,
     assigned_owner: true,
     actions: true,
     phone: true,
@@ -125,16 +133,15 @@ export default function LeadPoolPage() {
 
   const DEFAULT_COLUMN_ORDER = [
     'name',
+    'phone',
     'source',
+    'created_at',
     'state',
     'opportunity',
-    'sla',
     'assigned_owner',
-    'phone',
     'secondary_phone',
     'email',
     'nationality',
-    'created_at',
     'sub_source',
     'opportunity_type',
     'developer',
@@ -175,6 +182,7 @@ export default function LeadPoolPage() {
               cleanVis[k] = !!parsedVis[k];
             }
           });
+          cleanVis.created_at = true; // By default Created Date must be visible
           setColumnVisibility(cleanVis);
         } catch (e) {
           console.error('Error parsing column visibility:', e);
@@ -185,9 +193,17 @@ export default function LeadPoolPage() {
         try {
           const parsed = JSON.parse(savedOrder);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const sanitized = parsed.filter((k: string) => validKeys.includes(k));
-            const missing = DEFAULT_COLUMN_ORDER.filter((k) => !sanitized.includes(k));
-            const finalOrder = [...sanitized, ...missing];
+            let sanitized = parsed.filter((k: string) => validKeys.includes(k) && k !== 'actions');
+            if (!sanitized.includes('created_at')) {
+              const srcIdx = sanitized.indexOf('source');
+              if (srcIdx !== -1) {
+                sanitized.splice(srcIdx + 1, 0, 'created_at');
+              } else {
+                sanitized.splice(3, 0, 'created_at');
+              }
+            }
+            const missing = DEFAULT_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
+            const finalOrder = [...sanitized, ...missing, 'actions'];
             setColumnOrder(finalOrder);
             localStorage.setItem('lead_pool_column_order', JSON.stringify(finalOrder));
           }
@@ -242,7 +258,6 @@ export default function LeadPoolPage() {
     { key: 'source', label: 'Source Channel', category: 'Core' },
     { key: 'state', label: 'Lifecycle State', category: 'Core' },
     { key: 'opportunity', label: 'Opportunity Workspace', category: 'Core' },
-    { key: 'sla', label: 'SLA Status', category: 'Core' },
     { key: 'phone', label: 'Primary Phone', category: 'Client Details' },
     { key: 'secondary_phone', label: 'Secondary Phone', category: 'Client Details' },
     { key: 'email', label: 'Email Address', category: 'Client Details' },
@@ -342,13 +357,6 @@ export default function LeadPoolPage() {
             {ct.phone ? (
               <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                 <span className="font-mono text-xs">{ct.phone}</span>
-                <Link
-                  href="/whatsapp"
-                  className="p-1 text-[#25D366] hover:bg-emerald-50 rounded transition-colors inline-flex items-center justify-center"
-                  title="Open WhatsApp Chat"
-                >
-                  <MessageSquare className="w-3.5 h-3.5 fill-current" />
-                </Link>
                 <button
                   onClick={(e) => copyToClipboard(ct.phone, `phone-${ct.id}`, e)}
                   className="text-slate-400 hover:text-slate-700 cursor-pointer p-0.5"
@@ -373,13 +381,6 @@ export default function LeadPoolPage() {
             {ct.secondary_phone ? (
               <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                 <span className="font-mono text-xs">{ct.secondary_phone}</span>
-                <Link
-                  href="/whatsapp"
-                  className="p-1 text-[#25D366] hover:bg-emerald-50 rounded transition-colors inline-flex items-center justify-center"
-                  title="Open WhatsApp Chat"
-                >
-                  <MessageSquare className="w-3.5 h-3.5 fill-current" />
-                </Link>
                 <button
                   onClick={(e) => copyToClipboard(ct.secondary_phone, `sec-phone-${ct.id}`, e)}
                   className="text-slate-400 hover:text-slate-700 cursor-pointer p-0.5"
@@ -435,6 +436,11 @@ export default function LeadPoolPage() {
               </span>
             ) : (
               <>
+                {ct.state === 'assigned' && (
+                  <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] uppercase font-bold">
+                    Assigned
+                  </span>
+                )}
                 {ct.state === 'active' && (
                   <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px] uppercase font-bold">
                     Active Deal
@@ -474,7 +480,16 @@ export default function LeadPoolPage() {
                   <span className="text-[10px] font-normal text-[#6E6E6E]">({opp.bedrooms || '2BR'})</span>
                 </Link>
                 <div className="text-[10px] text-[#6E6E6E]">
-                  Owner: <span className="font-semibold text-[#081428]">{opp.current_owner_name || 'Unassigned'}</span>
+                  Owner: <span className="font-semibold text-[#081428]">{opp.current_owner_name || ct.assigned_to || 'Unassigned'}</span>
+                </div>
+              </div>
+            ) : ct.assigned_to ? (
+              <div className="space-y-0.5">
+                <span className="text-xs text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                  Assigned (No Deal Yet)
+                </span>
+                <div className="text-[10px] text-[#6E6E6E]">
+                  Advisor: <span className="font-semibold text-[#081428]">{ct.assigned_to}</span>
                 </div>
               </div>
             ) : (
@@ -513,28 +528,9 @@ export default function LeadPoolPage() {
       case 'key_requirement':
         return <td key={colKey} className="p-3 text-slate-600 max-w-[200px] truncate">{opp?.key_requirement || '—'}</td>;
 
-      case 'sla':
-        return (
-          <td key={colKey} className="p-3">
-            {opp?.sla_status === 'overdue' ? (
-              <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[10px] font-bold">
-                SLA BREACH
-              </span>
-            ) : opp?.sla_status === 'due_soon' ? (
-              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-bold">
-                DUE SOON
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold">
-                ON TRACK
-              </span>
-            )}
-          </td>
-        );
-
       case 'assigned_owner':
-        const ownerName = opp?.current_owner_name || 'Unassigned';
-        const isUnassigned = !opp?.current_owner_name || opp?.current_owner_name === 'Unassigned';
+        const ownerName = ct.assigned_to || opp?.current_owner_name || 'Unassigned';
+        const isUnassigned = !ownerName || ownerName === 'Unassigned';
         return (
           <td key={colKey} className="p-3">
             <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold ${
@@ -589,15 +585,15 @@ export default function LeadPoolPage() {
                   <Eye className="w-3.5 h-3.5" />
                 </button>
 
-                {/* 2. Quick Edit Contact */}
+                {/* 2. Edit Lead Profile (Full Page) */}
                 {mounted && hasPermission('leads.edit') && (
-                  <button
-                    onClick={() => handleOpenEdit(ct)}
-                    className="p-1.5 bg-slate-50 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-500 rounded border border-slate-200 transition-colors cursor-pointer"
-                    title="Quick Edit Lead Profile"
+                  <Link
+                    href={`/leads/${ct.id}/edit`}
+                    className="p-1.5 bg-slate-50 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-500 rounded border border-slate-200 transition-colors cursor-pointer inline-flex items-center justify-center"
+                    title="Edit Lead Record"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
-                  </button>
+                  </Link>
                 )}
 
                 {/* 3. WhatsApp Direct Chat */}
@@ -647,11 +643,7 @@ export default function LeadPoolPage() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCreateContactModalOpen, setIsCreateContactModalOpen] = useState(false);
   const [isCreateLeadModalOpen, setIsCreateLeadModalOpen] = useState(false);
-  const [opportunityModalContact, setOpportunityModalContact] = useState<any | null>(null);
-  const [isOpportunityModalOpen, setIsOpportunityModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [editContactData, setEditContactData] = useState<any | null>(null);
-  const [isEditContactModalOpen, setIsEditContactModalOpen] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const copyToClipboard = (text: string, fieldId: string, e?: React.MouseEvent) => {
@@ -660,34 +652,52 @@ export default function LeadPoolPage() {
     setCopiedField(fieldId);
     setTimeout(() => setCopiedField(null), 1500);
   };
-
-  const handleOpenEdit = (contact: any) => {
-    setEditContactData(contact);
-    setIsEditContactModalOpen(true);
-  };
-
-  // Fetch dynamic lead sources from backend API for the source filter dropdown
-  useEffect(() => {
-    fetchApi('/lead-sources')
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const names = data.filter((s: any) => s.is_active).map((s: any) => s.name);
-          setAvailableSourcesList((prev) => Array.from(new Set([...prev, ...names])));
-        }
-      })
-      .catch(console.error);
-  }, []);
-
-  const loadData = async (page = currentPage, limit = perPage, sBy = sortBy, sOrder = sortOrder, ownerOverride?: string) => {
+  const loadData = async (
+    page = currentPage,
+    limit = perPage,
+    sBy = sortBy,
+    sOrder = sortOrder,
+    ownerOverride?: string,
+    advFiltersOverride?: AdvancedFiltersState,
+    dateRangeOverride?: DateRangeValue
+  ) => {
     setLoading(true);
     try {
-      let endpoint = `/contacts?page=${page}&per_page=${limit}&tab=${activeTab}&state=${selectedState}&sort_by=${sBy}&sort_order=${sOrder}`;
-      if (selectedSource !== 'all') {
-        endpoint += `&source=${encodeURIComponent(selectedSource)}`;
-      }
+      let endpoint = `/contacts?page=${page}&per_page=${limit}&tab=${activeTab}&sort_by=${sBy}&sort_order=${sOrder}`;
       if (searchQuery) {
         endpoint += `&search=${encodeURIComponent(searchQuery)}`;
       }
+
+      // Date Range Calendar Filter
+      const curDateRange = dateRangeOverride || dateRange;
+      if (curDateRange.from) {
+        endpoint += `&date_from=${encodeURIComponent(curDateRange.from)}`;
+      }
+      if (curDateRange.to) {
+        endpoint += `&date_to=${encodeURIComponent(curDateRange.to)}`;
+      }
+
+      // Advanced Filters
+      const activeFilters = advFiltersOverride || advancedFilters;
+      if (activeFilters.state && activeFilters.state !== 'all') {
+        endpoint += `&state=${encodeURIComponent(activeFilters.state)}`;
+      }
+      if (activeFilters.availability && activeFilters.availability !== 'all') {
+        endpoint += `&availability=${encodeURIComponent(activeFilters.availability)}`;
+      }
+      if (activeFilters.source) endpoint += `&source=${encodeURIComponent(activeFilters.source)}`;
+      if (activeFilters.subSource) endpoint += `&sub_source=${encodeURIComponent(activeFilters.subSource)}`;
+      if (activeFilters.opportunityType) endpoint += `&opportunity_type=${encodeURIComponent(activeFilters.opportunityType)}`;
+      if (activeFilters.temperature) endpoint += `&temperature=${encodeURIComponent(activeFilters.temperature)}`;
+      if (activeFilters.paymentMethod) endpoint += `&payment_method=${encodeURIComponent(activeFilters.paymentMethod)}`;
+      if (activeFilters.developer) endpoint += `&developer=${encodeURIComponent(activeFilters.developer)}`;
+      if (activeFilters.community) endpoint += `&community=${encodeURIComponent(activeFilters.community)}`;
+      if (activeFilters.project) endpoint += `&project=${encodeURIComponent(activeFilters.project)}`;
+      if (activeFilters.propertyType) endpoint += `&property_type=${encodeURIComponent(activeFilters.propertyType)}`;
+      if (activeFilters.bedrooms) endpoint += `&bedrooms=${encodeURIComponent(activeFilters.bedrooms)}`;
+      if (activeFilters.projectProperty) endpoint += `&project_property=${encodeURIComponent(activeFilters.projectProperty)}`;
+      if (activeFilters.budgetMin) endpoint += `&budget_min=${encodeURIComponent(activeFilters.budgetMin)}`;
+      if (activeFilters.budgetMax) endpoint += `&budget_max=${encodeURIComponent(activeFilters.budgetMax)}`;
 
       let raw = localStorage.getItem('crm_user');
       let user = currentUser;
@@ -819,7 +829,7 @@ export default function LeadPoolPage() {
   useEffect(() => {
     setCurrentPage(1);
     loadData(1, perPage, sortBy, sortOrder, selectedOwner);
-  }, [activeTab, selectedState, selectedSource, selectedAvailability, searchQuery, selectedOwner]);
+  }, [activeTab, searchQuery, selectedOwner, advancedFilters, dateRange]);
 
   const handleSort = (columnKey: string) => {
     let newOrder: 'asc' | 'desc' = 'asc';
@@ -846,10 +856,9 @@ export default function LeadPoolPage() {
 
   const handleResetFilters = () => {
     setActiveTab('all');
-    setSelectedState('all');
-    setSelectedSource('all');
-    setSelectedAvailability('all');
     setSelectedOwner('all');
+    setAdvancedFilters(INITIAL_ADVANCED_FILTERS);
+    setDateRange({ from: '', to: '', preset: 'all' });
     setSearchQuery('');
     setSortBy('updated_at');
     setSortOrder('desc');
@@ -1044,28 +1053,6 @@ export default function LeadPoolPage() {
                       </button>
                     )}
 
-                    {/* Auto-Distribute Unassigned Leads */}
-                    <button
-                      onClick={async () => {
-                        try {
-                          const res = await fetchApi('/distribution/run/lead-pool', { method: 'POST' });
-                          Swal.fire({
-                            icon: 'success',
-                            title: 'Leads Auto-Distributed!',
-                            text: res.message || `Successfully distributed ${res.assigned_count} leads to active sales advisors.`,
-                          });
-                          loadData();
-                        } catch (e: any) {
-                          Swal.fire('Error', e.message || 'Auto-distribution failed', 'error');
-                        }
-                      }}
-                      className="px-3 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded-md shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                      title="Auto-distribute unassigned leads across active sales advisors"
-                    >
-                      <Zap className="w-3.5 h-3.5 text-[#C9A84C]" />
-                      <span>Auto-Distribute</span>
-                    </button>
-
                     {hasPermission('leads.create') && (
                       <Link
                         href="/leads/create"
@@ -1106,7 +1093,7 @@ export default function LeadPoolPage() {
           </div>
 
           {/* MAIN LEAD POOL TOP TAB NAVIGATION (All, Unassigned, Duplicate, Deleted) */}
-          <div className="border-b border-[#E8E4DC] flex items-center gap-2 overflow-x-auto pt-2">
+          <div className="bg-white border border-[#E8E4DC] rounded-lg px-4 shadow-2xs flex items-center gap-2 overflow-x-auto">
             {[
               { id: 'all', label: 'All Leads', count: tabCounts.all, color: 'text-[#081428]' },
               { id: 'unassigned', label: 'Unassigned', count: tabCounts.unassigned, color: 'text-amber-800' },
@@ -1121,10 +1108,10 @@ export default function LeadPoolPage() {
                     setActiveTab(tab.id as any);
                     setCurrentPage(1);
                   }}
-                  className={`px-4 py-2.5 text-xs font-bold transition-all flex items-center gap-2 border-b-2 ${
+                  className={`px-4 py-3 text-xs font-bold transition-all flex items-center gap-2 border-b-2 cursor-pointer ${
                     isActive
-                      ? 'border-[#C8A147] text-[#081428] bg-white shadow-2xs rounded-t-md'
-                      : 'border-transparent text-[#6E6E6E] hover:text-[#081428] hover:bg-white/50'
+                      ? 'border-[#C8A147] text-[#081428]'
+                      : 'border-transparent text-[#6E6E6E] hover:text-[#081428] hover:border-slate-300'
                   }`}
                 >
                   <span>{tab.label}</span>
@@ -1132,7 +1119,7 @@ export default function LeadPoolPage() {
                     className={`px-2 py-0.5 rounded-full text-[10px] font-mono transition-colors ${
                       isActive
                         ? 'bg-[#081428] text-[#C8A147]'
-                        : 'bg-[#FAF8F5] text-[#6E6E6E] border border-[#E8E4DC]'
+                        : 'bg-slate-100 text-[#6E6E6E] border border-slate-200'
                     }`}
                   >
                     {Number(tab.count || 0).toLocaleString()}
@@ -1158,41 +1145,34 @@ export default function LeadPoolPage() {
                 />
               </div>
 
-              {/* Lifecycle State Filter */}
-              <select
-                value={selectedState}
-                onChange={(e) => setSelectedState(e.target.value)}
-                className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none"
-              >
-                <option value="all">All Lifecycle States</option>
-                <option value="available">Available Pool</option>
-                <option value="active">Active Deals</option>
-                <option value="reactivation">Reactivation Eligible</option>
-                <option value="duplicate">Duplicates</option>
-              </select>
+              {/* Date Range Calendar Filter */}
+              <DateRangePicker
+                value={dateRange}
+                onChange={(val) => {
+                  setDateRange(val);
+                  setCurrentPage(1);
+                }}
+              />
 
-              {/* Availability Filter */}
-              <select
-                value={selectedAvailability}
-                onChange={(e) => setSelectedAvailability(e.target.value)}
-                className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none"
+              {/* Advanced Filter Button */}
+              <button
+                type="button"
+                onClick={() => setIsAdvancedFilterOpen(true)}
+                className={`p-1.5 px-3 rounded border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeAdvancedCount > 0
+                    ? 'bg-[#081428] text-[#C8A147] border-[#C8A147] shadow-xs'
+                    : 'bg-[#FAF8F5] border-[#E8E4DC] text-[#081428] hover:border-[#C8A147]'
+                }`}
+                title="Open Advanced Filters"
               >
-                <option value="all">Availability: All</option>
-                <option value="available">Available Only</option>
-                <option value="busy">Assigned / Busy</option>
-              </select>
-
-              {/* Lead Source Filter */}
-              <select
-                value={selectedSource}
-                onChange={(e) => setSelectedSource(e.target.value)}
-                className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none"
-              >
-                <option value="all">All Lead Sources</option>
-                {availableSourcesList.map((src) => (
-                  <option key={src} value={src}>{src}</option>
-                ))}
-              </select>
+                <Filter className="w-3.5 h-3.5 text-[#C8A147]" />
+                <span>Advanced</span>
+                {activeAdvancedCount > 0 && (
+                  <span className="bg-[#C8A147] text-[#081428] text-[10px] font-extrabold px-1.5 py-0.5 rounded-full leading-none">
+                    {activeAdvancedCount}
+                  </span>
+                )}
+              </button>
 
               {/* Agent / Scope Selector */}
               <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
@@ -1273,7 +1253,7 @@ export default function LeadPoolPage() {
                         <div className="text-[10px] font-bold uppercase tracking-wider text-[#6E6E6E] bg-[#FAF8F5] px-1.5 py-0.5 rounded">
                           {cat}
                         </div>
-                        {ALL_COLUMNS.filter((c) => c.category === cat).map((col) => (
+                        {ALL_COLUMNS.filter((c) => c.category === cat && c.key !== 'actions').map((col) => (
                           <label key={col.key} className="flex items-center gap-2 p-1 hover:bg-[#FAF8F5] rounded cursor-pointer select-none">
                             <input
                               type="checkbox"
@@ -1505,19 +1485,6 @@ export default function LeadPoolPage() {
         contact={selectedContact}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        onCreateOpportunity={(ct) => {
-          setIsDrawerOpen(false);
-          setOpportunityModalContact(ct);
-          setIsOpportunityModalOpen(true);
-        }}
-      />
-
-      {/* Create Opportunity Modal */}
-      <CreateOpportunityModal
-        contact={opportunityModalContact}
-        isOpen={isOpportunityModalOpen}
-        onClose={() => setIsOpportunityModalOpen(false)}
-        onSuccess={() => loadData()}
       />
 
       {/* Import CSV Leads Modal */}
@@ -1527,19 +1494,21 @@ export default function LeadPoolPage() {
         onSuccess={() => loadData()}
       />
 
-      {/* Edit Contact Modal */}
-      <EditContactModal
-        isOpen={isEditContactModalOpen}
-        contact={editContactData}
-        onClose={() => {
-          setIsEditContactModalOpen(false);
-          setEditContactData(null);
+
+      {/* Advanced Filter Modal */}
+      <AdvancedFilterModal
+        isOpen={isAdvancedFilterOpen}
+        onClose={() => setIsAdvancedFilterOpen(false)}
+        filters={advancedFilters}
+        onApply={(newFilters) => {
+          setAdvancedFilters(newFilters);
+          setCurrentPage(1);
         }}
-        onSuccess={() => {
-          setIsEditContactModalOpen(false);
-          setEditContactData(null);
-          loadData(currentPage);
+        onReset={() => {
+          setAdvancedFilters(INITIAL_ADVANCED_FILTERS);
+          setCurrentPage(1);
         }}
+        activeCount={activeAdvancedCount}
       />
     </div>
   );

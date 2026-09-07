@@ -73,7 +73,6 @@ function SidebarInner() {
         { key: 'owner_data', name: 'Owner Data', href: '/owner-data', icon: Building2, permission: 'owner_data.view' },
         { key: 'queue', name: 'My Queue', href: '/queue', icon: ListOrdered, permission: 'queue.view' },
         { key: 'opportunities', name: 'Opportunities', href: '/opportunities', icon: Briefcase, permission: 'deals.view' },
-        { key: 'followups', name: 'Follow-ups', href: '/queue?tab=upcoming', icon: Clock, permission: 'queue.view' },
         { key: 'call_activity', name: 'Call Activity', href: '/call-activity', icon: PhoneCall, permission: 'calls.view_logs' },
         { key: 'appointments', name: 'Appointments', href: '/calendar', icon: CalendarDays, permission: 'queue.calendar' },
         { key: 'recordings', name: 'Recordings', href: '/recordings', icon: Mic, permission: 'calls.listen_recordings' },
@@ -97,7 +96,7 @@ function SidebarInner() {
   ];
 
   return (
-    <aside className="w-56 bg-[#081428] text-[#B0C0D8] flex flex-col h-screen fixed left-0 top-0 z-30 shadow-2xl border-r border-[#152744]">
+    <aside className="w-56 bg-[#081428] text-[#B0C0D8] flex flex-col h-screen fixed left-0 top-0 z-30 shadow-2xl border-r border-[#152744] font-['Poppins',sans-serif]">
       {/* Brand Header */}
       <div className="px-4 py-5 border-b border-[#152744] flex items-center justify-center">
         <Link href="/" className="flex items-center justify-center group transition-transform hover:scale-[1.02]">

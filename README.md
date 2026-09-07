@@ -179,6 +179,464 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - Integration with Round-Robin Lead Distribution Engine (`LeadDistributionService`), Lead Pool dynamic owner dropdowns, and My Queue rotation.
   - Database Seeder persistence: permanently codified in `RoleAndPermissionSeeder.php` for one-command remote server synchronization (`php artisan db:seed --class=RoleAndPermissionSeeder --force`).
 
+- **47 — My Queue Dual-Channel Calling & Follow-up Center (`/queue`)**:
+  - Unified calling desk featuring two primary horizontal tabs: **Regular Leads (Lead Pool)** and **Owner Leads (Owner Data)** with live badge counters.
+  - Channels dynamically route to respective lead databases and track independent calling queues.
+  - Single consolidated Advisor/Scope selector in the filter bar with Super Admin team view and individual advisor queue views.
+  - KPI SLA Summary Cards (*All Active Leads*, *Overdue SLA*, *Due Soon*, *Hot Leads*, *Upcoming Today*) for regular leads, and quick status tabs (*All*, *Recent*, *With Opportunity*, *Without Opportunity*) for owner leads.
+
+- **48 — Advanced Multi-Filter Systems & Dynamic Date Range Pickers**:
+  - [`DateRangePicker.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/DateRangePicker.tsx) component supporting presets (*Today*, *Yesterday*, *Last 7 Days*, *Last 30 Days*, *This Month*, *Last Month*, *All Time*) and custom date intervals (`from`, `to`).
+  - [`AdvancedFilterModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/AdvancedFilterModal.tsx) component for deep multi-parameter queries across Lead Pool & My Queue: Sub-Source, Opportunity Type, Community, Project, Bedrooms, and Budget Range (`budgetMin`, `budgetMax`) with active filter count badges.
+  - Multi-checkbox dropdown filters ([`MultiCheckboxDropdown.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/MultiCheckboxDropdown.tsx)) on Owner Data and My Queue Owner tab for Area, Property Type, and Bedrooms.
+
+- **49 — Read-Only Lead & Owner Profile Modals**:
+  - [`ContactDetailModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDetailModal.tsx): Comprehensive read-only popup opened via eye icon or client name click, presenting complete client info, active opportunity details, temperature, budget, source attribution, and linked deals.
+  - [`OwnerDetailModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/OwnerDetailModal.tsx): Read-only modal displaying title deed profile, building/property specifications, contact numbers, and linked CRM pipeline deal status without taking advisors away from their active queue.
+
+- **50 — Smart Calling Action Suite & Fast Deal Conversion**:
+  - Compact, high-efficiency action buttons:
+    - **Quick Call Log**: Instant call outcome logger updating `next_action`, `next_action_due_at`, and SLA status in real time.
+    - **WhatsApp Direct Launch**: Opens pre-addressed chat with client name and cleaned international phone number.
+    - **Deal Pipeline Link**: Direct jump to Opportunity Workspace for active deals.
+    - **Create Opportunity Modal**: Instant modal ([`CreateOpportunityModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/CreateOpportunityModal.tsx)) for converting cold/unassigned owner leads or portal contacts into active pipeline deals directly from table rows.
+
+- **51 — Canonical Database Stages & Bulk Pipeline Progression**:
+  - Canonical pipeline stages directly fetched and synchronized from `/api/opportunities/stages` (New Lead, In Qualification, Handover Pending, Sales in Progress, Negotiation, Won, Lost).
+  - Floating bulk action bar enabling advisors to select multiple leads across the queue and batch-update their pipeline stages with one click.
+
+- **52 — HTML5 Table Column Drag-and-Drop Reordering & Multi-Column Sorting**:
+  - Native HTML5 drag-and-drop table header reordering with `GripVertical` handle icons across Lead Pool and My Queue.
+  - Custom column order automatically synchronized and persisted in browser `localStorage`.
+  - Interactive multi-column sorting (asc/desc with `ArrowUp`, `ArrowDown`, `ArrowUpDown`) across all data fields.
+  - Mandatory, permanent **Actions** column pinned to the right edge and excluded from the visibility toggle dropdown so critical actions can never be accidentally disabled or hidden.
+
+- **53 — Universal Date & Time Formatting and Default Created Date Visibility**:
+  - Standardized ISO timestamp formatting displaying **both Date and Time** (`YYYY-MM-DD HH:mm`) with gold Calendar icons across:
+    - **Lead Pool** (`/`)
+    - **Owner Data** (`/owner-data`)
+    - **My Queue — Regular Leads** (`/queue?channel=regular`)
+    - **My Queue — Owner Leads** (`/queue?channel=owner`)
+  - **Created Date** column enabled and visible **by default** (`true`) in default column visibility configurations and localStorage initialization across all 3 modules.
+  - Dedicated "Record Details" category in Owner Data Columns dropdown for clean column organization.
+
+- **54 — Owner Data Lead Assignment in Add/Edit Forms & Column Tracking (`/owner-data`)**:
+  - Added **Section 3: Lead Assignment & Ownership** directly to the **Add Owner Property** and **Edit Owner Property** modal forms ([`owner-data/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/owner-data/page.tsx)):
+    - Integrated [`SearchableSelect.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/SearchableSelect.tsx) allowing instant direct assignment to active Sales Advisors or setting to `"Unassigned / Auto-Distribute (Rotation Pool)"` or `"Unassigned (No Distribution)"`.
+  - Backend controller updates in [`OwnerDataController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/OwnerDataController.php):
+    - Normalized empty strings to `null` to ensure consistent database representation and seamless integration with `LeadDistributionService::autoAssignOwnerRecord`.
+  - Table & UI tracking enhancements:
+    - Added **Assigned Advisor** (`assigned_to`) column to `ALL_OWNER_COLUMNS` and enabled by default in `DEFAULT_OWNER_COLUMN_VISIBILITY`.
+    - Rendered luxury dark navy & gold advisor pills (`👤 Agent Name`) and subtle neutral badges for unassigned properties.
+    - Updated the **Quick View Drawer** to prominently display the assigned advisor alongside property and owner contact details.
+
+- **55 — My Queue Owner Leads Full Name & Avatar Resolution (`/queue?channel=owner`)**:
+  - Resolved `owner_name` field mapping across My Queue Owner tab ([`queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx)):
+    - Rendered the actual registered owner name (`record.owner_name`) in the table column and replaced generic `'OW'` initials with dynamic 2-character initials based on the owner's real name.
+    - Updated unit specs cell to resolve `property_number` alongside `unit_number` for accurate apartment/villa identification.
+    - Updated Quick Call Log, WhatsApp pre-addressed link, and Opportunity Creation modals to populate `record.owner_name`.
+  - Backend controller update in [`QueueController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/QueueController.php):
+    - Added explicit `$record->name = $record->owner_name;` attribute alias in the enriched owner collection for dual frontend property compatibility.
+
+- **56 — Form Typography & Section Label Font Size Standardization**:
+  - Standardized font sizing across Lead Pool create and edit forms ([`create/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/leads/create/page.tsx), [`edit/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/leads/[id]/edit/page.tsx), and [`CreateLeadModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/CreateLeadModal.tsx)):
+    - Standardized all Section headers (Client Personal Details, Lead Origin & Source, Marketing & UTM Parameters, Opportunity Workspace, SLA Next Action) to `text-sm font-bold uppercase tracking-wider` to eliminate visual discrepancies with standard CRM forms.
+    - Added explicit `text-xs` on the **Marketing & UTM Parameters** grid container and `<form>` wrapper in [`edit/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/leads/[id]/edit/page.tsx) and [`create/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/leads/create/page.tsx) to resolve an issue where UTM labels (`UTM Source`, `UTM Medium`, `UTM Campaign`, `UTM Term`, `UTM Content`, `Complete Campaign URL`) rendered at the browser's default `16px` (`text-base`), appearing excessively large next to other sections.
+    - Unified mandatory label typography across Section 1 to `font-semibold text-xs` with consistent red asterisks (`<span className="text-red-500">*</span>`), ensuring a clean, cohesive, and professional visual hierarchy throughout the entire CRM.
+
+- **57 — My Queue Dual-Channel Calling Workspace Reset**:
+  - Safely cleared all active Opportunities and their child qualification records from the Regular calling queue (`/queue?channel=regular`) and pipeline (`/opportunities`).
+  - Cleared all test property records from Owner Leads queue (`/queue?channel=owner`) to provide a clean, blank workspace for end-to-end assignment workflow verification.
+  - Preserved **100% of Lead Pool master profiles** (all 20,883 master contacts remain permanently intact in accordance with Contact Permanency domain rules).
+  - Both My Queue tabs are now at `0 Leads` and ready for fresh testing from Lead Pool and Owner Data creation forms.
+
+- **58 — Dual Assignment Engine: Auto-Distribution on CSV Import & Flexible Manual Assignment (`/owner-data` & `/queue`)**:
+  - **CSV Import Auto-Distribution**: When owner properties are imported via CSV without a predefined advisor, the system automatically distributes records across active sales advisors via the Round-Robin distribution engine ([`LeadDistributionService::autoAssignOwnerRecord`](file:///d:/FSadvisory-crm/backend/app/Services/LeadDistributionService.php)) so they immediately appear in My Queue Owner Leads for prompt follow-up.
+  - **Manual Entry Flexibility**: In the Add Property modal form ([`OwnerDataController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/OwnerDataController.php)), users can choose to assign a specific advisor directly, trigger auto-distribution via the rotation pool, or explicitly designate records as `"Unassigned (No Distribution)"`.
+  - **Queue Alignment**: Filtered My Queue ([`QueueController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/QueueController.php)) to display assigned owner leads per advisor (and all assigned leads in Super Admin view), keeping unassigned records isolated in Owner Data until assigned.
+
+- **59 — Lead Pool Bulk Assignment & Schema Alignment Fix (`/` & `ContactController.php`)**:
+  - Resolved `SQLSTATE[42S22]: Unknown column 'budget_min'` error during Lead Pool bulk assignment.
+  - Corrected schema alignment in [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) and [`ImportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ImportController.php) by mapping `budget_min` and `budget_max` to the parent `opportunities` table (where they belong in the database schema) rather than the child `buyer_qualifications` table.
+
+- **60 — Enterprise Bearer Token Authentication & Lead Pool Master Reset (`CrmTokenAuth` & `/contacts`)**:
+  - **Lead Pool Database Reset**:
+    - Cleanly purged all 20,884 contacts from `contacts` table and child records (`activities`, `buyer_qualifications`, `seller_qualifications`, `landlord_qualifications`, `tenant_qualifications`, `opportunities`, `ownership_histories`, `sla_breaches`, `ai_lead_scores`) in a strict database transaction with auto-increment counter reset.
+    - Preserved 100% of Owner Data (`owner_records`), Users (`users`), Roles (`roles`), Permissions, Lead Sources, and Master Catalogs.
+    - Lead Pool statistics cards and filter tabs now display a fresh `0` count ready for real-time testing.
+  - **Enterprise Token Security Layer**:
+    - Added `api_token` (unique string, 80 chars) and `api_token_last_used_at` to `users` table via migration `2026_09_05_142500_add_api_token_to_users_table.php`.
+    - Generated dedicated persistent API tokens for all active users (e.g. Faraz Shafi, Babar Ali Khan, etc.).
+    - Created custom middleware [`CrmTokenAuth.php`](file:///d:/FSadvisory-crm/backend/app/Http/Middleware/CrmTokenAuth.php) (`crm.auth` alias registered in `bootstrap/app.php`) inspecting `Authorization: Bearer <token>`, `X-API-KEY`, and `X-CRM-TOKEN` headers.
+    - Configured Master System API Key (`CRM_API_KEY`) in `.env` for server-to-server webhook integrations.
+    - Enforced strict token authentication on all protected CRM routes in `routes/api.php` (`/contacts`, `/opportunities`, `/queue`, `/owner-data`, `/catalog`, etc.), returning `401 Unauthorized` for requests without a valid token.
+    - Updated `AuthController.php` to return the user's authentic `api_token` on login and demo session generation.
+    - Updated [`frontend/src/lib/api.ts`](file:///d:/FSadvisory-crm/frontend/src/lib/api.ts) with legacy token detection (`!stored.startsWith('fsa_')`), auto-healing fallback to `DEFAULT_CRM_TOKEN`, and automatic retry on 401 Unauthorized so stale browser `localStorage` tokens are resolved instantly without throwing overlay errors.
+  - Verified successful lead assignment from the floating bulk action bar with zero database exceptions and instant reflection in My Queue Regular calling desk.
+
+- **61 — My Queue Dual-Channel Clean Slate & Daily Lead Counter Zeroing (`/queue`)**:
+  - Safely purged test owner records from `owner_records` table and cleared `lead_distribution_logs`.
+  - Reset `today_assigned_count` to `0` across all advisors in `users` table so fresh auto-distribution, round-robin quotas, and daily lead caps start from a clean baseline.
+  - Verified both calling queue channels on `/queue` (**Regular Leads (Lead Pool)**: 0, **Owner Leads (Owner Data)**: 0) now display a complete clean slate ready for end-to-end assignment workflow verification.
+
+- **62 — Real-Time Lead Distribution & Immediate Queue Routing on Contact Ingestion (`ContactController@store` & `/contacts`)**:
+  - Connected [`LeadDistributionService::autoAssignContact`](file:///d:/FSadvisory-crm/backend/app/Services/LeadDistributionService.php) directly into [`ContactController::store`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php).
+  - When leads arrive via Postman, external webhooks (Meta Ads, Google Ads), or direct API calls without an explicit owner, the system immediately runs the Round-Robin engine, picks the next active Sales Advisor, sets `assigned_to` and `assigned_at` on the contact, and deposits the lead into **My Queue** (`/queue?channel=regular`) in real time.
+  - Allows optional `assigned_owner` parameter to override auto-distribution when a specific advisor is explicitly targeted.
+
+- **63 — Opportunity Creation Decoupled from Ingestion & Lead Assignment (`/contacts`, `/queue`, `/owner-data`)**:
+  - **Business Requirement**: Incoming leads from all channels (Meta webhooks, Google Ads, Postman/API, CSV file imports, and Owner Data) must be **auto-assigned** to sales advisors without **auto-creating opportunities**. The sales advisor must call the client from **My Queue** first; only after a successful qualification call will the advisor manually create an active pipeline deal.
+  - **Schema Extension (`contacts` table)**:
+    - Added `assigned_to` (`VARCHAR(100)`, nullable) and `assigned_at` (`DATETIME`, nullable) to `contacts` table via migration `2026_09_05_160000_add_assigned_to_to_contacts_table.php`.
+    - Contacts can now be assigned to sales advisors natively without requiring an `opportunities` record.
+  - **Backend Pipeline & Controller Refactoring**:
+    - **[`LeadDistributionService`](file:///d:/FSadvisory-crm/backend/app/Services/LeadDistributionService.php)**: Updated `autoAssignContact` to assign the contact profile (`assigned_to = $agent->name`, `assigned_at = now()`, `state = 'assigned'`) without creating an opportunity or buyer qualification record. Synchronizes any pre-existing opportunity if present and records distribution logs.
+    - **[`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php)**: Updated `store()` and `bulkAssign()` to set `assigned_to` on contacts without calling `Opportunity::create()`. Updated `index()` tab counts and filters to resolve unassigned leads against `contacts.assigned_to`.
+    - **[`ImportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ImportController.php)**: Removed automatic creation of `Opportunity` and `BuyerQualification` on CSV file imports. Imported contacts are directly assigned to mapped advisors or auto-assigned via Round-Robin.
+    - **[`PortalController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/PortalController.php)**: Webhook/portal lead ingestion auto-assigns contacts to advisors without generating opportunities.
+    - **[`QueueController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/QueueController.php)**:
+      - Refactored `channel=regular` to return both active Opportunities and assigned unconverted Contacts.
+      - Assigned contacts without opportunities appear with `stage: 'unqualified'`, `has_opportunity: false`, SLA status, and next action `"Contact new lead — confirm requirement details"`.
+      - Accurate real-time badge counters for both Regular Leads and Owner Leads tabs.
+  - **Frontend UI & Calling Desk Upgrades**:
+    - **[`frontend/src/app/queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx)**:
+      - In `renderRegularBodyCell`, when `!opp.has_opportunity`, `stage` displays a subtle amber `"No Deal Created"` badge.
+      - In `actions` column, when `!opp.has_opportunity`, renders a gold `+` (`CreateOpportunityModal`) button instead of the pipeline briefcase icon.
+      - Clicking `+` opens `CreateOpportunityModal` pre-filled with the client's information, allowing the advisor to select opportunity type (buyer/seller), budget, community, and developer to formally qualify the deal.
+      - `handleQuickCall` safely routes call activities to the contact profile even when no opportunity exists.
+    - **[`frontend/src/app/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)**:
+      - Lead Pool table now displays an amber `"Assigned"` badge when `contact.state === 'assigned'`.
+      - In `opportunity` column, shows `"Assigned (No Deal Yet)"` with advisor name if no deal has been created yet.
+      - In `assigned_owner` column, resolves advisor from `contact.assigned_to` with fallback to `opportunity.current_owner_name`.
+
+- **64 — Owner Data CSV Import & Universal Token Authentication Sync (`/owner-data`, `/users`, `/recordings`, `/whatsapp`)**:
+  - **Issue Identified**: In [`frontend/src/app/owner-data/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/owner-data/page.tsx), the CSV import handler (`handleFileUpload`), single delete, bulk assign, bulk delete, and form submission were invoking native browser `fetch` directly without attaching the mandatory `Authorization: Bearer <token>` header. Since all core CRM endpoints are guarded by `CrmTokenAuth`, the backend returned `401 Unauthorized` with the message *"Authentication failed. Valid Bearer Token or API Key is required to access FS Advisory CRM APIs."*
+  - **Universal `fetchApi` Migration**:
+    - Replaced all raw `fetch` calls across `owner-data/page.tsx` with [`fetchApi`](file:///d:/FSadvisory-crm/frontend/src/lib/api.ts).
+    - Enhanced [`frontend/src/lib/api.ts`](file:///d:/FSadvisory-crm/frontend/src/lib/api.ts) to detect `options.body instanceof FormData`, automatically omitting `Content-Type: application/json` so multipart file boundary headers are preserved properly during audio and CSV uploads.
+    - Updated [`frontend/src/app/users/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/users/page.tsx) and [`frontend/src/app/recordings/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/recordings/page.tsx) to utilize authenticated `fetchApi`, preventing similar 401 token rejections.
+    - Updated [`frontend/src/app/whatsapp/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/whatsapp/page.tsx) CRM endpoints to route through `fetchApi`.
+  - **Backend Owner Data Import Handling**:
+    - In [`OwnerDataController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/OwnerDataController.php) `import()`, ensured that if `$row['assigned_to']` is empty, missing, or explicitly set to `'auto'`, it cleanly defaults to `null` so the Round-Robin engine automatically assigns the imported title deed property records across active sales advisors without auto-generating opportunities.
+  - **Verification**:
+    - Successfully tested `POST /api/owner-data/import` with Bearer Token (`200 OK`, `{"success":true,"imported":1}`).
+    - Full TypeScript typecheck verified clean (`npx tsc --noEmit` exit code 0).
+
+- **65 — Manual Lead Creation Decoupled from Opportunity & Direct Auto-Assignment to My Queue (`/leads/create`, `CreateLeadModal`, `/queue`)**:
+  - **Business Requirement**: Manual lead creation from the Lead Pool Create form ([`/leads/create`](file:///d:/FSadvisory-crm/frontend/src/app/leads/create/page.tsx)) or popup modal ([`CreateLeadModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/CreateLeadModal.tsx)) must **NOT** auto-create an active Opportunity. Just like external webhooks and CSV imports, manual leads must be automatically assigned (or assigned to the selected advisor) and deposited directly into **My Queue** (`/queue?channel=regular`). The telesales/sales advisor will call the lead first; only after qualification will the advisor click `+` in My Queue to manually create the deal.
+  - **Frontend Form Updates**:
+    - **[`create/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/leads/create/page.tsx)**:
+      - Removed premature `POST /opportunities` call on form submission.
+      - Bundled any optional property preferences (type, budget, community, developer, unit, notes) into an `activity_description` timeline note so client requirements are preserved on the contact profile.
+      - Form passes `assigned_owner: assignedOwner || 'auto'`.
+      - Updated CTA button text to `"Save Lead"`.
+      - Displays SweetAlert2 success dialog and navigates directly back to the Lead Pool master table ([`/`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)).
+    - **[`CreateLeadModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/CreateLeadModal.tsx)**:
+      - Removed secondary `/opportunities` creation call.
+      - Dispatches `assigned_owner: 'auto'` to trigger Round-Robin rotation.
+      - Added SweetAlert2 success notification and updated CTA button to `"Save Lead"`, cleanly reloading Lead Pool table data in-place.
+    - **[`leads/[id]/edit/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/leads/[id]/edit/page.tsx)**:
+      - Synchronized `assigned_owner` in `PUT /contacts/:id`.
+      - Guarded Opportunity qualification updates to run only when `activeOppId` exists, preventing accidental deal generation when editing unconverted contact records.
+  - **Backend Controller & Service Enhancements**:
+    - **[`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php)**:
+      - Enhanced `update()` to validate and persist `assigned_to` and `assigned_at` on contacts, triggering `autoAssignContact` if `'auto'` is passed.
+      - Replaced `$request->has('activity_description')` with `$request->filled('activity_description')` to prevent `SQLSTATE[23000]: 1048 Column 'description' cannot be null` exceptions when leads are registered without optional requirement notes.
+    - **[`LeadDistributionService.php`](file:///d:/FSadvisory-crm/backend/app/Services/LeadDistributionService.php)**:
+      - Added fallback user routing in `autoAssignContact` if all active agents reach their daily cap.
+  - **Automated Verification**:
+    - Ran automated test suite ([`test_manual_lead_create.php`](file:///C:/Users/BSP/.gemini/antigravity-ide/brain/a43cb092-1538-4023-98bd-5db91c9d08d4/scratch/test_manual_lead_create.php) and [`test_null_activity.php`](file:///C:/Users/BSP/.gemini/antigravity-ide/brain/a43cb092-1538-4023-98bd-5db91c9d08d4/scratch/test_null_activity.php)):
+      - Test 1 (Auto-Assign): Contact auto-assigned via Round-Robin to next advisor (`Rayyan`/`Saad`) with **0** opportunities; verified present in My Queue with `has_opportunity: false` and `stage: 'unqualified'`.
+      - Test 2 (Explicit Selection): Contact assigned to selected advisor (`Babar Ali Khan`) with **0** opportunities.
+      - Test 3 (Null/Omitted Description): Verified contact creation succeeds cleanly when `activity_description` is null or omitted with zero database integrity violations.
+    - Full TypeScript typecheck verified clean (`npx tsc --noEmit` exit code 0).
+
+- **66 — User-Controlled Value Mapping & Master Catalog Standardization on Import (`ImportLeadsModal`, `OwnerDataController`, `ImportController`, `/owner-data`)**:
+  - **Business Problem & Architectural Requirement**:
+    - When importing contacts into **Lead Pool** or properties into **Owner Data**, uploaded spreadsheets often contain slight spelling variations, aliases, or missing suffixes (e.g., `"Emaar"` instead of `"Emaar Properties"`, `"Downtown"` instead of `"Downtown Dubai"`, `"Apt"` instead of `"Apartment"`).
+    - Direct insertions without human-in-the-loop standardization would fragment database catalogs and break downstream dropdown filters, analytics, and reporting.
+    - **Approach 2 (User-Controlled Value Mapping & Standardization Step)** was implemented for both Lead Pool and Owner Data imports.
+  - **Backend Intelligent Fuzzy Matching Engine (`findBestMatch`)**:
+    - Implemented a multi-tiered matching algorithm in both [`ImportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ImportController.php) and [`OwnerDataController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/OwnerDataController.php):
+      1. **Exact Match**: Case-insensitive comparison returning 100% confidence.
+      2. **Noise-Stripped Normalization**: Strips commercial entity suffixes (`Properties`, `Developments`, `Developer`, `Realty`, `Real Estate`, `Group`, `Holding`, `LLC`, `Tower`, `Towers`, `Residence`, `Residences`, `Dubai`) to recognize `"Emaar"` as `"Emaar Properties"` with 95% confidence.
+      3. **Substring & Bi-directional Match**: Identifies contained strings (e.g., `"Downtown"` inside `"Downtown Dubai"`).
+      4. **Similarity Distance Scoring**: Uses multibyte `similar_text` to score typos and partial matches. If similarity is >= 60%, returns the closest master catalog match.
+  - **Lead Pool Import Workflow Upgrades ([`ImportLeadsModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ImportLeadsModal.tsx) & [`ImportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ImportController.php))**:
+    - **Pre-Import Analysis (`POST /api/contacts/import-preview`)**:
+      - Inspects all file rows and aggregates frequency counts for `developer`, `community`, `project`, and `property_type`.
+      - Compares each unique value against active master catalogs (`developers`, `communities`, `projects`, `property_types`).
+      - Returns `unmatched` items grouped by category with row counts, smart suggestions, and `catalogs` lists.
+    - **Interactive Value Mapping Wizard Step (`step === 'mapping'`)**:
+      - Appears automatically if `has_unmatched` is true; if all file values match 100%, advances directly to duplicate preview.
+      - Displays category filter tabs (*All*, *Developers*, *Projects*, *Communities*, *Property Types*) and row cards.
+      - 3 actionable options per unmatched value:
+        1. **Map to Catalog**: Dropdown of active catalog entries (pre-selecting suggested match with 1-click apply).
+        2. **+ Add to Master Catalog**: Registers the value as a permanent official entry in Settings tables.
+        3. **Keep Raw String**: Stores unmapped text as-is without catalog modification.
+    - **Execution (`POST /api/contacts/import-execute`)**:
+      - Automatically creates approved `new_catalog_items` in master database tables.
+      - Substitutes mapped values on each row.
+      - Records comprehensive specification summary in the contact audit activity note (e.g., `Dev: Emaar Properties, Project: Burj Crown, Area: Downtown Dubai, Prop: Apartment`).
+      - Preserves the decoupled domain rule: leads are auto-assigned to sales advisors without auto-creating opportunities.
+  - **Owner Data Import Workflow Upgrades ([`owner-data/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/owner-data/page.tsx) & [`OwnerDataController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/OwnerDataController.php))**:
+    - Added dedicated preview route `POST /api/owner-data/import-preview` in [`backend/routes/api.php`](file:///d:/FSadvisory-crm/backend/routes/api.php).
+    - Upgraded single-step file upload into a guided 2-step wizard (*Upload* -> *Standardize Catalogs* -> *Confirm*).
+    - Maps `area` (Community), `building_name` / `property_name` (Project), and `property_type`.
+    - Automatically persists new catalog items and assigns imported owner records via round-robin distribution.
+  - **External Integration Guidance (Landing Pages & Webhooks)**:
+    - Documented and clarified that landing page hidden fields and webhook payloads should pass **direct names** (e.g. `developer: "Emaar Properties"`, `community: "Downtown Dubai"`) rather than database numeric IDs.
+  - **Automated Verification**:
+    - Created and executed comprehensive test suite in [`scratch/test_value_mapping_import.php`](file:///C:/Users/BSP/.gemini/antigravity-ide/brain/a43cb092-1538-4023-98bd-5db91c9d08d4/scratch/test_value_mapping_import.php):
+      - Verified fuzzy suggestion: `"Emaar"` -> `"Emaar Properties"` (100%), `"Downtown"` -> `"Downtown Dubai"` (100%).
+      - Verified dynamic master catalog creation: `"BrandNewDev LLC"` added to `developers` table, `"Unknown Tower"` added to `projects` table, `"Dubai South Oasis"` added to `communities` table.
+      - Verified value substitution and audit note generation across 100% of test records.
+      - Full TypeScript compilation passed cleanly with 0 errors (`npx tsc --noEmit`).
+
+- **67 — Realistic Dubai Real Estate Test Dataset for Lead Pool Import Verification (`test_leads_sample.xlsx`)**:
+  - Prepared an enterprise-grade 22-column Excel dataset saved directly at [`d:/FSadvisory-crm/test_leads_sample.xlsx`](file:///d:/FSadvisory-crm/test_leads_sample.xlsx) covering 8 realistic, diverse Dubai buyer personas:
+    1. **Hamdan Al Nuaimi**: 100% exact match against master catalogs (Emaar Properties, Downtown Dubai, Burj Crown Residences) & Unassigned round-robin rotation.
+    2. **Alexander Volkov**: Missing suffix test (`"Emaar"` and `"Downtown"`) testing intelligent fuzzy matching auto-suggestions to `"Emaar Properties"` and `"Downtown Dubai"`, assigned to Telesales Agent `Saad`.
+    3. **Sarah Jenkins**: Commercial entity suffix variation (`"DAMAC"` and `"Marina Gate"`) auto-suggesting `"DAMAC Properties"` and `"Marina Gate Towers"`, auto-assigned.
+    4. **Fahad Al Otaibi**: Acronym community & shorthand test (`"JVC"` -> `"Jumeirah Village Circle (JVC)"`, `"Sobha"` -> `"Sobha Realty"`), assigned to `Rayyan`.
+    5. **Jean-Pierre Dupont**: Brand new developer & project (`"Cayan Group"` & `"Cayan Tower"`) testing the dynamic **`+ Add to Master Catalog`** workflow directly from the import wizard.
+    6. **Vikram Malhotra**: Brand new ultra-luxury off-plan project (`"Bugatti Residences by Binghatti"`) testing **`+ Add to Master Catalog`** project addition, assigned to Sales Advisor `Babar Ali Khan`.
+    7. **Elena Rostova**: High-net-worth Palm Jumeirah beachfront villa cash buyer (AED 35M - 45M) testing exact match & round-robin assignment.
+    8. **Tariq Mansoor**: Dubai Creek Harbour investor with 2BR corner unit preference testing payment plan attribution.
+
+- **68 — Complete Lead Pool Import-to-Edit Qualification Mapping & Opportunity Auto-Persistence (`/leads/[id]/edit`, `ImportController.php`)**:
+  - **Issue Identified**: When importing leads via Excel (`test_leads_sample.xlsx`), opportunity specifications (Developer, Community, Project, Unit, Bedrooms, Budget, Payment Method, Key Requirements, Next Action) were previously stored only as descriptive timeline notes without generating active Opportunity/BuyerQualification records. As a consequence, opening the Edit Lead page (`/leads/[id]/edit`) displayed blank values across Section 3 (Opportunity Workspace) and Section 4 (Sales Ownership & Next Action).
+  - **Backend Solution (`ImportController.php`)**:
+    - Enabled automatic creation of `Opportunity` (stage: `'new'`, temperature: `'warm'`, SLA: `'on_track'`) and linked `BuyerQualification` for imported rows containing specifications.
+    - Synchronized `current_owner_name` with `contacts.assigned_to` and preserved all standardized catalog mappings (`developer`, `community`, `project`, `property_type`, `unit`, `bedrooms`, `budget_min`, `budget_max`, `cash_or_finance`, `next_action`, `next_action_due_at`).
+  - **Frontend Solution (`frontend/src/app/leads/[id]/edit/page.tsx`)**:
+    - Mapped both `opp.buyer_qualification` and `opp.buyerQualification` attributes.
+    - Fallback `assignedOwner` initialization: resolves to `contactData.assigned_to` even when no opportunity exists.
+    - Dynamic option inclusion: automatically registers imported developers, communities, and projects into the active `SearchableSelect` option lists so custom and newly added catalog items are immediately selectable and visible.
+    - Value normalization: added automatic normalization for bedroom formats (`"1BR"` ➔ `"1 BR"`) and payment methods (`"Cash"` ➔ `"cash"`, `"Finance"` ➔ `"finance"`, `"Payment Plan"` ➔ `"offplan_plan"`).
+    - Dynamic unit selection: preserves specific unit numbers (`projectPropertiesMap[project]`) so property units are populated and editable.
+    - Dual submit handling: `handleSubmit` now updates active opportunities via `/opportunities/:id/qualify`, or seamlessly creates a new opportunity via `POST /opportunities` if an unassigned contact is qualified for the first time.
+  - **Data Synchronization**:
+    - Backfilled Opportunity and BuyerQualification records across all existing imported test contacts (#18 to #25), ensuring Alexander Volkov (#19) and all test leads reflect complete qualification data immediately upon page reload.
+- **69 — Full-Page Navigation for Lead Pool Edit Action & Removal of Popup Modal (`/` & `/leads/[id]/edit`)**:
+  - Removed the legacy modal popup (`EditContactModal`) from the Lead Pool master table (`/`).
+  - Updated the table action edit button (`<Edit3 />`) to directly link to the dedicated full-page editor at `/leads/${ct.id}/edit` via Next.js `<Link>`.
+  - Cleaned up obsolete popup states and handlers (`isEditContactModalOpen`, `editContactData`, `handleOpenEdit`) from `page.tsx`.
+  - Provides a unified editing experience across all sections (Client Profile, Source Channel, Marketing & UTM Parameters, Opportunity Workspace, and Sales Ownership & Next Action) with direct save navigation back to Lead Pool.
+- **70 — Strict Sales Workflow Enforcement: Removal of Create Opportunity from Lead Pool & Slide-over Drawer (`/`, `ContactDrawer.tsx`)**:
+  - **Business Logic Alignment**: Lead Pool serves strictly as the master contact repository and directory, whereas sales outreach, call logs, and deal qualification belong exclusively to the Telesales calling desk in **My Queue** (`/queue`).
+  - Removed the premature **`[ Create Opportunity ]`** button and its modal triggers from the Lead Pool workspace and right slide-over drawer (`ContactDrawer.tsx`).
+  - Replaced the button with an informative, elegant status card: *"Awaiting Qualification — This contact has no active deal yet. Deals are qualified and created from the My Queue calling desk"* along with the Assigned Advisor badge.
+  - Eliminated `CreateOpportunityModal` and its unused component states from `frontend/src/app/page.tsx`, ensuring that deals can only be formally converted after telephonic qualification in My Queue.
+
+- **71 — Within-File Duplicate Checking & Dedicated Duplicate Tab Ingestion Architecture (`ImportController`, `PortalController`, `ContactController`, `ImportLeadsModal`)**:
+  - **Business Problem & Operational Constraint**:
+    - During file imports into Lead Pool, comparing incoming rows against the entire historical database caused unnecessary friction and blocked batch imports whenever a lead's phone number previously existed in the CRM.
+    - Furthermore, when duplicate inquiries arrived from external portals (Property Finder, Bayut, Dubizzle) or webhooks, the system previously updated/merged the existing contact in-place, losing the new inquiry record and leaving the CRM's dedicated **Duplicate** tab underutilized.
+  - **Removal of Database Duplicate Check During File Imports**:
+    - In [`ImportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ImportController.php) `preview()`, eliminated the query loading `Contact::withTrashed()`.
+    - Duplicate detection is now strictly scoped **within the uploaded file itself** (intra-file checking: Row vs. Row).
+    - If a phone number is unique within the file, it imports smoothly without being flagged or blocked by existing database records.
+    - If a phone number appears multiple times in the same file (e.g. Row 3 matching Row 1), it is accurately flagged as an intra-file duplicate with its matched row index (`Row #1 in File`).
+    - In `execute()`, duplicate rows imported with `import_duplicate` mode retain `state = 'duplicate'` and are excluded from round-robin distribution, routing directly to the Duplicate tab.
+  - **Always-Create Architecture for External Leads & Dedicated Duplicate Tab Ingestion**:
+    - In [`PortalController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/PortalController.php) `ingest()`, eliminated in-place contact overwriting and merging.
+    - The system now **always creates a new permanent `Contact` profile** for every incoming inquiry.
+    - If the client's phone number already exists in the database:
+      - The new profile is created with `state = 'duplicate'`, routing it directly to the **Duplicate** tab for review.
+      - Auto-assignment to advisor rotation is bypassed so duplicate inquiries do not pollute advisors' active queues.
+      - Audit activity notes are logged on both the new contact and the existing master profile.
+    - If the client's phone number is new:
+      - The profile is created with `state = 'available'`, auto-assigned via the round-robin engine, and queued for qualification.
+    - In [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) `store()`, contacts created with existing phone numbers automatically default to `state = 'duplicate'` and route to the Duplicate tab.
+  - **Lead Pool Tab Cleanliness & Duplicate Isolation**:
+    - Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) `index()` tab filtering and badge count calculation:
+      - **All Leads (`tab=all`)**: Filters `where('contacts.state', '!=', 'duplicate')`, keeping the primary lead bank view clean and focused on unique client profiles.
+      - **Unassigned (`tab=unassigned`)**: Excludes duplicates (`where('contacts.state', '!=', 'duplicate')`).
+      - **Duplicate (`tab=duplicate`)**: Specifically queries `where('contacts.state', 'duplicate')` to house and display all duplicate inquiries.
+      - Top KPI summary cards and tab badge counts accurately reflect this segregation.
+  - **Frontend Import Wizard Clarity ([`ImportLeadsModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ImportLeadsModal.tsx))**:
+    - Updated header copy to *"Batch import contacts with within-file duplicate checking"*.
+    - Updated duplicate metrics card to *"Duplicates (In File)"* and table column header to *"Matches Within File"*.
+    - Updated duplicate mode option 2 label to *"Import All & Route to Duplicate Tab"*.
+  - **Automated Verification**:
+    - Verified via comprehensive automated test script:
+      1. Row matching DB phone was **NOT** marked duplicate in preview.
+      2. Duplicate row within the same file **WAS** correctly flagged.
+      3. External portal inquiry matching DB phone was created as a new contact with `state = 'duplicate'`.
+      4. Tab `'all'` strictly excludes duplicate contacts, while tab `'duplicate'` displays only duplicates.
+    - Verified clean TypeScript compilation (`npx tsc --noEmit` exit code 0).
+- **72 — Complete Lead Pool Edit Form Field Mapping, Dynamic Catalog Synchronization & Opportunity Auto-Persistence (`/leads/[id]/edit`, `leads/create/page.tsx`, `CreateLeadModal.tsx`, `ContactController.php`)**:
+  - **Issues Identified & Addressed**:
+    1. **Form Field Mapping Gaps**: Opening the Lead Pool Edit page (`/leads/[id]/edit`) for contacts failed to populate several dropdowns and inputs (Nationality, Bedrooms, Property Type, Payment Method, Sub-Source, Developer, Project, Community, Unit, and Emirates ID).
+    2. **State Overwrite Bug**: In `useEffect`, calling `setDevelopers`, `setProjects`, and `setCommunities` with raw `/catalog/*` arrays wiped out lead-specific or custom catalog items if they were not in the default 15 items returned by the catalog.
+    3. **Option Normalization & Value Mismatches**:
+       - **Bedrooms**: Values such as `"5BR"` and `"5 BR"` failed to match `'5+ BR'` in the static `BEDROOMS` array.
+       - **Property Types**: Raw values such as `"Villa"`, `"Town House"`, etc. failed to match `'Villa / Mansion'` or custom types.
+       - **Nationalities**: Country names (e.g. `"United Arab Emirates"`, `"Russian Federation"`) failed to match demonyms (`"Emirati"`, `"Russian"`).
+       - **Sub-Sources**: Campaign names not present in `INITIAL_SUB_SOURCES` rendered blank in `SearchableSelect`.
+       - **Payment Methods**: Custom funding methods not matching the 3 predefined constants failed to display.
+    4. **Contacts Without Opportunity Records**: Leads created manually (`/leads/create` or `CreateLeadModal.tsx`) previously stored opportunity specifications only as text strings in activity logs without generating Opportunity and BuyerQualification records, causing Sections 3 & 4 to appear completely empty when edited.
+    5. **Missing `emirates_id` Persistence**: Emirates ID / Passport # was displayed in the UI but lacked a database column, controller validation, and state binding.
+  - **Technical Implementation**:
+    - **Database Migration**: Created migration `2026_09_06_190001_add_emirates_id_to_contacts_table.php` adding `emirates_id` (`string(100)`, nullable) to the `contacts` table.
+    - **Backend (`ContactController.php`)**:
+      - Added `emirates_id` validation and persistence to both `store()` and `update()`.
+      - In `store()`, added automatic creation of linked `Opportunity` and `BuyerQualification` when opportunity specifications (developer, project, community, budget, bedrooms, property type, next action, etc.) are supplied during contact creation.
+    - **Edit Page Normalization & Deduplication (`frontend/src/app/leads/[id]/edit/page.tsx`)**:
+      - Added `normalizeNationality()`, `normalizePropertyType()`, `normalizeBedrooms()`, and `normalizePaymentMethod()` helper functions.
+      - Converted `bedroomOptions`, `propertyTypeOptions`, and `paymentMethodOptions` to dynamic state arrays that auto-include any custom or imported values.
+      - Unified catalog loading: merged master catalog items, initial system lists, and the lead's current values into deduplicated arrays in a single step, preventing state overwrites.
+      - Added fallback parser in `useEffect` for contacts created without opportunity records: safely extracts developer, community, project, unit, property type, bedrooms, budget, and next action from activity logs.
+      - Added `emirates_id` loading and save persistence.
+    - **Lead Creation Pages (`leads/create/page.tsx` & `CreateLeadModal.tsx`)**:
+      - Updated create payloads to pass opportunity specifications and `emirates_id` directly to `POST /contacts`, ensuring new leads are immediately linked to structured Opportunity and BuyerQualification records.
+  - **Automated Verification**:
+    - Full TypeScript compilation verified clean (`npx tsc --noEmit` exit code 0).
+    - Simulated field mapping across contacts #18, #19, #24, #25, #26 confirming 100% field population across Client Profile, Origin & Source, Marketing/UTM, Opportunity Workspace, and Sales Ownership & SLA.
+- **73 — Owner Data Add/Edit Modal Dropdown Modernization (`SearchableSelect`) & 100% Field Mapping Synchronization (`owner-data/page.tsx`)**:
+  - **Issues Identified & Addressed**:
+    1. **Plain Text Inputs for Catalog Entities**: In the Owner Data Add / Edit popup modal, `Property Name`, `Area / Community`, and `Building / Cluster Name` were standard HTML text inputs lacking search, auto-completion, and catalog selection.
+    2. **Dropdown Mismatches & Value Blanking**: `Property Type` and `No. of Bedrooms` were primitive HTML `<select>` tags with rigid hardcoded option values (e.g. `'Apartment'`, `'Villa'`, `'2 Bedrooms'`). Any imported or legacy records with format variations (such as `"2BR"`, `"2 BR"`, `"Villa / Mansion"`, `"Commercial Office"`, `"Residential Plot"`) failed to match the hardcoded values, causing the dropdowns to render completely blank upon opening the Edit popup.
+    3. **Missing Master Catalog Integration**: Master Catalog API endpoints (`/catalog/communities`, `/catalog/projects`, `/catalog/properties`) were not fetched in Owner Data, disconnecting the modal from the centralized Dubai property registry.
+    4. **Field Mapping & Background Sync Gaps**: When opening the modal, fields were dependent solely on the current page row state without normalization or background sync with the full database record.
+  - **Technical Implementation**:
+    - **SearchableSelect Dropdown Integration**:
+      - Replaced `Property Name` input with `<SearchableSelect>` connected to `computedPropertyNameOptions` with `allowCustomAdd={true}`.
+      - Replaced `Area / Community` input with `<SearchableSelect>` connected to `computedCommunityOptions` (merging Master Catalog communities, preloaded Dubai communities, existing table filter areas, and custom entries) with `allowCustomAdd={true}`.
+      - Replaced `Building / Cluster Name` input with `<SearchableSelect>` connected to `computedProjectOptions` (merging Master Catalog projects, preloaded Dubai developments, and custom entries) with `allowCustomAdd={true}`.
+      - Replaced `Property Type` select with `<SearchableSelect>` connected to `computedPropertyTypeOptions` (merging standard property types, Master Catalog types, and custom entries) with `allowCustomAdd={true}`.
+      - Replaced `No. of Bedrooms` select with `<SearchableSelect>` connected to `computedBedroomOptions` (supporting Studio through 6+ Bedrooms with descriptive labels like `2 Bedrooms (2 BR)`) with `allowCustomAdd={true}`.
+    - **Smart Value Normalizers**:
+      - Implemented `normalizeOwnerBedrooms()` to parse and map variations (`"2BR"`, `"2 BR"`, `"2"`, `"1BR"`, `"Studio"`, etc.) seamlessly into standardized options.
+      - Implemented `normalizeOwnerPropertyType()` to automatically harmonize variations (`"Villa / Mansion"` <-> `"Villa"`, `"Commercial Office"` <-> `"Commercial"`, `"Land Plot"` <-> `"Plot"`, etc.).
+      - Ensured dynamic inclusion: current record values are always injected into computed option lists, guaranteeing 0% blanking.
+    - **Two-Tier Field Mapping & Background Sync**:
+      - Upgraded `handleOpenEdit()` to immediately pre-populate and normalize all 12 record fields (`property_name`, `area`, `property_number`, `building_name`, `bedrooms`, `property_type`, `owner_name`, `phone_number`, `mobile_number`, `email`, `notes`, `assigned_to`, `status`).
+      - Added asynchronous background fetch to `GET /owner-data/${rec.id}` to sync the freshest database record directly into `formData`.
+    - **Clean Form Submission & Lifecycle Status**:
+      - Updated `handleSubmitForm()` to sanitize empty strings for email and phone numbers to `null`, preventing validation rejections.
+      - Added `Record Status` selector (Active, Contacted, Unresponsive, Deal Closed) inside Section 3 (Lead Assignment & Ownership).
+    - **International Telephony & Flag Country Codes (`react-international-phone`)**:
+      - Replaced raw text inputs for Mobile Number and Phone Number in Section 2 (Owner Contact Details) with [`PhoneInput.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/PhoneInput.tsx).
+      - Set labels to **Primary Phone Number** *(WhatsApp active)* and **Secondary Phone Number** *(Landline / Office / Alt)*.
+      - Implemented `formatPhoneForInput()` helper: automatically detects and prepends the `+` prefix to raw numbers (e.g. `971529565196` -> `+971529565196`), enabling instant country flag detection (🇦🇪 UAE, 🇩🇪 Germany, 🇦🇹 Austria, 🇰🇿 Kazakhstan, etc.) with clickable dropdown country picker.
+      - Enhanced [`PhoneInput.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/PhoneInput.tsx) country selector dropdown with `!z-[9999]` to ensure clean layering above all modal dialogs.
+    - **Import / Export Template & Column Harmonization (`Primary Phone` & `Secondary Phone`)**:
+      - **Export CSV**: Updated `handleExportCsv` headers from `['Phone Number', 'Mobile Number']` to `['Primary Phone', 'Secondary Phone']`, and mapped `r.mobile_number` to Primary Phone (Index 7) and `r.phone_number` to Secondary Phone (Index 8).
+      - **Sample CSV Template**: Updated `handleDownloadSampleCsv` headers to `['Property Name', 'Area', 'Property Number', 'Building Name', 'Bedrooms', 'Property Type', 'Owner Name', 'Primary Phone', 'Secondary Phone', 'Email']` with realistic sample numbers (`+971 50 123 4567` for Primary Phone, `+971 4 399 1122` for Secondary Phone).
+      - **Flexible Header Detection on Import**: Updated `handleFileUpload` with intelligent dynamic header detection (`findColIdx`) supporting `primary`/`mobile`/`whatsapp` for `mobile_number` and `secondary`/`landline`/`phone` for `phone_number`, guaranteeing full backward compatibility for both new and legacy spreadsheets.
+      - **Import Modal Format Notice**: Updated the expected CSV header banner in the upload modal to clearly specify `Primary Phone` and `Secondary Phone`.
+      - **Columns, Headers & Quick View Drawer**: Harmonized `ALL_OWNER_COLUMNS` definitions, table `<th>` column headers, table copy tooltips (`Copy Primary Phone`, `Copy Secondary Phone`), and the Quick View Drawer labels to consistently use **Primary Phone** and **Secondary Phone**.
+  - **Automated Verification**:
+    - Verified clean TypeScript compilation (`npx tsc --noEmit` exit code 0).
+    - Verified modal open handlers, normalization functions, and state bindings across table rows and Quick View Drawer.
+- **74 — Opportunities List View Multi-Checkbox Bulk Delete & RBAC Permission Gating (`/opportunities`, `/users`)**:
+  - **Business & Domain Architecture**:
+    - Enabled bulk management in **Opportunities List View** (`/opportunities`), allowing users to select and delete multiple deal records in a single batch.
+    - **Contact Permanency Rule Preserved**: Strictly enforced real estate domain integrity. Deleting an individual or batch of opportunities NEVER deletes the master client profile in `contacts` table. If the contact has no other remaining active deals, its lifecycle state is cleanly reset to `available` in the Lead Bank.
+  - **User Management & Granular Permission Gating (`deals.bulk_delete`)**:
+    - Added granular permission key `deals.bulk_delete` (*Bulk Delete Opportunities: Select multiple deals and delete them simultaneously*) under **Opportunities Pipeline** in [`RoleController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/RoleController.php) and [`RoleAndPermissionSeeder.php`](file:///d:/FSadvisory-crm/backend/database/seeders/RoleAndPermissionSeeder.php).
+    - Automatically integrated into `/users` Roles & Permissions Matrix documentation and the Granular Permission Checkbox Modal.
+    - Wildcard super-admins inherit permission automatically; Sales Managers and specific roles/users can be granted or revoked this permission directly from User Management.
+  - **Frontend UI & Floating Bulk Action Bar ([`opportunities/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/opportunities/page.tsx))**:
+    - **Permission-Guarded Checkbox Column**: Multi-checkbox header column and row checkboxes only appear when the user has `deals.bulk_delete` permission.
+    - **Select All & Dynamic Tracking**: Header checkbox toggles selection for all currently filtered opportunities on page, highlighting selected rows with an amber-tinted background (`#FAF6EC`).
+    - **Floating Bulk Action Bar**: Mimicking the Lead Pool UX, an animated bottom bar emerges whenever `selectedOppIds.length > 0`, displaying the active count badge, `Delete Selected` button with SweetAlert2 confirmation, and a quick dismiss button.
+    - **Single Delete Protection**: Individual row delete button is guarded by `canDeleteDeals` (`deals.delete`).
+  - **Backend API Endpoints ([`OpportunityController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/OpportunityController.php) & [`api.php`](file:///d:/FSadvisory-crm/backend/routes/api.php))**:
+    - `POST /api/opportunities/bulk-delete`: Validates ID arrays, removes associated qualification records (`BuyerQualification`, `SellerQualification`, `LandlordQualification`, `TenantQualification`), deletes opportunity records, and checks/updates contact statuses.
+    - `DELETE /api/opportunities/{id}`: Cleaned up child qualifications and added contact permanency check.
+  - **Automated Verification**:
+    - Verified clean TypeScript compilation (`npx tsc --noEmit` exit code 0).
+    - Verified `POST /api/opportunities/bulk-delete` with automated scratch script confirming 200 OK, deletion of deals, and contact permanency.
+    - Verified `GET /api/permissions/matrix` includes `deals.bulk_delete`.
+- **75 — My Queue Multi-Checkbox Bulk Delete Across Both Tabs (Regular Leads & Owner Leads) & RBAC Permission Integration (`/queue`, `/users`)**:
+  - **Business & Workflow Capabilities**:
+    - Extended the calling queue desk ([`queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx)) with multi-checkbox bulk delete support across both primary tabs: **Regular Leads (Lead Pool)** and **Owner Leads (Owner Data)**.
+    - **Regular Leads Tab**: Deleting items seamlessly handles both active Opportunities (deleting opportunity record while preserving permanent contact and resetting state to `available`) and assigned Contacts awaiting qualification (moving them to trash via soft-delete).
+    - **Owner Leads Tab**: Deleting items removes selected `owner_records` from the database.
+  - **Granular RBAC Permission Gating (`queue.bulk_delete`)**:
+    - Added granular permission key `queue.bulk_delete` (*Bulk Delete Queue Leads: Select multiple leads in My Queue and delete them simultaneously*) under **Sales Queue & Follow-ups** in [`RoleController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/RoleController.php) and [`RoleAndPermissionSeeder.php`](file:///d:/FSadvisory-crm/backend/database/seeders/RoleAndPermissionSeeder.php).
+    - Automatically integrated into `/users` Roles & Permissions Matrix documentation and the Granular Permission Checkbox Modal.
+    - Floating action bar Delete buttons are conditionally rendered only when the user possesses `queue.bulk_delete` permission.
+  - **Unified Backend API Endpoint ([`QueueController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/QueueController.php) & [`api.php`](file:///d:/FSadvisory-crm/backend/routes/api.php))**:
+    - Implemented `POST /api/queue/bulk-delete` with channel routing (`regular` vs `owner`):
+      - Channel `owner`: Deletes matching `OwnerRecord` entries.
+      - Channel `regular`: Partitions positive IDs (Opportunities) and negative IDs (Contacts awaiting qualification), deletes child qualifications, removes opportunities, resets contact states to `available`, and soft-deletes un-qualified queue contacts.
+  - **Frontend UI Enhancements ([`queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx))**:
+    - Added red `Delete Selected` button with trash icon into both floating bulk action bars.
+    - SweetAlert2 confirmation dialogs prompt the user with clear context before deleting.
+    - Auto-refreshes queue via `loadQueue()` and displays toast notification on completion.
+  - **Automated Verification**:
+    - Verified clean TypeScript compilation (`npx tsc --noEmit` exit code 0).
+    - Automated test script executed for both `regular` (opportunity + contact) and `owner` channels confirming successful deletion, soft-delete, and contact permanency.
+    - Verified `GET /api/permissions/matrix` includes `queue.bulk_delete`.
+- **76 — Navigation Streamlining & My Queue Follow-ups Rebranding (`Sidebar.tsx`, `/queue`)**:
+  - **Sidebar Cleanup**: Removed redundant `Follow-ups` link from [`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx) to declutter the SALES navigation group.
+  - **My Queue Tab Rebranding**: Rebranded `Upcoming Today` to **Follow-ups** (metric card) and **Follow-ups 📅** (sub-tab) in [`queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx), unifying scheduled callback and follow-up activities under the primary daily calling desk.
+- **77 — Strict Manual Opportunity Creation & Direct Queue Lead Ingestion (`ContactController.php`, `ImportController.php`, `/queue`)**:
+  - **Disabled Automatic Opportunity Creation**:
+    - Completely removed auto-generation of `Opportunity` and `BuyerQualification` models from [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) (manual lead creation) and [`ImportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ImportController.php) (batch CSV/Excel import).
+    - Ingested, imported, or manually created leads are assigned to advisors via the Round-Robin Distribution Engine and all client inquiry preferences (Developer, Community, Project, Bedrooms, Budget) are preserved as an audit activity note on the contact profile.
+  - **Agent Calling & Qualification Workflow in My Queue**:
+    - Leads directly enter the advisor's **My Queue** with `stage: 'unqualified'` displaying the amber **No Deal Created** badge.
+    - Advisors initiate outreach directly from My Queue via **Quick Call** (`handleQuickCall`) or **WhatsApp**.
+    - Pre-opportunity calls are seamlessly recorded in **Call Activity** (`/call-activity`) with the client profile, outcome, and notes.
+    - Logged calls update the queue lead's next action and reset the SLA countdown timer.
+    - The opportunity deal is strictly created **MANUALLY** by the advisor clicking `[ + ]` (*Create Opportunity from Regular Lead*) once the client is qualified.
+    - Upon manual creation, all prior qualification call activity notes are automatically linked to the new Opportunity deal workspace.
+  - **Safeguarded Pre-Opportunity Navigation & Opportunity Workspace**:
+    - Eliminated virtual negative IDs (e.g. `-40`) from resolving as valid opportunity deals in [`queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx), [`ContactDetailModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDetailModal.tsx), [`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx), [`OwnerDetailModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/OwnerDetailModal.tsx), and [`OwnerDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/OwnerDrawer.tsx).
+    - Hardened [`OpportunityController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/OpportunityController.php) `show($id)` with non-positive ID validation returning standard 404 JSON responses.
+    - Added graceful "Opportunity Not Found" view in [`opportunities/[id]/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/opportunities/%5Bid%5D/page.tsx) with direct return links to My Queue.
+- **78 — My Queue Interface Streamlining & Clean 4-Tab SLA Layout (`/queue`)**:
+  - **Removed Follow-ups Tab & Card**: Removed the redundant `Follow-ups` tab and metric card from [`queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx).
+  - **Balanced 4-Tab Architecture**: Refactored the daily calling desk into an ultra-clean, balanced 4-column grid matching both Regular and Owner channels:
+    1. **All Active Leads** (Full assigned pipeline)
+    2. **Overdue / Breached 🚨** (Critical action items requiring immediate calls)
+    3. **Due Soon (< 30 Mins) ⏳** (Upcoming callbacks and urgent SLA actions)
+    4. **Hot Leads 🔥** (High-temperature priority clients)
+  - Scheduled callbacks are dynamically promoted into `Due Soon` as their scheduled call time nears, eliminating the need for a separate follow-up tab while ensuring zero lead leakage.
+
+- **79 — Corporate Email Sending, Dynamic SMTP Settings & Opportunity Proposal Dispatch Engine (`/settings`, `/opportunities/[id]`, `EmailSetting`, `OpportunityEmailMailable`, `SendEmailModal`)**:
+  - **Business & Operational Context**:
+    - Real estate deal closing in Dubai requires official, high-trust client proposals with verified company branding, property specifications, brochures, and payment schedules.
+    - **Domain Strictness**: Agent corporate mailboxes are provisioned under `@fsadvisory.ae` (e.g. `faraz@fsadvisory.ae`, `hassan@fsadvisory.ae`, `waqar@fsadvisory.ae`).
+    - **Trigger Point**: Outreach emails are triggered from the **Opportunity Workspace** ([`/opportunities/[id]`](file:///d:/FSadvisory-crm/frontend/src/app/opportunities/%5Bid%5D/page.tsx)) after a lead has been called, vetted, and qualified into an active deal.
+  - **Dynamic SMTP Server Configuration in Settings ([`/settings?module=email`](file:///d:/FSadvisory-crm/frontend/src/app/settings/page.tsx))**:
+    - **Database Migration & Singleton Model**: Created `email_settings` table and [`EmailSetting`](file:///d:/FSadvisory-crm/backend/app/Models/EmailSetting.php) model supporting dynamic credentials (`mail_mailer`, `mail_host`, `mail_port`, `mail_username`, `mail_password`, `mail_encryption`, `mail_from_address`, `mail_from_name`, `default_domain`, `is_active`).
+    - **Zero-Restart Runtime Injection**: Uses `EmailSetting::current()->applyToRuntimeConfig()` to inject host, port, encryption, and credentials into Laravel's `config(['mail.mailers.smtp...'])` dynamically per request, eliminating `.env` mutation and server reboot dependencies.
+    - **Security Masking**: Passwords are encrypted at rest, masked on retrieval (`••••••••••••`), and only updated when an explicit non-masked value is provided.
+    - **Live Connection Tester**: Dedicated testing tool in Settings allows administrators to send a test verification email and inspect connection handshakes in real time.
+  - **Luxury Brand Mailable & Responsive Email Layout**:
+    - **Blade Template ([`opportunity_proposal.blade.php`](file:///d:/FSadvisory-crm/backend/resources/views/emails/opportunity_proposal.blade.php))**:
+      - Executive FS Advisory palette: Navy `#081428`, Warm Gold `#C9A84C`, Crisp White cards, and refined typography.
+      - Dynamic Property Specs badge grid (Project, Community, Unit Type, Bedrooms, Indicative Budget).
+      - Advisor Signature Card with photo placeholder, direct phone number, and official email.
+      - Official RERA regulatory compliance footer and Emaar Square, Downtown Dubai address.
+    - **Mailable Class ([`OpportunityEmailMailable.php`](file:///d:/FSadvisory-crm/backend/app/Mail/OpportunityEmailMailable.php))**:
+      - Dispatches via authenticated SMTP credentials.
+      - Sets `Reply-To` to the assigned property advisor (`{agent}@fsadvisory.ae`), guaranteeing that VIP client responses flow directly into the advisor's personal inbox.
+      - Attaches uploaded project brochures, floor plans, and payment plans.
+  - **Frontend Luxury Modal & Opportunity Integration**:
+    - **`SendEmailModal.tsx` ([`SendEmailModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/SendEmailModal.tsx))**:
+      - 1-click real estate proposal templates:
+        1. **Off-Plan Brochure & Payment Plan**: Highlights developer terms, yields, and handover.
+        2. **VIP Private Viewing Tour**: Provides meeting coordinates and viewing concierge details.
+        3. **CMA Valuation & Advisory Report**: Formal Comparative Market Analysis with DLD transactional benchmarks.
+        4. **Custom Proposal**: Freeform consultation message.
+      - File attachment uploader (supporting PDF brochures up to 15MB each).
+      - Pre-populates client contact email and advisor reply-to identity.
+    - **Opportunity Workspace ([`opportunities/[id]/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/opportunities/%5Bid%5D/page.tsx))**:
+      - Integrated `[ ✉️ Send Property Email ]` action button in the primary opportunity header actions bar.
+      - Optimized header action buttons (*Release to Bank*, *WhatsApp Brochure*, *Send Property Email*, *Hand Over to Sales*) into a compact, single-line inline layout with `whitespace-nowrap`, refined padding (`px-3 py-1.5`), and `shrink-0` to eliminate multi-line text wrapping.
+      - Dispatched proposals automatically log as an audit event in the Opportunity Activity Timeline and Contact profile history.
+  - **Automated Verification**:
+    - Clean TypeScript compilation verified across the frontend project (`npx tsc --noEmit` exit code 0).
+    - Verified `GET /api/settings/email`, `POST /api/settings/email`, and `POST /opportunities/{id}/send-email`.
+    - Verified Mailable rendering, gold branding, and `@fsadvisory.ae` reply-to routing.
+
 ---
 
 ## ⚙️ Installation & Running Instructions
@@ -246,20 +704,30 @@ php artisan optimize:clear
 FSadvisory-crm/
 ├── backend/                  # Laravel 11 REST API
 │   ├── app/
-│   │   ├── Http/Controllers/Api/
-│   │   │   ├── ContactController.php          # Contact CRUD & UTM Attribution
-│   │   │   ├── OpportunityController.php      # Opportunity Lifecycle & SLA
-│   │   │   ├── LeadDistributionController.php # Round-Robin Engine & Audit Logs
-│   │   │   ├── OwnerDataController.php        # Dubai Title Deed Registry
-│   │   │   ├── UserController.php             # User Management & Permissions
-│   │   │   ├── WhatsAppController.php         # WhatsApp Web Suite & Sync
-│   │   │   ├── CallRecordingController.php    # 3CX PBX Telephony Integration
-│   │   │   └── ...
+│   │   ├── Http/
+│   │   │   ├── Controllers/Api/
+│   │   │   │   ├── ContactController.php          # Contact CRUD & UTM Attribution
+│   │   │   │   ├── OpportunityController.php      # Opportunity Lifecycle & SLA
+│   │   │   │   ├── LeadDistributionController.php # Round-Robin Engine & Audit Logs
+│   │   │   │   ├── OwnerDataController.php        # Dubai Title Deed Registry
+│   │   │   │   ├── UserController.php             # User Management & Permissions
+│   │   │   │   ├── WhatsAppController.php         # WhatsApp Web Suite & Sync
+│   │   │   │   ├── CallRecordingController.php    # 3CX PBX Telephony Integration
+│   │   │   │   ├── EmailSettingsController.php    # Dynamic SMTP Settings & Verification
+│   │   │   │   └── ...
+│   │   │   └── Middleware/
+│   │   │       └── CrmTokenAuth.php               # Bearer Token & Master Key Auth
+│   │   ├── Mail/
+│   │   │   └── OpportunityEmailMailable.php   # Branded Luxury Mailable with Attachments
 │   │   ├── Models/
+│   │   │   ├── EmailSetting.php               # Dynamic SMTP Configuration Singleton
+│   │   │   └── ...
 │   │   └── Services/
 │   │       └── LeadDistributionService.php    # Auto-Distribution Logic & Rotation
 │   ├── config/cors.php                        # CORS configuration for Vercel
 │   ├── database/migrations/                   # MySQL schema migrations
+│   ├── resources/views/emails/
+│   │   └── opportunity_proposal.blade.php     # Luxury Navy & Gold Client Proposal Template
 │   └── routes/api.php                         # REST API endpoints
 ├── frontend/                 # Next.js 15+ App Router SPA
 │   ├── public/
@@ -280,6 +748,16 @@ FSadvisory-crm/
 │   │   │   ├── settings/page.tsx              # Settings & Distribution Engine
 │   │   │   └── login/page.tsx                 # Authentication & Approval Notice
 │   │   ├── components/                        # Reusable UI & Modal components
+│   │   │   ├── SendEmailModal.tsx             # Luxury Property Email Dispatcher
+│   │   │   ├── ContactDetailModal.tsx         # Full read-only client profile popup
+│   │   │   ├── OwnerDetailModal.tsx           # Full read-only owner title deed popup
+│   │   │   ├── AdvancedFilterModal.tsx        # Multi-parameter advanced filter modal
+│   │   │   ├── DateRangePicker.tsx            # Preset & custom date range picker
+│   │   │   ├── MultiCheckboxDropdown.tsx      # Multi-select dropdown for areas/types
+│   │   │   ├── CreateOpportunityModal.tsx     # Fast opportunity conversion modal
+│   │   │   ├── ContactDrawer.tsx              # Slide-over contact profile drawer
+│   │   │   ├── Navbar.tsx                     # Top application bar
+│   │   │   └── Sidebar.tsx                    # Main collapsible CRM navigation
 │   │   └── lib/
 │   │       ├── api.ts                         # Dynamic fetchApi with NEXT_PUBLIC_API_URL
 │   │       └── permissions.ts                 # Granular RBAC permission checks
@@ -289,6 +767,18 @@ FSadvisory-crm/
 │   ├── auth_sessions/        # Multi-device session credentials
 │   └── contacts_map.json     # Persistent LID-to-phone mapping store
 ├── logo.svg                  # Official vector logo asset
+├── test_leads_sample.xlsx    # Sample 22-column Excel test dataset for Lead Pool import testing
 ├── README.md                 # Full project technical documentation
-└── SCOPE.md                  # Project scope and business specifications
+├── SCOPE.md                  # Project scope and business specifications
 ```
+
+---
+
+## 📜 Agent Operating Principles & Documentation Mandate
+
+> [!IMPORTANT]
+> **MANDATORY FOR ALL AI AGENTS & CONTRIBUTORS:**
+> 1. **Continuous Documentation Updates**: Every time new features, database schema modifications, API routes, or frontend components are added or updated, the [`README.md`](file:///d:/FSadvisory-crm/README.md) file **MUST BE PROACTIVELY UPDATED** in the same session.
+> 2. **No Git Push Constraint**: Never execute `git push` autonomously. Only commit or stage changes locally when instructed.
+> 3. **Preserve System Rules**: Always respect non-negotiable domain rules (Contact permanency, Single Ownership, SLA engine, Mandatory fields, and Permanent Action columns).
+

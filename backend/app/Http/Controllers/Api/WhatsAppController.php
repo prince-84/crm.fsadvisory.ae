@@ -570,7 +570,6 @@ class WhatsAppController extends Controller
             if ($last7 && !str_contains($remoteJid, '@lid')) {
                 $contact = Contact::where('phone', 'like', "%{$last7}%")
                     ->orWhere('secondary_phone', 'like', "%{$last7}%")
-                    ->orWhere('mobile_phone', 'like', "%{$last7}%")
                     ->first();
             }
 

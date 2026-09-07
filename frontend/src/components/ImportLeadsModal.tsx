@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { 
   X, Upload, FileText, Download, CheckCircle2, AlertTriangle, 
-  ArrowLeft, RefreshCw, Layers, UserCheck, UserPlus, AlertCircle
+  ArrowLeft, RefreshCw, Layers, UserCheck, UserPlus, AlertCircle,
+  Sparkles, Sliders, Check, Plus, Database, ArrowRight
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import Swal from 'sweetalert2';
@@ -17,7 +18,7 @@ interface ImportLeadsModalProps {
 }
 
 export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportLeadsModalProps) {
-  const [step, setStep] = useState<'upload' | 'preview' | 'success'>('upload');
+  const [step, setStep] = useState<'upload' | 'mapping' | 'preview' | 'success'>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -27,7 +28,25 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
     duplicate_count: number;
     duplicates: any[];
     analyzed_records: any[];
+    has_unmatched?: boolean;
+    unmatched?: Record<string, any[]>;
+    catalogs?: Record<string, string[]>;
   } | null>(null);
+
+  // Value Mapping State
+  const [valueMappings, setValueMappings] = useState<Record<string, Record<string, string>>>({
+    developer: {},
+    community: {},
+    project: {},
+    property_type: {},
+  });
+
+  // Approved new catalog items to create in master tables
+  const [newCatalogItems, setNewCatalogItems] = useState<Array<{ category: string; name: string }>>([]);
+
+  // Active action mode per unmatched value: key = `${cat}::${fileVal}` -> 'map' | 'new' | 'keep'
+  const [mappingActions, setMappingActions] = useState<Record<string, 'map' | 'new' | 'keep'>>({});
+  const [mappingCategoryTab, setMappingCategoryTab] = useState<'all' | 'developer' | 'project' | 'community' | 'property_type'>('all');
 
   // Duplicate Action Mode: 'skip' | 'import_duplicate' | 'update'
   const [duplicateMode, setDuplicateMode] = useState<'skip' | 'import_duplicate' | 'update'>('skip');
@@ -165,7 +184,34 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
       });
 
       setPreviewData(res);
-      setStep('preview');
+
+      if (res.has_unmatched) {
+        const initialMappings: Record<string, Record<string, string>> = {
+          developer: {},
+          community: {},
+          project: {},
+          property_type: {},
+        };
+        const initialActions: Record<string, 'map' | 'new' | 'keep'> = {};
+
+        ['developer', 'community', 'project', 'property_type'].forEach((cat) => {
+          (res.unmatched?.[cat] || []).forEach((item: any) => {
+            const key = `${cat}::${item.file_value}`;
+            if (item.suggested_match && item.confidence >= 60) {
+              initialMappings[cat][item.file_value] = item.suggested_match;
+              initialActions[key] = 'map';
+            } else {
+              initialActions[key] = 'keep';
+            }
+          });
+        });
+
+        setValueMappings(initialMappings);
+        setMappingActions(initialActions);
+        setStep('mapping');
+      } else {
+        setStep('preview');
+      }
     } catch (err: any) {
       Swal.fire({
         icon: 'error',
@@ -178,7 +224,64 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
     }
   };
 
-  // Step 2 -> Step 3: Execute final import
+  // Step 2 (Mapping) -> Step 3 (Preview): Apply selected value mappings & register new catalog items
+  const handleApplyMappingsAndProceed = () => {
+    if (!previewData) return;
+
+    const approvedNewItems: Array<{ category: string; name: string }> = [];
+    const activeMappings: Record<string, Record<string, string>> = {
+      developer: {},
+      community: {},
+      project: {},
+      property_type: {},
+    };
+
+    ['developer', 'community', 'project', 'property_type'].forEach((cat) => {
+      (previewData.unmatched?.[cat] || []).forEach((item: any) => {
+        const key = `${cat}::${item.file_value}`;
+        const action = mappingActions[key] || 'keep';
+
+        if (action === 'new') {
+          approvedNewItems.push({ category: cat, name: item.file_value });
+        } else if (action === 'map') {
+          const target = valueMappings[cat]?.[item.file_value];
+          if (target) {
+            activeMappings[cat][item.file_value] = target;
+          }
+        }
+      });
+    });
+
+    setNewCatalogItems(approvedNewItems);
+    setValueMappings(activeMappings);
+
+    // Apply mappings to in-memory analyzed_records
+    const updatedRecords = (previewData.analyzed_records || []).map((r: any) => {
+      const rec = { ...r };
+      if (rec.developer && activeMappings.developer[rec.developer]) {
+        rec.developer = activeMappings.developer[rec.developer];
+      }
+      if (rec.community && activeMappings.community[rec.community]) {
+        rec.community = activeMappings.community[rec.community];
+      }
+      if (rec.project && activeMappings.project[rec.project]) {
+        rec.project = activeMappings.project[rec.project];
+      }
+      if (rec.project_property && activeMappings.property_type[rec.project_property]) {
+        rec.project_property = activeMappings.property_type[rec.project_property];
+      }
+      return rec;
+    });
+
+    setPreviewData({
+      ...previewData,
+      analyzed_records: updatedRecords,
+    });
+
+    setStep('preview');
+  };
+
+  // Step 3 -> Step 4: Execute final import
   const handleExecuteImport = async () => {
     if (!previewData) return;
 
@@ -189,6 +292,8 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
         body: JSON.stringify({
           records: previewData.analyzed_records,
           duplicate_mode: duplicateMode,
+          value_mappings: valueMappings,
+          new_catalog_items: newCatalogItems,
         }),
       });
 
@@ -210,12 +315,15 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
     setParsedRows([]);
     setPreviewData(null);
     setImportResult(null);
+    setValueMappings({ developer: {}, community: {}, project: {}, property_type: {} });
+    setNewCatalogItems([]);
+    setMappingActions({});
     onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white border border-[#E8E4DC] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className={`bg-white border border-[#E8E4DC] rounded-xl ${step === 'mapping' || step === 'preview' ? 'max-w-4xl' : 'max-w-2xl'} w-full shadow-2xl overflow-hidden transition-all animate-in fade-in zoom-in-95 duration-150`}>
         
         {/* Header */}
         <div className="p-5 bg-[#081428] text-white flex items-center justify-between">
@@ -225,7 +333,7 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
             </div>
             <div>
               <h2 className="font-heading font-bold text-lg text-white">Lead Pool CSV Importer</h2>
-              <p className="text-xs text-[#C8A147]">Batch import contacts with automatic duplicate checking.</p>
+              <p className="text-xs text-[#C8A147]">Batch import contacts with within-file duplicate checking.</p>
             </div>
           </div>
           <button onClick={handleModalClose} className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
@@ -315,7 +423,256 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
             </div>
           )}
 
-          {/* STEP 2: PRE-IMPORT DUPLICATE REVIEW & DECISION SCREEN */}
+          {/* STEP 2: VALUE MAPPING & CATALOG STANDARDIZATION SCREEN */}
+          {step === 'mapping' && previewData && (
+            <div className="space-y-4">
+              {/* Header Info Banner */}
+              <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-lg flex items-start gap-2.5 text-[#081428]">
+                <Sparkles className="w-4 h-4 text-[#C8A147] shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-xs text-[#081428]">Standardize Imported Catalog Values</div>
+                  <p className="text-[11px] text-[#6E6E6E] mt-0.5">
+                    We found values in your file that do not match existing Settings master catalogs (Developer, Project, Community, or Property Type).
+                    Choose whether to map to an existing catalog name, add as a new official entry, or keep the raw value.
+                  </p>
+                </div>
+              </div>
+
+              {/* Category Filter Tabs */}
+              <div className="flex items-center gap-2 border-b border-[#E8E4DC] pb-2 overflow-x-auto">
+                {[
+                  { key: 'all', label: 'All Unmatched' },
+                  { key: 'developer', label: 'Developers', count: previewData.unmatched?.developer?.length || 0 },
+                  { key: 'project', label: 'Projects', count: previewData.unmatched?.project?.length || 0 },
+                  { key: 'community', label: 'Communities', count: previewData.unmatched?.community?.length || 0 },
+                  { key: 'property_type', label: 'Property Types', count: previewData.unmatched?.property_type?.length || 0 },
+                ].map((tab) => {
+                  const isActive = mappingCategoryTab === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setMappingCategoryTab(tab.key as any)}
+                      className={`px-3 py-1.5 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                        isActive
+                          ? 'bg-[#081428] text-[#C8A147] shadow-2xs'
+                          : 'bg-white border border-[#E8E4DC] text-[#6E6E6E] hover:text-[#081428]'
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                      {tab.count !== undefined && tab.count > 0 && (
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                          isActive ? 'bg-[#C8A147] text-[#081428]' : 'bg-amber-100 text-amber-900 font-bold'
+                        }`}>
+                          {tab.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Mapping Rows Table / List */}
+              <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1">
+                {['developer', 'project', 'community', 'property_type']
+                  .filter((cat) => mappingCategoryTab === 'all' || mappingCategoryTab === cat)
+                  .flatMap((cat) => (previewData.unmatched?.[cat] || []).map((item) => ({ ...item, category: cat })))
+                  .map((item) => {
+                    const key = `${item.category}::${item.file_value}`;
+                    const currentAction = mappingActions[key] || 'keep';
+                    const targetVal = valueMappings[item.category]?.[item.file_value] || '';
+                    const catalogOptions = previewData.catalogs?.[item.category] || [];
+
+                    const categoryLabels: Record<string, string> = {
+                      developer: 'Developer',
+                      project: 'Project',
+                      community: 'Community',
+                      property_type: 'Property Type',
+                    };
+
+                    return (
+                      <div
+                        key={key}
+                        className="p-3 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs space-y-2.5 hover:border-[#C8A147]/50 transition-colors"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                              {categoryLabels[item.category] || item.category}
+                            </span>
+                            <span className="font-bold text-[#081428] text-xs">
+                              &quot;{item.file_value}&quot;
+                            </span>
+                            <span className="px-1.5 py-0.2 bg-amber-50 text-amber-800 text-[10px] rounded font-semibold border border-amber-200">
+                              {item.count} {item.count === 1 ? 'row' : 'rows'}
+                            </span>
+                          </div>
+
+                          {/* Suggested Match Indicator */}
+                          {item.suggested_match && (
+                            <div className="flex items-center gap-1 text-[11px]">
+                              <span className="text-[#6E6E6E]">Suggested:</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMappingActions((prev) => ({ ...prev, [key]: 'map' }));
+                                  setValueMappings((prev) => ({
+                                    ...prev,
+                                    [item.category]: {
+                                      ...prev[item.category],
+                                      [item.file_value]: item.suggested_match,
+                                    },
+                                  }));
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold rounded cursor-pointer transition-colors text-[10px]"
+                                title="Click to apply suggested match"
+                              >
+                                <span>🎯 {item.suggested_match}</span>
+                                <span className="text-emerald-600 font-mono">({item.confidence}%)</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action Selection Controls */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-100">
+                          {/* 1. Map to Existing */}
+                          <label
+                            className={`flex flex-col gap-1.5 p-2 rounded border cursor-pointer transition-all ${
+                              currentAction === 'map'
+                                ? 'bg-amber-50/50 border-[#C8A147] ring-1 ring-[#C8A147]/40'
+                                : 'bg-slate-50/60 border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
+                              <input
+                                type="radio"
+                                name={`action_${key}`}
+                                checked={currentAction === 'map'}
+                                onChange={() => {
+                                  setMappingActions((prev) => ({ ...prev, [key]: 'map' }));
+                                  if (!targetVal && item.suggested_match) {
+                                    setValueMappings((prev) => ({
+                                      ...prev,
+                                      [item.category]: {
+                                        ...prev[item.category],
+                                        [item.file_value]: item.suggested_match,
+                                      },
+                                    }));
+                                  } else if (!targetVal && catalogOptions.length > 0) {
+                                    setValueMappings((prev) => ({
+                                      ...prev,
+                                      [item.category]: {
+                                        ...prev[item.category],
+                                        [item.file_value]: catalogOptions[0],
+                                      },
+                                    }));
+                                  }
+                                }}
+                                className="accent-[#C8A147]"
+                              />
+                              <span>Map to Catalog</span>
+                            </div>
+
+                            {currentAction === 'map' && (
+                              <select
+                                value={targetVal}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setValueMappings((prev) => ({
+                                    ...prev,
+                                    [item.category]: {
+                                      ...prev[item.category],
+                                      [item.file_value]: v,
+                                    },
+                                  }));
+                                }}
+                                className="w-full text-[11px] px-2 py-1 bg-white border border-[#E8E4DC] rounded focus:border-[#C8A147] font-medium"
+                              >
+                                {catalogOptions.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </label>
+
+                          {/* 2. Add as New to Catalog */}
+                          <label
+                            className={`flex flex-col gap-1 p-2 rounded border cursor-pointer transition-all ${
+                              currentAction === 'new'
+                                ? 'bg-emerald-50/50 border-emerald-400 ring-1 ring-emerald-300'
+                                : 'bg-slate-50/60 border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
+                              <input
+                                type="radio"
+                                name={`action_${key}`}
+                                checked={currentAction === 'new'}
+                                onChange={() => setMappingActions((prev) => ({ ...prev, [key]: 'new' }))}
+                                className="accent-emerald-600"
+                              />
+                              <span className="text-emerald-800">+ Add to Master Catalog</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 pl-4">
+                              Registers as official Settings entry
+                            </span>
+                          </label>
+
+                          {/* 3. Keep Raw Value */}
+                          <label
+                            className={`flex flex-col gap-1 p-2 rounded border cursor-pointer transition-all ${
+                              currentAction === 'keep'
+                                ? 'bg-slate-100 border-slate-400 ring-1 ring-slate-300'
+                                : 'bg-slate-50/60 border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
+                              <input
+                                type="radio"
+                                name={`action_${key}`}
+                                checked={currentAction === 'keep'}
+                                onChange={() => setMappingActions((prev) => ({ ...prev, [key]: 'keep' }))}
+                                className="accent-slate-600"
+                              />
+                              <span>Keep Raw String</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 pl-4">
+                              Stores unmapped text as-is
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Action Footer */}
+              <div className="flex items-center justify-between pt-3 border-t border-[#E8E4DC]">
+                <button
+                  type="button"
+                  onClick={() => setStep('upload')}
+                  className="px-3.5 py-2 bg-white border border-[#E8E4DC] text-[#6E6E6E] font-bold rounded hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back to File</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleApplyMappingsAndProceed}
+                  className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold rounded shadow-xs flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <span>Continue to Duplicate Check</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: PRE-IMPORT DUPLICATE REVIEW & DECISION SCREEN */}
           {step === 'preview' && previewData && (
             <div className="space-y-5">
               
@@ -336,7 +693,7 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
                 }`}>
                   <div className={`text-[10px] font-bold uppercase tracking-wider ${
                     previewData.duplicate_count > 0 ? 'text-amber-800' : 'text-slate-600'
-                  }`}>Duplicate Contacts</div>
+                  }`}>Duplicates (In File)</div>
                   <div className={`text-xl font-extrabold mt-0.5 ${
                     previewData.duplicate_count > 0 ? 'text-amber-900' : 'text-slate-700'
                   }`}>{previewData.duplicate_count}</div>
@@ -397,9 +754,9 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
                         className="mt-0.5 accent-[#C8A147]"
                       />
                       <div>
-                        <div className="font-bold text-[#081428]">Import All & Flag Duplicates</div>
+                        <div className="font-bold text-[#081428]">Import All & Route to Duplicate Tab</div>
                         <p className="text-[11px] text-[#6E6E6E] mt-0.5">
-                          Import all <strong className="text-[#081428]">{previewData.total_records} records</strong>. The {previewData.duplicate_count} duplicate leads will be saved with <strong className="text-amber-800">&quot;Duplicate&quot;</strong> state.
+                          Import all <strong className="text-[#081428]">{previewData.total_records} records</strong>. The {previewData.duplicate_count} duplicate leads in this file will be saved with <strong className="text-amber-800">&quot;Duplicate&quot;</strong> state and displayed in the Duplicate tab.
                         </p>
                       </div>
                     </label>
@@ -447,7 +804,7 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
                         <th className="p-1.5">Row</th>
                         <th className="p-1.5">CSV Lead Name</th>
                         <th className="p-1.5">CSV Phone Numbers</th>
-                        <th className="p-1.5">Matches Existing DB Record</th>
+                        <th className="p-1.5">Matches Within File</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#E8E4DC]">
@@ -470,11 +827,11 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
               <div className="flex items-center justify-between pt-3 border-t border-[#E8E4DC]">
                 <button
                   type="button"
-                  onClick={() => setStep('upload')}
+                  onClick={() => setStep(previewData.has_unmatched ? 'mapping' : 'upload')}
                   className="px-3.5 py-2 bg-white border border-[#E8E4DC] text-[#6E6E6E] font-bold rounded hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  <span>Back to File</span>
+                  <span>{previewData.has_unmatched ? 'Back to Value Mapping' : 'Back to File'}</span>
                 </button>
 
                 <button

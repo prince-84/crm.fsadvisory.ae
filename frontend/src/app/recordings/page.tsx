@@ -144,12 +144,10 @@ export default function CallRecordingsPage() {
 
     setImportingCsv(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/3cx/import-csv`, {
+      const data = await fetchApi('/3cx/import-csv', {
         method: 'POST',
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || data.message || 'Import failed');
 
       Swal.fire({
         icon: 'success',
@@ -170,12 +168,10 @@ export default function CallRecordingsPage() {
     const formData = new FormData();
     formData.append('audio_file', file);
     try {
-      const res = await fetch(`${API_BASE_URL}/recordings/${recId}/attach-audio`, {
+      const data = await fetchApi(`/recordings/${recId}/attach-audio`, {
         method: 'POST',
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to attach audio');
       Swal.fire({
         icon: 'success',
         title: 'WAV Audio Attached!',

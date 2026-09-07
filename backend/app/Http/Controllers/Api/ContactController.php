@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\Opportunity;
+use App\Models\BuyerQualification;
 use App\Models\Activity;
+use App\Services\LeadDistributionService;
 use Illuminate\Http\Request;
 
 class ContactController extends Controller
@@ -26,48 +28,200 @@ class ContactController extends Controller
 
         // Apply Tab Filter Logic
         if ($tab === 'unassigned') {
-            $query->where(function($q) {
-                $q->whereDoesntHave('opportunities')
-                  ->orWhereHas('opportunities', function($oppQ) {
-                      $oppQ->whereNull('current_owner_name')
-                           ->orWhere('current_owner_name', '')
-                           ->orWhere('current_owner_name', 'Unassigned');
+            $query->where('contacts.state', '!=', 'duplicate')
+                  ->where(function($q) {
+                      $q->where(function($sub) {
+                          $sub->whereNull('contacts.assigned_to')
+                              ->orWhere('contacts.assigned_to', '')
+                              ->orWhere('contacts.assigned_to', 'Unassigned');
+                      })->where(function($sub) {
+                          $sub->whereDoesntHave('opportunities')
+                              ->orWhereHas('opportunities', function($oppQ) {
+                                  $oppQ->whereNull('current_owner_name')
+                                       ->orWhere('current_owner_name', '')
+                                       ->orWhere('current_owner_name', 'Unassigned');
+                              });
+                      });
                   });
-            });
         } elseif ($tab === 'duplicate') {
-            $query->where('state', 'duplicate');
+            $query->where('contacts.state', 'duplicate');
+        } elseif ($tab === 'all') {
+            // 'all' tab displays all primary/non-duplicate leads
+            $query->where('contacts.state', '!=', 'duplicate');
         }
 
-        if ($request->has('state') && $request->state !== 'all') {
-            $query->where('state', $request->state);
+        if ($request->has('state') && !empty($request->state) && $request->state !== 'all') {
+            $query->where('contacts.state', $request->state);
+        }
+
+        if ($request->has('availability') && !empty($request->availability) && $request->availability !== 'all') {
+            if ($request->availability === 'available') {
+                $query->where(function($q) {
+                    $q->whereDoesntHave('opportunities')
+                      ->orWhereHas('opportunities', function($oppQ) {
+                          $oppQ->whereNull('current_owner_name')
+                               ->orWhere('current_owner_name', '')
+                               ->orWhere('current_owner_name', 'Unassigned');
+                      });
+                });
+            } elseif ($request->availability === 'busy') {
+                $query->whereHas('opportunities', function($oppQ) {
+                    $oppQ->whereNotNull('current_owner_name')
+                         ->where('current_owner_name', '!=', '')
+                         ->where('current_owner_name', '!=', 'Unassigned');
+                });
+            }
+        }
+
+        // Date Range Calendar filter on contacts.created_at
+        if ($request->filled('date_from')) {
+            $query->whereDate('contacts.created_at', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('contacts.created_at', '<=', $request->date_to);
         }
 
         if ($request->has('source') && !empty($request->source) && $request->source !== 'all') {
-            $query->where('source', 'like', "%{$request->source}%");
+            $query->where('contacts.source', 'like', "%{$request->source}%");
         }
 
         if ($request->filled('assigned_owner') && $request->assigned_owner !== 'all') {
             $owner = $request->assigned_owner;
-            $query->whereHas('opportunities', function($q) use ($owner) {
-                $q->where('current_owner_name', $owner);
+            $query->where(function($q) use ($owner) {
+                $q->where('contacts.assigned_to', $owner)
+                  ->orWhereHas('opportunities', function($oppQ) use ($owner) {
+                      $oppQ->where('current_owner_name', $owner);
+                  });
+            });
+        }
+
+        // SLA Status filter
+        if ($request->filled('sla_status') && $request->sla_status !== 'all') {
+            $sla = $request->sla_status;
+            $query->whereHas('opportunities', function($q) use ($sla) {
+                $q->where('sla_status', $sla);
+            });
+        }
+
+        // Advanced Lead Origin & Channel Source filters
+        if ($request->filled('sub_source') && $request->sub_source !== 'all') {
+            $sub = $request->sub_source;
+            $query->where('contacts.source', 'like', "%{$sub}%");
+        }
+
+        // Advanced Opportunity & Property Preferences filters
+        $hasOppFilters = ($request->filled('opportunity_type') && $request->opportunity_type !== 'all')
+            || ($request->filled('temperature') && $request->temperature !== 'all')
+            || ($request->filled('payment_method') && $request->payment_method !== 'all')
+            || ($request->filled('developer') && $request->developer !== 'all')
+            || ($request->filled('community') && $request->community !== 'all')
+            || ($request->filled('project') && $request->project !== 'all')
+            || ($request->filled('property_type') && $request->property_type !== 'all')
+            || ($request->filled('bedrooms') && $request->bedrooms !== 'all')
+            || ($request->filled('project_property') && $request->project_property !== 'all')
+            || ($request->filled('budget_min') && is_numeric($request->budget_min))
+            || ($request->filled('budget_max') && is_numeric($request->budget_max));
+
+        if ($hasOppFilters) {
+            $query->whereHas('opportunities', function($oppQ) use ($request) {
+                if ($request->filled('opportunity_type') && $request->opportunity_type !== 'all') {
+                    $oppQ->where('opportunity_type', $request->opportunity_type);
+                }
+                if ($request->filled('temperature') && $request->temperature !== 'all') {
+                    $oppQ->where('temperature', $request->temperature);
+                }
+                if ($request->filled('payment_method') && $request->payment_method !== 'all') {
+                    $pm = $request->payment_method;
+                    $oppQ->where(function($q) use ($pm) {
+                        $q->where('cash_or_finance', $pm)
+                          ->orWhereHas('buyerQualification', function($bq) use ($pm) {
+                              $bq->where('cash_or_finance', $pm);
+                          });
+                    });
+                }
+                if ($request->filled('developer') && $request->developer !== 'all') {
+                    $dev = $request->developer;
+                    $oppQ->where(function($q) use ($dev) {
+                        $q->where('developer', $dev)
+                          ->orWhereHas('buyerQualification', function($bq) use ($dev) {
+                              $bq->where('developer', $dev);
+                          });
+                    });
+                }
+                if ($request->filled('community') && $request->community !== 'all') {
+                    $comm = $request->community;
+                    $oppQ->where(function($q) use ($comm) {
+                        $q->where('community', 'like', "%{$comm}%")
+                          ->orWhereHas('buyerQualification', function($bq) use ($comm) {
+                              $bq->where('community', 'like', "%{$comm}%");
+                          });
+                    });
+                }
+                if ($request->filled('project') && $request->project !== 'all') {
+                    $proj = $request->project;
+                    $oppQ->where(function($q) use ($proj) {
+                        $q->where('project', 'like', "%{$proj}%")
+                          ->orWhereHas('buyerQualification', function($bq) use ($proj) {
+                              $bq->where('project', 'like', "%{$proj}%");
+                          });
+                    });
+                }
+                if ($request->filled('property_type') && $request->property_type !== 'all') {
+                    $pt = $request->property_type;
+                    $oppQ->where(function($q) use ($pt) {
+                        $q->where('project_property', 'like', "%{$pt}%")
+                          ->orWhereHas('buyerQualification', function($bq) use ($pt) {
+                              $bq->where('property_type', 'like', "%{$pt}%");
+                          });
+                    });
+                }
+                if ($request->filled('bedrooms') && $request->bedrooms !== 'all') {
+                    $beds = $request->bedrooms;
+                    $oppQ->where(function($q) use ($beds) {
+                        $q->where('bedrooms', $beds)
+                          ->orWhereHas('buyerQualification', function($bq) use ($beds) {
+                              $bq->where('bedrooms', $beds);
+                          });
+                    });
+                }
+                if ($request->filled('project_property') && $request->project_property !== 'all') {
+                    $spec = $request->project_property;
+                    $oppQ->where(function($q) use ($spec) {
+                        $q->where('project_property', 'like', "%{$spec}%")
+                          ->orWhereHas('buyerQualification', function($bq) use ($spec) {
+                              $bq->where('project_property', 'like', "%{$spec}%");
+                          });
+                    });
+                }
+                if ($request->filled('budget_min') && is_numeric($request->budget_min)) {
+                    $oppQ->where(function($q) use ($request) {
+                        $q->where('budget_max', '>=', (float) $request->budget_min)
+                          ->orWhere('budget_min', '>=', (float) $request->budget_min);
+                    });
+                }
+                if ($request->filled('budget_max') && is_numeric($request->budget_max)) {
+                    $oppQ->where(function($q) use ($request) {
+                        $q->where('budget_min', '<=', (float) $request->budget_max)
+                          ->orWhere('budget_max', '<=', (float) $request->budget_max);
+                    });
+                }
             });
         }
 
         if ($request->has('search') && !empty($request->search)) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('secondary_phone', 'like', "%{$search}%")
-                  ->orWhere('mobile_phone', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
+                $q->where('contacts.name', 'like', "%{$search}%")
+                  ->orWhere('contacts.phone', 'like', "%{$search}%")
+                  ->orWhere('contacts.secondary_phone', 'like', "%{$search}%")
+                  ->orWhere('contacts.email', 'like', "%{$search}%");
             });
         }
 
         $sortBy = $request->get('sort_by', 'updated_at');
         $sortOrder = strtolower($request->get('sort_order', 'desc')) === 'asc' ? 'asc' : 'desc';
 
-        $contactSorts = ['name', 'phone', 'secondary_phone', 'mobile_phone', 'email', 'nationality', 'source', 'state', 'created_at', 'updated_at'];
+        $contactSorts = ['name', 'phone', 'secondary_phone', 'email', 'nationality', 'source', 'state', 'created_at', 'updated_at'];
         $oppSorts = [
             'opportunity_type' => 'opportunity_type',
             'developer' => 'developer',
@@ -88,10 +242,14 @@ class ContactController extends Controller
 
         if (array_key_exists($sortBy, $oppSorts)) {
             $dbCol = $oppSorts[$sortBy];
-            $query->leftJoin('opportunities', 'contacts.id', '=', 'opportunities.contact_id')
-                  ->select('contacts.*')
-                  ->distinct()
-                  ->orderBy("opportunities.{$dbCol}", $sortOrder);
+            if ($sortBy === 'assigned_owner') {
+                $query->orderBy('contacts.assigned_to', $sortOrder);
+            } else {
+                $query->leftJoin('opportunities', 'contacts.id', '=', 'opportunities.contact_id')
+                      ->select('contacts.*')
+                      ->distinct()
+                      ->orderBy("opportunities.{$dbCol}", $sortOrder);
+            }
         } elseif (in_array($sortBy, $contactSorts)) {
             $query->orderBy("contacts.{$sortBy}", $sortOrder);
         } else {
@@ -103,7 +261,7 @@ class ContactController extends Controller
 
         // Stats calculation for Top KPI Cards & Tab Badge Counts
         $stats = [
-            'total' => Contact::count(),
+            'total' => Contact::where('state', '!=', 'duplicate')->count(),
             'available' => Contact::where('state', 'available')->count(),
             'active' => Contact::where('state', 'active')->count(),
             'reactivation' => Contact::where('state', 'reactivation')->count(),
@@ -111,14 +269,20 @@ class ContactController extends Controller
         ];
 
         $tabCounts = [
-            'all' => Contact::count(),
-            'unassigned' => Contact::where(function($q) {
-                $q->whereDoesntHave('opportunities')
-                  ->orWhereHas('opportunities', function($oppQ) {
-                      $oppQ->whereNull('current_owner_name')
-                           ->orWhere('current_owner_name', '')
-                           ->orWhere('current_owner_name', 'Unassigned');
-                  });
+            'all' => Contact::where('state', '!=', 'duplicate')->count(),
+            'unassigned' => Contact::where('state', '!=', 'duplicate')->where(function($q) {
+                $q->where(function($sub) {
+                    $sub->whereNull('assigned_to')
+                        ->orWhere('assigned_to', '')
+                        ->orWhere('assigned_to', 'Unassigned');
+                })->where(function($sub) {
+                    $sub->whereDoesntHave('opportunities')
+                        ->orWhereHas('opportunities', function($oppQ) {
+                            $oppQ->whereNull('current_owner_name')
+                                 ->orWhere('current_owner_name', '')
+                                 ->orWhere('current_owner_name', 'Unassigned');
+                        });
+                });
             })->count(),
             'duplicate' => Contact::where('state', 'duplicate')->count(),
             'deleted' => Contact::onlyTrashed()->count(),
@@ -152,6 +316,7 @@ class ContactController extends Controller
             'secondary_phone' => 'nullable|string|max:255',
             'email' => 'required|email|max:255',
             'nationality' => 'nullable|string|max:100',
+            'emirates_id' => 'nullable|string|max:100',
             'source' => 'nullable|string|max:100',
             'initials' => 'nullable|string|max:10',
             'utm_source' => 'nullable|string|max:255',
@@ -160,6 +325,22 @@ class ContactController extends Controller
             'utm_term' => 'nullable|string|max:255',
             'utm_content' => 'nullable|string|max:255',
             'landing_page_url' => 'nullable|string|max:2048',
+            'state' => 'nullable|string|max:50',
+            // Opportunity & Qualification fields (optional on create)
+            'opportunity_type' => 'nullable|string|max:50',
+            'temperature' => 'nullable|string|max:50',
+            'developer' => 'nullable|string|max:255',
+            'community' => 'nullable|string|max:255',
+            'project' => 'nullable|string|max:255',
+            'project_property' => 'nullable|string|max:255',
+            'property_type' => 'nullable|string|max:255',
+            'bedrooms' => 'nullable|string|max:50',
+            'budget_min' => 'nullable|numeric',
+            'budget_max' => 'nullable|numeric',
+            'cash_or_finance' => 'nullable|string|max:50',
+            'key_requirement' => 'nullable|string|max:1000',
+            'next_action' => 'nullable|string|max:500',
+            'next_action_due_at' => 'nullable|date',
         ]);
 
         if (empty($validated['initials'])) {
@@ -172,19 +353,105 @@ class ContactController extends Controller
         }
 
         $validated['source'] = $validated['source'] ?? 'Database';
-        $contact = Contact::create($validated);
 
-        if ($request->has('activity_description')) {
+        // Check if phone or secondary phone already exists in DB
+        $existingContact = Contact::where('phone', $validated['phone'])
+            ->orWhere(function($q) use ($validated) {
+                if (!empty($validated['secondary_phone'])) {
+                    $q->where('phone', $validated['secondary_phone'])
+                      ->orWhere('secondary_phone', $validated['secondary_phone']);
+                }
+            })
+            ->first();
+
+        $isDuplicate = (bool) $existingContact;
+        if (empty($validated['state'])) {
+            $validated['state'] = $isDuplicate ? 'duplicate' : 'available';
+        }
+
+        $contactData = [
+            'name' => $validated['name'],
+            'phone' => $validated['phone'],
+            'secondary_phone' => $validated['secondary_phone'] ?? null,
+            'email' => $validated['email'],
+            'nationality' => $validated['nationality'] ?? null,
+            'emirates_id' => $validated['emirates_id'] ?? null,
+            'source' => $validated['source'],
+            'initials' => $validated['initials'],
+            'utm_source' => $validated['utm_source'] ?? null,
+            'utm_medium' => $validated['utm_medium'] ?? null,
+            'utm_campaign' => $validated['utm_campaign'] ?? null,
+            'utm_term' => $validated['utm_term'] ?? null,
+            'utm_content' => $validated['utm_content'] ?? null,
+            'landing_page_url' => $validated['landing_page_url'] ?? null,
+            'state' => $validated['state'],
+        ];
+
+        $contact = Contact::create($contactData);
+
+        if ($contact->state === 'duplicate') {
+            Activity::create([
+                'contact_id'  => $contact->id,
+                'user_name'   => 'Lead Engine',
+                'type'        => 'note',
+                'description' => "Duplicate contact created. Matches existing Contact #{$existingContact->id} ({$existingContact->name}, Phone: {$existingContact->phone}). Routed to Duplicate tab.",
+            ]);
+        } else {
+            // Real-Time Lead Distribution: Assign directly if specific advisor provided, otherwise trigger Round-Robin Auto-Distribution
+            $assignedOwner = $request->input('assigned_owner');
+            if (!empty($assignedOwner) && $assignedOwner !== 'auto' && $assignedOwner !== 'Unassigned') {
+                $contact->update([
+                    'assigned_to' => $assignedOwner,
+                    'assigned_at' => now(),
+                    'state'       => 'assigned',
+                ]);
+
+                Activity::create([
+                    'contact_id'  => $contact->id,
+                    'user_name'   => 'Lead Engine',
+                    'type'        => 'ownership_change',
+                    'description' => "Lead assigned to {$assignedOwner} (Awaiting qualification call).",
+                ]);
+            } else {
+                // Automatically distribute via Intelligent Round-Robin Lead Distribution Engine
+                LeadDistributionService::autoAssignContact($contact);
+            }
+
+            // Opportunity deals are strictly created MANUALLY by agents from My Queue after calling & qualifying the client.
+            // If inquiry preferences were entered during lead registration, preserve them as an initial inquiry activity note on the contact profile.
+            $inquiryDetails = [];
+            if ($request->filled('developer')) $inquiryDetails[] = "Developer: {$request->developer}";
+            if ($request->filled('community')) $inquiryDetails[] = "Area: {$request->community}";
+            if ($request->filled('project')) $inquiryDetails[] = "Project: {$request->project}";
+            if ($request->filled('project_property')) $inquiryDetails[] = "Unit: {$request->project_property}";
+            if ($request->filled('property_type')) $inquiryDetails[] = "Type: {$request->property_type}";
+            if ($request->filled('bedrooms')) $inquiryDetails[] = "Beds: {$request->bedrooms}";
+            if ($request->filled('budget_min') || $request->filled('budget_max')) {
+                $inquiryDetails[] = "Budget: AED " . ($request->budget_min ?: '0') . " - " . ($request->budget_max ?: 'Max');
+            }
+            if ($request->filled('key_requirement')) $inquiryDetails[] = "Notes: {$request->key_requirement}";
+
+            if (!empty($inquiryDetails)) {
+                Activity::create([
+                    'contact_id'  => $contact->id,
+                    'user_name'   => 'Lead Engine',
+                    'type'        => 'note',
+                    'description' => 'Initial Inquiry Details: ' . implode(' | ', $inquiryDetails),
+                ]);
+            }
+        }
+
+        if ($request->filled('activity_description')) {
             Activity::create([
                 'contact_id' => $contact->id,
                 'user_name' => $request->get('user_name', 'System Agent'),
                 'type' => $request->get('activity_type', 'note'),
                 'description' => $request->get('activity_description'),
             ]);
-            $contact->update(['last_activity_at' => now()]);
-        } else {
-            $contact->update(['last_activity_at' => now()]);
         }
+        $contact->update(['last_activity_at' => now()]);
+
+        $contact->load(['opportunities.buyerQualification', 'activities']);
 
         return response()->json($contact, 201);
     }
@@ -199,7 +466,10 @@ class ContactController extends Controller
             'secondary_phone' => 'nullable|string|max:255',
             'email' => 'required|email|max:255',
             'nationality' => 'nullable|string|max:100',
+            'emirates_id' => 'nullable|string|max:100',
             'source' => 'nullable|string|max:100',
+            'assigned_to' => 'nullable|string|max:100',
+            'assigned_owner' => 'nullable|string|max:100',
             'utm_source' => 'nullable|string|max:255',
             'utm_medium' => 'nullable|string|max:255',
             'utm_campaign' => 'nullable|string|max:255',
@@ -216,6 +486,16 @@ class ContactController extends Controller
             }
             $validated['initials'] = substr($initials, 0, 2);
         }
+
+        $newOwner = $request->input('assigned_owner') ?? $request->input('assigned_to');
+        if (!empty($newOwner) && $newOwner !== 'Unassigned' && $newOwner !== 'auto') {
+            $validated['assigned_to'] = $newOwner;
+            $validated['assigned_at'] = now();
+            $validated['state'] = 'assigned';
+        } elseif ($newOwner === 'auto') {
+            LeadDistributionService::autoAssignContact($contact);
+        }
+        unset($validated['assigned_owner']);
 
         $contact->update($validated);
 
@@ -269,24 +549,18 @@ class ContactController extends Controller
             $opp->update(['current_owner_name' => $owner]);
         }
 
-        $existingOppContactIds = $opportunities->pluck('contact_id')->toArray();
-        $contactsWithoutOpp = Contact::whereIn('id', array_diff($ids, $existingOppContactIds))->get();
+        Contact::whereIn('id', $ids)->update([
+            'assigned_to' => $owner,
+            'assigned_at' => now(),
+            'state'       => 'assigned',
+        ]);
 
-        foreach ($contactsWithoutOpp as $c) {
-            $opp = Opportunity::create([
-                'contact_id' => $c->id,
-                'opportunity_type' => 'buyer',
-                'stage' => 'qualified',
-                'current_owner_name' => $owner,
-                'sla_status' => 'on_track',
-                'next_action_due_at' => now()->addHours(24),
-            ]);
-
-            \App\Models\BuyerQualification::create([
-                'opportunity_id' => $opp->id,
-                'community' => 'Downtown Dubai',
-                'budget_min' => 1000000,
-                'budget_max' => 5000000,
+        foreach ($ids as $cid) {
+            Activity::create([
+                'contact_id'  => $cid,
+                'user_name'   => 'Admin',
+                'type'        => 'ownership_change',
+                'description' => "Lead assigned to {$owner} via Lead Pool bulk assignment (Awaiting qualification call).",
             ]);
         }
 

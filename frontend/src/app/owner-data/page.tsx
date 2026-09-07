@@ -37,12 +37,20 @@ import {
   Eye,
   SlidersHorizontal,
   Calendar,
-  Zap
+  Zap,
+  UserCheck,
+  Sparkles,
+  ArrowLeft,
+  ArrowRight
 } from 'lucide-react';
 import Link from 'next/link';
 import { hasPermission } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 import { fetchApi } from '@/lib/api';
+import DateRangePicker, { DateRangeValue } from '@/components/DateRangePicker';
+import MultiCheckboxDropdown from '@/components/MultiCheckboxDropdown';
+import SearchableSelect from '@/components/SearchableSelect';
+import PhoneInput from '@/components/PhoneInput';
 
 interface OwnerRecord {
   id: number;
@@ -66,26 +74,26 @@ interface OwnerRecord {
 interface ColumnConfig {
   key: string;
   label: string;
-  category: 'Owner Info' | 'Property Details' | 'Contact Details' | 'Meta & Actions';
+  category: 'Owner Info' | 'Property Details' | 'Contact Details' | 'Record Details';
 }
 
 const ALL_OWNER_COLUMNS: ColumnConfig[] = [
   { key: 'owner_name', label: 'Owner Name', category: 'Owner Info' },
+  { key: 'assigned_to', label: 'Assigned Advisor', category: 'Owner Info' },
   { key: 'property_name', label: 'Property Name', category: 'Property Details' },
   { key: 'property_number', label: 'Unit / Prop #', category: 'Property Details' },
   { key: 'building_name', label: 'Building & Area', category: 'Property Details' },
   { key: 'bedrooms', label: 'Type & Bedrooms', category: 'Property Details' },
-  { key: 'mobile_number', label: 'Mobile & WhatsApp', category: 'Contact Details' },
-  { key: 'phone_number', label: 'Landline Phone', category: 'Contact Details' },
+  { key: 'mobile_number', label: 'Primary Phone', category: 'Contact Details' },
+  { key: 'phone_number', label: 'Secondary Phone', category: 'Contact Details' },
   { key: 'email', label: 'Email Address', category: 'Contact Details' },
-  { key: 'status', label: 'Status', category: 'Meta & Actions' },
-  { key: 'notes', label: 'Notes', category: 'Meta & Actions' },
-  { key: 'created_at', label: 'Date Added', category: 'Meta & Actions' },
-  { key: 'actions', label: 'Actions', category: 'Meta & Actions' },
+  { key: 'created_at', label: 'Created Date', category: 'Record Details' },
+  { key: 'notes', label: 'Notes', category: 'Record Details' },
 ];
 
 const DEFAULT_OWNER_COLUMN_VISIBILITY: Record<string, boolean> = {
   owner_name: true,
+  assigned_to: true,
   property_name: true,
   property_number: true,
   building_name: true,
@@ -93,10 +101,127 @@ const DEFAULT_OWNER_COLUMN_VISIBILITY: Record<string, boolean> = {
   mobile_number: true,
   phone_number: false,
   email: true,
-  status: true,
+  created_at: true,
   notes: false,
-  created_at: false,
   actions: true,
+};
+
+const DEFAULT_COMMUNITIES = [
+  'Downtown Dubai',
+  'Palm Jumeirah',
+  'Business Bay',
+  'Dubai Marina',
+  'Dubai Hills Estate',
+  'Jumeirah Golf Estates',
+  'Arabian Ranches',
+  'Dubai Creek Harbour',
+  'MBR City (Sobha Hartland)',
+  'Emaar Beachfront',
+  'Arjan',
+  'Jumeirah Village Circle (JVC)',
+  'Jumeirah Village Triangle (JVT)',
+  'DAMAC Hills',
+  'DAMAC Hills 2',
+  'Meydan',
+  'Al Barari',
+  'City Walk',
+  'Bluewaters Island',
+  'Dubai South',
+  'Al Furjan',
+  'Jumeirah Lake Towers (JLT)',
+  'DIFC',
+];
+
+const DEFAULT_PROJECTS = [
+  'Burj Crown Residences',
+  'Sobha Hartland Waves',
+  'Dubai Creek Residences',
+  'Marina Gate Towers',
+  'Palm Beach Towers',
+  'DAMAC Hills Villa Cluster',
+  'Address Sky View',
+  'Princess Tower',
+  'Downtown Views II',
+  'Creek Beach',
+  '48 Parkside',
+  'Waves Grande',
+  'Creek Rise',
+  'Act One Act Two',
+  'Grande at Opera District',
+  'Address Harbour Point',
+];
+
+const DEFAULT_PROPERTY_NAMES = [
+  '1BR Luxury Suite',
+  '2BR Boulevard View Apartment',
+  '3BR Premium Sky Collection',
+  '4BR Grand Penthouse',
+  'Luxury Waterfront Villa',
+  'Garden View Townhouse',
+  'Duplex Sky Suite',
+  'Commercial Office Space',
+  'Residential Plot',
+];
+
+const PROPERTY_TYPE_OPTIONS = [
+  { value: 'Apartment', label: 'Apartment' },
+  { value: 'Villa', label: 'Villa / Mansion' },
+  { value: 'Townhouse', label: 'Townhouse' },
+  { value: 'Penthouse', label: 'Penthouse' },
+  { value: 'Duplex', label: 'Duplex' },
+  { value: 'Commercial', label: 'Commercial / Office' },
+  { value: 'Plot', label: 'Residential Plot / Land' },
+];
+
+const DEFAULT_BEDROOM_OPTIONS = [
+  { value: 'Studio', label: 'Studio' },
+  { value: '1 Bedroom', label: '1 Bedroom (1 BR)' },
+  { value: '2 Bedrooms', label: '2 Bedrooms (2 BR)' },
+  { value: '3 Bedrooms', label: '3 Bedrooms (3 BR)' },
+  { value: '4 Bedrooms', label: '4 Bedrooms (4 BR)' },
+  { value: '5 Bedrooms', label: '5 Bedrooms (5 BR)' },
+  { value: '6+ Bedrooms', label: '6+ Bedrooms (6+ BR)' },
+  { value: 'Commercial', label: 'Commercial / Retail' },
+];
+
+const normalizeOwnerBedrooms = (raw: string | null | undefined): string => {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (/^studio$/i.test(trimmed)) return 'Studio';
+  if (/^(1\s*(bed|beds|bedroom|bedrooms|br)|1)$/i.test(trimmed)) return '1 Bedroom';
+  if (/^(2\s*(bed|beds|bedroom|bedrooms|br)|2)$/i.test(trimmed)) return '2 Bedrooms';
+  if (/^(3\s*(bed|beds|bedroom|bedrooms|br)|3)$/i.test(trimmed)) return '3 Bedrooms';
+  if (/^(4\s*(bed|beds|bedroom|bedrooms|br)|4)$/i.test(trimmed)) return '4 Bedrooms';
+  if (/^(5\s*(bed|beds|bedroom|bedrooms|br)|5)$/i.test(trimmed)) return '5 Bedrooms';
+  if (/^(6\+|6|7|8)\s*(bed|beds|bedroom|bedrooms|br)?$/i.test(trimmed)) return '6+ Bedrooms';
+  if (/commercial/i.test(trimmed)) return 'Commercial';
+  return trimmed;
+};
+
+const normalizeOwnerPropertyType = (raw: string | null | undefined): string => {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === 'apartment' || lower === 'apartments' || lower === 'flat') return 'Apartment';
+  if (lower === 'villa' || lower === 'mansion' || lower.includes('villa / mansion') || lower.includes('villa/mansion')) return 'Villa';
+  if (lower === 'townhouse' || lower === 'town house') return 'Townhouse';
+  if (lower === 'penthouse') return 'Penthouse';
+  if (lower === 'duplex') return 'Duplex';
+  if (lower === 'commercial' || lower === 'office' || lower.includes('commercial')) return 'Commercial';
+  if (lower === 'plot' || lower === 'land' || lower.includes('plot')) return 'Plot';
+  return trimmed;
+};
+
+const formatPhoneForInput = (val?: string | null): string => {
+  if (!val) return '';
+  const trimmed = val.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('+')) return trimmed;
+  const cleanDigits = trimmed.replace(/[\s-]/g, '');
+  if (/^\d+$/.test(cleanDigits)) {
+    return `+${cleanDigits}`;
+  }
+  return trimmed;
 };
 
 export default function OwnerDataPage() {
@@ -119,13 +244,11 @@ export default function OwnerDataPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<{
     total: number;
-    available?: number;
-    rented?: number;
-    sold?: number;
-    active?: number;
+    assigned?: number;
+    unassigned?: number;
     areas_count: number;
     deleted: number;
-  }>({ total: 0, available: 0, rented: 0, sold: 0, areas_count: 0, deleted: 0 });
+  }>({ total: 0, assigned: 0, unassigned: 0, areas_count: 0, deleted: 0 });
   const [filterOptions, setFilterOptions] = useState<{
     areas: string[];
     property_types: string[];
@@ -138,20 +261,37 @@ export default function OwnerDataPage() {
 
   // Filter & Search State (Placed on Left together with Search)
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedArea, setSelectedArea] = useState('all');
-  const [selectedPropertyType, setSelectedPropertyType] = useState('all');
-  const [selectedBedrooms, setSelectedBedrooms] = useState('all');
-  const [selectedStatus, setSelectedStatus] = useState('all');
+  const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
+  const [selectedPropertyTypes, setSelectedPropertyTypes] = useState<string[]>([]);
+  const [selectedBedrooms, setSelectedBedrooms] = useState<string[]>([]);
+  const [dateRange, setDateRange] = useState<DateRangeValue>({ from: '', to: '', preset: 'all' });
 
   // Columns Visibility State (Persisted in localStorage, like Lead Pool)
   const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(DEFAULT_OWNER_COLUMN_VISIBILITY);
 
+  const formatDateTime = (raw?: any) => {
+    if (!raw) return '—';
+    if (typeof raw === 'string') {
+      return raw.replace('T', ' ').substring(0, 16);
+    }
+    try {
+      return new Date(raw).toISOString().replace('T', ' ').substring(0, 16);
+    } catch {
+      return '—';
+    }
+  };
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem('owner_data_column_visibility');
       if (saved) {
-        setColumnVisibility({ ...DEFAULT_OWNER_COLUMN_VISIBILITY, ...JSON.parse(saved) });
+        const parsed = JSON.parse(saved);
+        setColumnVisibility({
+          ...DEFAULT_OWNER_COLUMN_VISIBILITY,
+          ...parsed,
+          created_at: true,
+        });
       }
     } catch (_) {}
   }, []);
@@ -170,9 +310,50 @@ export default function OwnerDataPage() {
   const [lastPage, setLastPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Multi-Selection State
+  // Multi-Selection State & Floating Action Bar
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [activeAgents, setActiveAgents] = useState<any[]>([]);
+  const [bulkAssignOwner, setBulkAssignOwner] = useState('');
+  const [bulkLoading, setBulkLoading] = useState(false);
+
+  // Master Catalog State for Dropdowns
+  const [catalogCommunities, setCatalogCommunities] = useState<string[]>([]);
+  const [catalogProjects, setCatalogProjects] = useState<string[]>([]);
+  const [catalogProperties, setCatalogProperties] = useState<string[]>([]);
+  const [catalogPropertyTypes, setCatalogPropertyTypes] = useState<string[]>([]);
+
+  // Custom user-added options state
+  const [customCommunities, setCustomCommunities] = useState<string[]>([]);
+  const [customProjects, setCustomProjects] = useState<string[]>([]);
+  const [customPropertyNames, setCustomPropertyNames] = useState<string[]>([]);
+  const [customPropertyTypes, setCustomPropertyTypes] = useState<string[]>([]);
+  const [customBedrooms, setCustomBedrooms] = useState<string[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      fetchApi('/users').catch(() => null),
+      fetchApi('/catalog/communities').catch(() => []),
+      fetchApi('/catalog/projects').catch(() => []),
+      fetchApi('/catalog/properties').catch(() => []),
+    ])
+      .then(([userData, commData, projData, propData]) => {
+        const rawUsers = Array.isArray(userData) ? userData : (userData?.users || []);
+        if (rawUsers.length > 0) {
+          setActiveAgents(rawUsers.filter((u: any) => u.is_active));
+        }
+        if (Array.isArray(commData) && commData.length > 0) {
+          setCatalogCommunities(commData.filter((c: any) => c.is_active !== false).map((c: any) => c.name));
+        }
+        if (Array.isArray(projData) && projData.length > 0) {
+          setCatalogProjects(projData.filter((p: any) => p.is_active !== false).map((p: any) => p.name));
+        }
+        if (Array.isArray(propData) && propData.length > 0) {
+          setCatalogPropertyTypes(propData.filter((p: any) => p.is_active !== false).map((p: any) => p.name));
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   // Modal State (Create / Edit)
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -184,20 +365,38 @@ export default function OwnerDataPage() {
     area: '',
     property_number: '',
     building_name: '',
-    bedrooms: '2 Bedrooms',
-    property_type: 'Apartment',
+    bedrooms: '',
+    property_type: '',
     owner_name: '',
     phone_number: '',
     mobile_number: '',
     email: '',
     notes: '',
-    status: 'Available',
+    assigned_to: '',
+    status: 'active',
   });
 
   // Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importStep, setImportStep] = useState<'upload' | 'mapping'>('upload');
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [parsedImportRows, setParsedImportRows] = useState<any[]>([]);
+  const [importPreviewData, setImportPreviewData] = useState<{
+    total_records: number;
+    has_unmatched?: boolean;
+    unmatched?: Record<string, any[]>;
+    catalogs?: Record<string, string[]>;
+  } | null>(null);
+
+  const [ownerValueMappings, setOwnerValueMappings] = useState<Record<string, Record<string, string>>>({
+    community: {},
+    project: {},
+    property_type: {},
+  });
+  const [ownerNewCatalogItems, setOwnerNewCatalogItems] = useState<Array<{ category: string; name: string }>>([]);
+  const [ownerMappingActions, setOwnerMappingActions] = useState<Record<string, 'map' | 'new' | 'keep'>>({});
+  const [ownerMappingCategoryTab, setOwnerMappingCategoryTab] = useState<'all' | 'community' | 'project' | 'property_type'>('all');
 
   // Quick View Drawer State
   const [viewRecord, setViewRecord] = useState<OwnerRecord | null>(null);
@@ -214,13 +413,13 @@ export default function OwnerDataPage() {
       });
 
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
-      if (selectedArea !== 'all') params.append('area', selectedArea);
-      if (selectedPropertyType !== 'all') params.append('property_type', selectedPropertyType);
-      if (selectedBedrooms !== 'all') params.append('bedrooms', selectedBedrooms);
-      if (selectedStatus !== 'all') params.append('status', selectedStatus);
+      if (selectedAreas.length > 0) params.append('area', selectedAreas.join(','));
+      if (selectedPropertyTypes.length > 0) params.append('property_type', selectedPropertyTypes.join(','));
+      if (selectedBedrooms.length > 0) params.append('bedrooms', selectedBedrooms.join(','));
+      if (dateRange.from) params.append('date_from', dateRange.from);
+      if (dateRange.to) params.append('date_to', dateRange.to);
 
-      const res = await fetch(`${API_BASE_URL}/owner-data?${params.toString()}`);
-      const result = await res.json();
+      const result = await fetchApi(`/owner-data?${params.toString()}`);
 
       if (result.success) {
         setRecords(result.data || []);
@@ -239,7 +438,7 @@ export default function OwnerDataPage() {
 
   useEffect(() => {
     loadRecords(1);
-  }, [selectedArea, selectedPropertyType, selectedBedrooms, selectedStatus, sortBy, sortOrder]);
+  }, [selectedAreas, selectedPropertyTypes, selectedBedrooms, dateRange, sortBy, sortOrder]);
 
   // Debounced search trigger
   useEffect(() => {
@@ -257,6 +456,16 @@ export default function OwnerDataPage() {
       setSortBy(column);
       setSortOrder('asc');
     }
+  };
+
+  // Reset Filters Handler (Same as Lead Pool)
+  const handleResetFilters = () => {
+    setSelectedAreas([]);
+    setSelectedPropertyTypes([]);
+    setSelectedBedrooms([]);
+    setDateRange({ from: '', to: '', preset: 'all' });
+    setSearchQuery('');
+    setCurrentPage(1);
   };
 
   // Selection Handlers
@@ -281,46 +490,163 @@ export default function OwnerDataPage() {
     setTimeout(() => setCopiedField(null), 1500);
   };
 
+  // Computed Dropdown Options for Add/Edit Form
+  const computedCommunityOptions = useMemo(() => {
+    const all = Array.from(new Set([
+      ...DEFAULT_COMMUNITIES,
+      ...catalogCommunities,
+      ...(filterOptions.areas || []),
+      ...customCommunities,
+      ...(formData.area ? [formData.area] : []),
+    ])).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    return all.map((c) => ({ value: c, label: c }));
+  }, [catalogCommunities, filterOptions.areas, customCommunities, formData.area]);
+
+  const computedProjectOptions = useMemo(() => {
+    const all = Array.from(new Set([
+      ...DEFAULT_PROJECTS,
+      ...catalogProjects,
+      ...customProjects,
+      ...(formData.building_name ? [formData.building_name] : []),
+    ])).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    return all.map((p) => ({ value: p, label: p }));
+  }, [catalogProjects, customProjects, formData.building_name]);
+
+  const computedPropertyNameOptions = useMemo(() => {
+    const existingPropertyNames = records.map((r) => r.property_name).filter(Boolean) as string[];
+    const all = Array.from(new Set([
+      ...DEFAULT_PROPERTY_NAMES,
+      ...catalogProjects,
+      ...existingPropertyNames,
+      ...customPropertyNames,
+      ...(formData.property_name ? [formData.property_name] : []),
+    ])).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    return all.map((p) => ({ value: p, label: p }));
+  }, [catalogProjects, records, customPropertyNames, formData.property_name]);
+
+  const computedPropertyTypeOptions = useMemo(() => {
+    const opts = [...PROPERTY_TYPE_OPTIONS];
+    catalogPropertyTypes.forEach((t) => {
+      if (!opts.some((o) => o.value.toLowerCase() === t.toLowerCase())) {
+        opts.push({ value: t, label: t });
+      }
+    });
+    customPropertyTypes.forEach((t) => {
+      if (!opts.some((o) => o.value.toLowerCase() === t.toLowerCase())) {
+        opts.push({ value: t, label: t });
+      }
+    });
+    if (formData.property_type && !opts.some((o) => o.value.toLowerCase() === formData.property_type.toLowerCase())) {
+      opts.unshift({ value: formData.property_type, label: formData.property_type });
+    }
+    return opts;
+  }, [catalogPropertyTypes, customPropertyTypes, formData.property_type]);
+
+  const computedBedroomOptions = useMemo(() => {
+    const opts = [...DEFAULT_BEDROOM_OPTIONS];
+    customBedrooms.forEach((b) => {
+      if (!opts.some((o) => o.value.toLowerCase() === b.toLowerCase())) {
+        opts.push({ value: b, label: b });
+      }
+    });
+    if (formData.bedrooms && !opts.some((o) => o.value.toLowerCase() === formData.bedrooms.toLowerCase())) {
+      opts.push({ value: formData.bedrooms, label: formData.bedrooms });
+    }
+    return opts;
+  }, [customBedrooms, formData.bedrooms]);
+
+  const ownerSelectOptions = useMemo(() => {
+    const opts = [
+      { value: '', label: 'Unassigned / Auto-Distribute (Rotation Pool)' },
+      { value: 'Unassigned', label: 'Unassigned (No Distribution)' },
+      ...activeAgents.map((ag) => ({
+        value: ag.name,
+        label: `${ag.name} (${ag.role || ag.department || 'Sales Advisor'})`,
+      })),
+    ];
+    if (formData.assigned_to && !opts.some((o) => o.value === formData.assigned_to)) {
+      opts.push({
+        value: formData.assigned_to,
+        label: `${formData.assigned_to} (Current Advisor)`,
+      });
+    }
+    return opts;
+  }, [activeAgents, formData.assigned_to]);
+
   // Open Create Modal
   const handleOpenCreate = () => {
     setModalMode('create');
     setActiveRecordId(null);
     setFormData({
       property_name: '',
-      area: 'Downtown Dubai',
+      area: '',
       property_number: '',
       building_name: '',
-      bedrooms: '2 Bedrooms',
-      property_type: 'Apartment',
+      bedrooms: '',
+      property_type: '',
       owner_name: '',
       phone_number: '',
       mobile_number: '',
       email: '',
       notes: '',
-      status: 'Available',
+      assigned_to: '',
+      status: 'active',
     });
     setIsModalOpen(true);
   };
 
-  // Open Edit Modal
-  const handleOpenEdit = (rec: OwnerRecord) => {
+  // Open Edit Modal with Complete Normalization & Fresh Sync
+  const handleOpenEdit = async (rec: OwnerRecord) => {
     setModalMode('edit');
     setActiveRecordId(rec.id);
+
+    // Normalize bedrooms and property_type
+    const normalizedBeds = normalizeOwnerBedrooms(rec.bedrooms) || rec.bedrooms || '';
+    const normalizedType = normalizeOwnerPropertyType(rec.property_type) || rec.property_type || '';
+
     setFormData({
       property_name: rec.property_name || '',
       area: rec.area || '',
       property_number: rec.property_number || '',
       building_name: rec.building_name || '',
-      bedrooms: rec.bedrooms || '2 Bedrooms',
-      property_type: rec.property_type || 'Apartment',
+      bedrooms: normalizedBeds,
+      property_type: normalizedType,
       owner_name: rec.owner_name || '',
-      phone_number: rec.phone_number || '',
-      mobile_number: rec.mobile_number || '',
+      phone_number: formatPhoneForInput(rec.phone_number),
+      mobile_number: formatPhoneForInput(rec.mobile_number),
       email: rec.email || '',
       notes: rec.notes || '',
-      status: rec.status || 'Available',
+      assigned_to: rec.assigned_to || '',
+      status: rec.status || 'active',
     });
     setIsModalOpen(true);
+
+    // Background fetch fresh record from API to ensure 100% field mapping & fresh DB data
+    try {
+      const res = await fetchApi(`/owner-data/${rec.id}`);
+      if (res && res.success && res.record) {
+        const full = res.record;
+        const freshBeds = normalizeOwnerBedrooms(full.bedrooms) || full.bedrooms || '';
+        const freshType = normalizeOwnerPropertyType(full.property_type) || full.property_type || '';
+        setFormData({
+          property_name: full.property_name || '',
+          area: full.area || '',
+          property_number: full.property_number || '',
+          building_name: full.building_name || '',
+          bedrooms: freshBeds,
+          property_type: freshType,
+          owner_name: full.owner_name || '',
+          phone_number: formatPhoneForInput(full.phone_number),
+          mobile_number: formatPhoneForInput(full.mobile_number),
+          email: full.email || '',
+          notes: full.notes || '',
+          assigned_to: full.assigned_to || '',
+          status: full.status || 'active',
+        });
+      }
+    } catch (err) {
+      console.warn('Could not fetch fresh record details for edit:', err);
+    }
   };
 
   // Submit Modal Form (Create / Update)
@@ -333,17 +659,22 @@ export default function OwnerDataPage() {
 
     setSubmitting(true);
     try {
-      const url = modalMode === 'create'
-        ? `${API_BASE_URL}/owner-data`
-        : `${API_BASE_URL}/owner-data/${activeRecordId}`;
+      const path = modalMode === 'create'
+        ? '/owner-data'
+        : `/owner-data/${activeRecordId}`;
       const method = modalMode === 'create' ? 'POST' : 'PUT';
 
-      const res = await fetch(url, {
+      const payload = {
+        ...formData,
+        email: formData.email ? formData.email.trim() : null,
+        phone_number: formData.phone_number ? formData.phone_number.trim() : null,
+        mobile_number: formData.mobile_number ? formData.mobile_number.trim() : null,
+      };
+
+      const data = await fetchApi(path, {
         method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
 
       if (data.success) {
         setIsModalOpen(false);
@@ -380,8 +711,7 @@ export default function OwnerDataPage() {
 
     if (confirm.isConfirmed) {
       try {
-        const res = await fetch(`${API_BASE_URL}/owner-data/${id}`, { method: 'DELETE' });
-        const data = await res.json();
+        const data = await fetchApi(`/owner-data/${id}`, { method: 'DELETE' });
         if (data.success) {
           Swal.fire({ icon: 'success', title: 'Deleted!', text: data.message, timer: 1400, showConfirmButton: false });
           setSelectedIds((prev) => prev.filter((i) => i !== id));
@@ -390,6 +720,39 @@ export default function OwnerDataPage() {
       } catch (err: any) {
         Swal.fire({ icon: 'error', title: 'Delete Failed', text: err.message });
       }
+    }
+  };
+
+  // Bulk Assign Handler (Same as Lead Pool)
+  const handleExecuteBulkAssign = async () => {
+    if (!bulkAssignOwner || selectedIds.length === 0) return;
+    setBulkLoading(true);
+    try {
+      const data = await fetchApi('/owner-data/bulk-assign', {
+        method: 'POST',
+        body: JSON.stringify({
+          ids: selectedIds,
+          assigned_to: bulkAssignOwner,
+        }),
+      });
+      if (data.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Properties Assigned!',
+          text: `Successfully assigned ${data.count} property record(s) to ${bulkAssignOwner}.`,
+          timer: 1800,
+          showConfirmButton: false,
+        });
+        setSelectedIds([]);
+        setBulkAssignOwner('');
+        loadRecords(currentPage);
+      } else {
+        Swal.fire({ icon: 'error', title: 'Assignment Failed', text: data.message });
+      }
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+    } finally {
+      setBulkLoading(false);
     }
   };
 
@@ -410,12 +773,10 @@ export default function OwnerDataPage() {
 
     if (confirm.isConfirmed) {
       try {
-        const res = await fetch(`${API_BASE_URL}/owner-data/bulk-delete`, {
+        const data = await fetchApi('/owner-data/bulk-delete', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: selectedIds }),
         });
-        const data = await res.json();
         if (data.success) {
           Swal.fire({ icon: 'success', title: 'Deleted!', text: data.message, timer: 1500, showConfirmButton: false });
           setSelectedIds([]);
@@ -442,10 +803,9 @@ export default function OwnerDataPage() {
       'Bedrooms',
       'Property Type',
       'Owner Name',
-      'Phone Number',
-      'Mobile Number',
+      'Primary Phone',
+      'Secondary Phone',
       'Email',
-      'Status',
       'Notes'
     ];
 
@@ -457,10 +817,9 @@ export default function OwnerDataPage() {
       `"${r.bedrooms || ''}"`,
       `"${r.property_type || ''}"`,
       `"${r.owner_name || ''}"`,
-      `"${r.phone_number || ''}"`,
       `"${r.mobile_number || ''}"`,
+      `"${r.phone_number || ''}"`,
       `"${r.email || ''}"`,
-      `"${r.status || ''}"`,
       `"${(r.notes || '').replace(/"/g, '""')}"`
     ]);
 
@@ -482,16 +841,16 @@ export default function OwnerDataPage() {
       'Property Number',
       'Building Name',
       'Bedrooms',
-      'Property Types',
+      'Property Type',
       'Owner Name',
-      'Phone Number',
-      'Mobile Number',
+      'Primary Phone',
+      'Secondary Phone',
       'Email'
     ];
     const sampleRows = [
-      ['Marina Gate 2 Luxury', 'Dubai Marina', 'Unit 1402', 'Marina Gate 2', '2 Bedrooms', 'Apartment', 'Tariq Mansoor', '+971 4 399 1122', '+971 50 123 4567', 'tariq@gmail.com'],
-      ['Downtown Views Penthouse', 'Downtown Dubai', 'PH-01', 'Downtown Views II', '4 Bedrooms', 'Penthouse', 'Alexander Ivanov', '+971 4 456 7890', '+971 52 987 6543', 'alex.ivanov@mail.ru'],
-      ['Palm Frond Villa', 'Palm Jumeirah', 'Villa K-12', 'Frond K', '5 Bedrooms', 'Villa', 'Fatima Al-Nuaimi', '+971 4 888 2211', '+971 55 444 3322', 'fatima.nuaimi@holding.ae'],
+      ['Marina Gate 2 Luxury', 'Dubai Marina', 'Unit 1402', 'Marina Gate 2', '2 Bedrooms', 'Apartment', 'Tariq Mansoor', '+971 50 123 4567', '+971 4 399 1122', 'tariq@gmail.com'],
+      ['Downtown Views Penthouse', 'Downtown Dubai', 'PH-01', 'Downtown Views II', '4 Bedrooms', 'Penthouse', 'Alexander Ivanov', '+971 52 987 6543', '+971 4 456 7890', 'alex.ivanov@mail.ru'],
+      ['Palm Frond Villa', 'Palm Jumeirah', 'Villa K-12', 'Frond K', '5 Bedrooms', 'Villa', 'Fatima Al-Nuaimi', '+971 55 444 3322', '+971 4 888 2211', 'fatima.nuaimi@holding.ae'],
     ];
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...sampleRows.map((r) => r.map(c => `"${c}"`).join(','))].join('\n');
@@ -520,24 +879,62 @@ export default function OwnerDataPage() {
         return;
       }
 
+      // Parse CSV Header to detect column indices
+      const headerLine = lines[0];
+      const headerCols = headerLine.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((c) => c.replace(/^"|"$/g, '').trim().toLowerCase());
+
+      const findColIdx = (candidates: string[], fallbackIdx: number) => {
+        const found = headerCols.findIndex(h => candidates.some(cand => h.includes(cand)));
+        return found !== -1 ? found : fallbackIdx;
+      };
+
+      const idxPropName = findColIdx(['property name', 'prop name'], 0);
+      const idxArea = findColIdx(['area', 'community', 'location'], 1);
+      const idxPropNum = findColIdx(['property number', 'property #', 'unit', 'prop #'], 2);
+      const idxBuilding = findColIdx(['building name', 'building', 'project'], 3);
+      const idxBedrooms = findColIdx(['bedroom', 'bed'], 4);
+      const idxPropType = findColIdx(['property type', 'property types', 'type'], 5);
+      const idxOwner = findColIdx(['owner name', 'owner', 'client name'], 6);
+
+      // Primary Phone (mobile / primary / whatsapp) & Secondary Phone (secondary / landline / alt)
+      let idxPrimary = headerCols.findIndex(h => h.includes('primary') || h.includes('mobile') || h.includes('whatsapp'));
+      let idxSecondary = headerCols.findIndex(h => h.includes('secondary') || h.includes('landline') || (h.includes('phone') && !h.includes('primary') && !h.includes('mobile')));
+
+      if (idxPrimary === -1) {
+        const pIdx = headerCols.findIndex(h => h.includes('phone'));
+        idxPrimary = pIdx !== -1 ? pIdx : 7;
+      }
+      if (idxSecondary === -1) {
+        idxSecondary = (idxPrimary === 7) ? 8 : 7;
+      }
+      const idxEmail = findColIdx(['email', 'mail'], 9);
+
       // Parse CSV Rows
       const recordsToImport: any[] = [];
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i];
         const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((c) => c.replace(/^"|"$/g, '').trim());
 
-        if (cols.length >= 7) {
+        if (cols.length >= 6) {
+          let b = cols[idxBedrooms] || null;
+          let pt = cols[idxPropType] || null;
+          const typeKeywords = ['apartment', 'villa', 'townhouse', 'penthouse', 'duplex', 'commercial', 'office', 'plot', 'mansion'];
+          if (b && !pt && typeKeywords.some(kw => (b as string).toLowerCase().includes(kw))) {
+            pt = b;
+            b = null;
+          }
+
           recordsToImport.push({
-            property_name: cols[0] || null,
-            area: cols[1] || null,
-            property_number: cols[2] || null,
-            building_name: cols[3] || null,
-            bedrooms: cols[4] || null,
-            property_type: cols[5] || null,
-            owner_name: cols[6] || 'Unknown Owner',
-            phone_number: cols[7] || null,
-            mobile_number: cols[8] || null,
-            email: cols[9] || null,
+            property_name: cols[idxPropName] || null,
+            area: cols[idxArea] || null,
+            property_number: cols[idxPropNum] || null,
+            building_name: cols[idxBuilding] || null,
+            bedrooms: b,
+            property_type: pt,
+            owner_name: cols[idxOwner] || 'Unknown Owner',
+            mobile_number: cols[idxPrimary] || null,
+            phone_number: cols[idxSecondary] || null,
+            email: cols[idxEmail] || null,
           });
         }
       }
@@ -549,37 +946,118 @@ export default function OwnerDataPage() {
 
       setImporting(true);
       try {
-        const res = await fetch(`${API_BASE_URL}/owner-data/import`, {
+        const previewRes = await fetchApi('/owner-data/import-preview', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ records: recordsToImport }),
         });
-        const data = await res.json();
 
-        if (data.success) {
-          setIsImportModalOpen(false);
-          Swal.fire({
-            icon: 'success',
-            title: 'Import Successful!',
-            text: `Imported ${data.imported} owner property records.`,
+        setParsedImportRows(recordsToImport);
+        setImportPreviewData(previewRes);
+
+        if (previewRes.has_unmatched) {
+          const initialMappings: Record<string, Record<string, string>> = {
+            community: {},
+            project: {},
+            property_type: {},
+          };
+          const initialActions: Record<string, 'map' | 'new' | 'keep'> = {};
+
+          ['community', 'project', 'property_type'].forEach((cat) => {
+            (previewRes.unmatched?.[cat] || []).forEach((item: any) => {
+              const key = `${cat}::${item.file_value}`;
+              if (item.suggested_match && item.confidence >= 60) {
+                initialMappings[cat][item.file_value] = item.suggested_match;
+                initialActions[key] = 'map';
+              } else {
+                initialActions[key] = 'keep';
+              }
+            });
           });
-          loadRecords(1);
+
+          setOwnerValueMappings(initialMappings);
+          setOwnerMappingActions(initialActions);
+          setImportStep('mapping');
         } else {
-          Swal.fire({ icon: 'error', title: 'Import Failed', text: data.message });
+          // All values already matched! Directly perform import
+          await executeOwnerImport(recordsToImport, {}, []);
         }
       } catch (err: any) {
-        Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+        Swal.fire({ icon: 'error', title: 'Import Preview Failed', text: err.message });
       } finally {
         setImporting(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
     reader.readAsText(file);
   };
 
+  // Execute Final Owner Data Import with mappings and newly approved master catalog entries
+  const executeOwnerImport = async (records: any[], mappings: any, newItems: any[]) => {
+    setImporting(true);
+    try {
+      const data = await fetchApi('/owner-data/import', {
+        method: 'POST',
+        body: JSON.stringify({
+          records,
+          value_mappings: mappings,
+          new_catalog_items: newItems,
+        }),
+      });
+
+      if (data.success) {
+        setIsImportModalOpen(false);
+        setImportStep('upload');
+        setParsedImportRows([]);
+        setImportPreviewData(null);
+        setOwnerValueMappings({ community: {}, project: {}, property_type: {} });
+        setOwnerNewCatalogItems([]);
+        setOwnerMappingActions({});
+        Swal.fire({
+          icon: 'success',
+          title: 'Import Successful!',
+          text: `Imported ${data.imported} owner property records with standardized values.`,
+        });
+        loadRecords(1);
+      } else {
+        Swal.fire({ icon: 'error', title: 'Import Failed', text: data.message });
+      }
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleConfirmOwnerMappingAndImport = async () => {
+    const approvedNewItems: Array<{ category: string; name: string }> = [];
+    const activeMappings: Record<string, Record<string, string>> = {
+      community: {},
+      project: {},
+      property_type: {},
+    };
+
+    ['community', 'project', 'property_type'].forEach((cat) => {
+      (importPreviewData?.unmatched?.[cat] || []).forEach((item: any) => {
+        const key = `${cat}::${item.file_value}`;
+        const action = ownerMappingActions[key] || 'keep';
+
+        if (action === 'new') {
+          approvedNewItems.push({ category: cat, name: item.file_value });
+        } else if (action === 'map') {
+          const target = ownerValueMappings[cat]?.[item.file_value];
+          if (target) {
+            activeMappings[cat][item.file_value] = target;
+          }
+        }
+      });
+    });
+
+    await executeOwnerImport(parsedImportRows, activeMappings, approvedNewItems);
+  };
+
   if (canViewOwnerData === false) {
     return (
-      <div className="flex h-screen bg-[#F8F9FA] text-[#1B2A4A] overflow-hidden font-sans">
+      <div className="flex h-screen bg-[#FAF8F5] text-[#1B2A4A] overflow-hidden">
         <Sidebar />
         <div className="flex-1 pl-56 flex flex-col h-screen overflow-hidden min-w-0">
           <Navbar />
@@ -590,7 +1068,7 @@ export default function OwnerDataPage() {
   }
 
   return (
-    <div className="flex h-screen bg-[#F8F9FA] text-[#1B2A4A] overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#FAF8F5] text-[#1B2A4A] overflow-hidden">
       {/* Sidebar with Owner Data link active */}
       <Sidebar />
 
@@ -621,17 +1099,6 @@ export default function OwnerDataPage() {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2.5">
-            {/* Bulk Delete Button if items checked */}
-            {selectedIds.length > 0 && (
-              <button
-                onClick={handleBulkDelete}
-                className="px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer animate-fade-in"
-              >
-                <Trash2 className="w-4 h-4 text-rose-600" />
-                <span>Delete Selected ({selectedIds.length})</span>
-              </button>
-            )}
-
             {/* Refresh */}
             <button
               onClick={() => loadRecords(currentPage)}
@@ -659,28 +1126,6 @@ export default function OwnerDataPage() {
               <span className="hidden sm:inline">Import CSV</span>
             </button>
 
-            {/* Auto-Distribute Unassigned Owners */}
-            <button
-              onClick={async () => {
-                try {
-                  const res = await fetchApi('/distribution/run/owner-data', { method: 'POST' });
-                  Swal.fire({
-                    icon: 'success',
-                    title: 'Owners Auto-Distributed!',
-                    text: res.message || `Successfully distributed ${res.assigned_count} property records to active sales advisors.`,
-                  });
-                  loadRecords(currentPage);
-                } catch (e: any) {
-                  Swal.fire('Error', e.message || 'Auto-distribution failed', 'error');
-                }
-              }}
-              className="px-3 py-2 bg-[#FAF8F5] border border-[#C9A84C] text-[#081428] hover:bg-[#081428] hover:text-[#C9A84C] text-xs font-bold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
-              title="Auto-distribute unassigned owner records across active sales advisors"
-            >
-              <Zap className="w-3.5 h-3.5 text-[#C9A84C]" />
-              <span className="hidden sm:inline">Auto-Distribute</span>
-            </button>
-
             {/* Add Owner Property */}
             <button
               onClick={handleOpenCreate}
@@ -706,8 +1151,8 @@ export default function OwnerDataPage() {
 
           <div className="bg-white p-3 rounded-lg border border-[#E8E2D9] shadow-2xs flex items-center justify-between">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7A7A7A]">Available</div>
-              <div className="text-xl font-bold text-emerald-700 mt-0.5">{stats.available ?? stats.active ?? 0}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7A7A7A]">Assigned Properties</div>
+              <div className="text-xl font-bold text-emerald-700 mt-0.5">{stats.assigned ?? 0}</div>
             </div>
             <div className="w-9 h-9 rounded-md bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
               <KeyRound className="w-4 h-4" />
@@ -716,10 +1161,10 @@ export default function OwnerDataPage() {
 
           <div className="bg-white p-3 rounded-lg border border-[#E8E2D9] shadow-2xs flex items-center justify-between">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7A7A7A]">Rented & Sold</div>
-              <div className="text-xl font-bold text-indigo-700 mt-0.5">{(stats.rented || 0) + (stats.sold || 0)}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7A7A7A]">Unassigned Properties</div>
+              <div className="text-xl font-bold text-amber-700 mt-0.5">{stats.unassigned ?? 0}</div>
             </div>
-            <div className="w-9 h-9 rounded-md bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+            <div className="w-9 h-9 rounded-md bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
               <CheckSquare className="w-4 h-4" />
             </div>
           </div>
@@ -759,69 +1204,58 @@ export default function OwnerDataPage() {
               )}
             </div>
 
+            {/* Date Range Calendar Filter (At the Start, like Lead Pool) */}
+            <DateRangePicker
+              value={dateRange}
+              onChange={(val) => {
+                setDateRange(val);
+                setCurrentPage(1);
+              }}
+            />
+
             {/* Area Filter Dropdown */}
-            <select
-              value={selectedArea}
-              onChange={(e) => setSelectedArea(e.target.value)}
-              className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#E8E2D9] rounded-md text-xs font-semibold text-[#1B2A4A] focus:outline-none focus:border-[#C9A84C] cursor-pointer"
-            >
-              <option value="all">All Areas ({filterOptions.areas.length})</option>
-              {filterOptions.areas.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
+            <MultiCheckboxDropdown
+              label="Area"
+              placeholder="All Areas"
+              options={filterOptions.areas}
+              selected={selectedAreas}
+              onChange={(val) => {
+                setSelectedAreas(val);
+                setCurrentPage(1);
+              }}
+            />
 
             {/* Property Type Filter Dropdown */}
-            <select
-              value={selectedPropertyType}
-              onChange={(e) => setSelectedPropertyType(e.target.value)}
-              className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#E8E2D9] rounded-md text-xs font-semibold text-[#1B2A4A] focus:outline-none focus:border-[#C9A84C] cursor-pointer"
-            >
-              <option value="all">All Property Types</option>
-              {filterOptions.property_types.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+            <MultiCheckboxDropdown
+              label="Property Types"
+              placeholder="All Property Types"
+              options={filterOptions.property_types}
+              selected={selectedPropertyTypes}
+              onChange={(val) => {
+                setSelectedPropertyTypes(val);
+                setCurrentPage(1);
+              }}
+            />
 
             {/* Bedrooms Filter Dropdown */}
-            <select
-              value={selectedBedrooms}
-              onChange={(e) => setSelectedBedrooms(e.target.value)}
-              className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#E8E2D9] rounded-md text-xs font-semibold text-[#1B2A4A] focus:outline-none focus:border-[#C9A84C] cursor-pointer"
-            >
-              <option value="all">All Bedrooms</option>
-              {filterOptions.bedrooms.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-            </select>
+            <MultiCheckboxDropdown
+              label="Bedrooms"
+              placeholder="All Bedrooms"
+              options={filterOptions.bedrooms}
+              selected={selectedBedrooms}
+              onChange={(val) => {
+                setSelectedBedrooms(val);
+                setCurrentPage(1);
+              }}
+            />
 
-            {/* Status Filter Dropdown (Available / Sold / Rented) */}
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#E8E2D9] rounded-md text-xs font-semibold text-[#1B2A4A] focus:outline-none focus:border-[#C9A84C] cursor-pointer"
+            {/* Reset Button (Always visible like Lead Pool) */}
+            <button
+              onClick={handleResetFilters}
+              className="text-xs text-[#C8A147] font-bold hover:underline px-1 cursor-pointer transition-colors ml-1"
             >
-              <option value="all">All Statuses</option>
-              <option value="Available">Available</option>
-              <option value="Rented">Rented</option>
-              <option value="Sold">Sold</option>
-            </select>
-
-            {/* Reset Filters */}
-            {(selectedArea !== 'all' || selectedPropertyType !== 'all' || selectedBedrooms !== 'all' || selectedStatus !== 'all' || searchQuery) && (
-              <button
-                onClick={() => {
-                  setSelectedArea('all');
-                  setSelectedPropertyType('all');
-                  setSelectedBedrooms('all');
-                  setSelectedStatus('all');
-                  setSearchQuery('');
-                }}
-                className="text-xs text-[#C8A147] font-bold hover:underline px-1 cursor-pointer transition-colors"
-              >
-                Reset
-              </button>
-            )}
+              Reset
+            </button>
           </div>
 
           {/* Right Group: Columns Selector Dropdown (Like Lead Pool) */}
@@ -856,12 +1290,12 @@ export default function OwnerDataPage() {
                     </button>
                   </div>
 
-                  {(['Owner Info', 'Property Details', 'Contact Details', 'Meta & Actions'] as const).map((cat) => (
+                  {(['Owner Info', 'Property Details', 'Contact Details', 'Record Details'] as const).map((cat) => (
                     <div key={cat} className="space-y-1 pt-1">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-[#7A7A7A] bg-[#FAF8F5] px-1.5 py-0.5 rounded">
                         {cat}
                       </div>
-                      {ALL_OWNER_COLUMNS.filter((c) => c.category === cat).map((col) => (
+                      {ALL_OWNER_COLUMNS.filter((c) => c.category === cat && c.key !== 'actions').map((col) => (
                         <label key={col.key} className="flex items-center gap-2 p-1 hover:bg-[#FAF8F5] rounded cursor-pointer select-none">
                           <input
                             type="checkbox"
@@ -912,6 +1346,16 @@ export default function OwnerDataPage() {
                   </th>
                 )}
 
+                {/* Assigned Advisor */}
+                {columnVisibility.assigned_to && (
+                  <th className="py-3 px-4 cursor-pointer hover:text-[#081428]" onClick={() => handleSort('assigned_to')}>
+                    <div className="flex items-center gap-1.5">
+                      <span>Assigned Advisor</span>
+                      {sortBy === 'assigned_to' ? (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-[#C9A84C]" /> : <ArrowDown className="w-3 h-3 text-[#C9A84C]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
+                )}
+
                 {/* 2. Property Name */}
                 {columnVisibility.property_name && (
                   <th className="py-3 px-4 cursor-pointer hover:text-[#081428]" onClick={() => handleSort('property_name')}>
@@ -954,12 +1398,12 @@ export default function OwnerDataPage() {
 
                 {/* 6. Mobile Number */}
                 {columnVisibility.mobile_number && (
-                  <th className="py-3 px-4">Mobile (WhatsApp)</th>
+                  <th className="py-3 px-4">Primary Phone</th>
                 )}
 
                 {/* 7. Phone Number */}
                 {columnVisibility.phone_number && (
-                  <th className="py-3 px-4">Landline Phone</th>
+                  <th className="py-3 px-4">Secondary Phone</th>
                 )}
 
                 {/* 8. Email */}
@@ -967,30 +1411,24 @@ export default function OwnerDataPage() {
                   <th className="py-3 px-4">Email</th>
                 )}
 
-                {/* 9. Status */}
-                {columnVisibility.status && (
-                  <th className="py-3 px-4">Status</th>
-                )}
 
-                {/* 10. Notes */}
-                {columnVisibility.notes && (
-                  <th className="py-3 px-4">Notes</th>
-                )}
-
-                {/* 11. Date Added */}
+                {/* 10. Created Date */}
                 {columnVisibility.created_at && (
                   <th className="py-3 px-4 cursor-pointer hover:text-[#081428]" onClick={() => handleSort('created_at')}>
                     <div className="flex items-center gap-1.5">
-                      <span>Date Added</span>
+                      <span>Created Date</span>
                       {sortBy === 'created_at' ? (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-[#C9A84C]" /> : <ArrowDown className="w-3 h-3 text-[#C9A84C]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
                     </div>
                   </th>
                 )}
 
-                {/* 12. Actions */}
-                {columnVisibility.actions && (
-                  <th className="py-3 px-4 text-right">Actions</th>
+                {/* 11. Notes */}
+                {columnVisibility.notes && (
+                  <th className="py-3 px-4">Notes</th>
                 )}
+
+                {/* 12. Actions - Permanent & Mandatory */}
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E8E2D9] text-xs">
@@ -1051,6 +1489,22 @@ export default function OwnerDataPage() {
                         </td>
                       )}
 
+                      {/* Assigned Advisor */}
+                      {columnVisibility.assigned_to && (
+                        <td className="py-3.5 px-4 font-semibold text-xs whitespace-nowrap">
+                          {r.assigned_to && r.assigned_to !== 'Unassigned' ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#081428] text-[#C9A84C] border border-[#C9A84C]/30 shadow-2xs">
+                              <UserCheck className="w-3.5 h-3.5 text-[#C9A84C]" />
+                              <span>{r.assigned_to}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                              Unassigned
+                            </span>
+                          )}
+                        </td>
+                      )}
+
                       {/* 2. Property Name */}
                       {columnVisibility.property_name && (
                         <td className="py-3.5 px-4 font-medium text-[#081428]">
@@ -1099,24 +1553,17 @@ export default function OwnerDataPage() {
                         </td>
                       )}
 
-                      {/* 6. Mobile with 1-Click WhatsApp & Copy */}
+                      {/* 6. Mobile Number with Copy */}
                       {columnVisibility.mobile_number && (
                         <td className="py-3.5 px-4">
                           {r.mobile_number ? (
                             <div className="flex items-center gap-1.5">
                               <Smartphone className="w-3 h-3 text-emerald-600 shrink-0" />
                               <span className="font-mono text-[11px] text-slate-800 font-medium">{r.mobile_number}</span>
-                              <Link
-                                href="/whatsapp"
-                                className="p-1 text-[#25D366] hover:bg-emerald-50 rounded"
-                                title="Open WhatsApp Chat"
-                              >
-                                <MessageSquare className="w-3 h-3 fill-current" />
-                              </Link>
                               <button
                                 onClick={() => copyToClipboard(r.mobile_number || '', `mob-${r.id}`)}
                                 className="text-slate-400 hover:text-slate-700 cursor-pointer"
-                                title="Copy Mobile"
+                                title="Copy Primary Phone"
                               >
                                 {copiedField === `mob-${r.id}` ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                               </button>
@@ -1137,7 +1584,7 @@ export default function OwnerDataPage() {
                               <button
                                 onClick={() => copyToClipboard(r.phone_number || '', `ph-${r.id}`)}
                                 className="text-slate-400 hover:text-slate-700 cursor-pointer"
-                                title="Copy Phone"
+                                title="Copy Secondary Phone"
                               >
                                 {copiedField === `ph-${r.id}` ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                               </button>
@@ -1175,41 +1622,27 @@ export default function OwnerDataPage() {
                         </td>
                       )}
 
-                      {/* 9. Status (Available / Rented / Sold) */}
-                      {columnVisibility.status && (
-                        <td className="py-3.5 px-4">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                            r.status === 'Available' || r.status === 'active'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : r.status === 'Rented'
-                              ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : r.status === 'Sold'
-                              ? 'bg-rose-50 text-rose-700 border-rose-200'
-                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          }`}>
-                            {r.status === 'active' ? 'Available' : (r.status || 'Available')}
-                          </span>
+
+                      {/* 10. Created Date */}
+                      {columnVisibility.created_at && (
+                        <td className="py-3.5 px-4 text-slate-600 font-mono text-xs whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="w-3 h-3 text-[#C9A84C] shrink-0" />
+                            <span>{formatDateTime(r.created_at)}</span>
+                          </div>
                         </td>
                       )}
 
-                      {/* 10. Notes */}
+                      {/* 11. Notes */}
                       {columnVisibility.notes && (
                         <td className="py-3.5 px-4 max-w-[200px] truncate text-slate-500" title={r.notes || ''}>
                           {r.notes || '—'}
                         </td>
                       )}
 
-                      {/* 11. Date Added */}
-                      {columnVisibility.created_at && (
-                        <td className="py-3.5 px-4 text-slate-500 font-mono text-[11px]">
-                          {r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}
-                        </td>
-                      )}
-
-                      {/* 12. Actions */}
-                      {columnVisibility.actions && (
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                      {/* 12. Actions - Permanent & Mandatory */}
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => setViewRecord(r)}
                               className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer transition-colors"
@@ -1224,6 +1657,13 @@ export default function OwnerDataPage() {
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
+                            <Link
+                              href={`/whatsapp?phone=${encodeURIComponent(r.mobile_number || r.phone_number || '')}&name=${encodeURIComponent(r.owner_name || '')}`}
+                              className="p-1.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-600 rounded border border-emerald-200 transition-colors"
+                              title="Open WhatsApp Chat"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </Link>
                             <button
                               onClick={() => handleDelete(r.id, r.owner_name)}
                               className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded cursor-pointer transition-colors"
@@ -1233,8 +1673,7 @@ export default function OwnerDataPage() {
                             </button>
                           </div>
                         </td>
-                      )}
-                    </tr>
+                      </tr>
                   );
                 })
               )}
@@ -1272,6 +1711,60 @@ export default function OwnerDataPage() {
         </footer>
       </div>
 
+      {/* FLOATING BULK ASSIGNMENT & ACTION BAR (Same as Lead Pool) */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#081428] text-white border border-[#C8A147]/50 rounded-xl shadow-2xl px-5 py-3 flex items-center gap-4 animate-in slide-in-from-bottom duration-200">
+          <div className="flex items-center gap-2 text-xs font-bold border-r border-[#152744] pr-4">
+            <span className="w-6 h-6 rounded-full bg-[#C8A147] text-[#081428] flex items-center justify-center font-mono text-xs font-extrabold">
+              {selectedIds.length}
+            </span>
+            <span>Leads Selected</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={bulkAssignOwner}
+              onChange={(e) => setBulkAssignOwner(e.target.value)}
+              className="bg-[#122444] border border-[#1f3864] text-white text-xs font-semibold rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#C8A147] cursor-pointer"
+            >
+              <option value="">Select Advisor / Owner...</option>
+              {activeAgents.map((ag) => (
+                <option key={ag.id} value={ag.name}>
+                  {ag.name} ({ag.role || 'Agent'})
+                </option>
+              ))}
+              <option value="Unassigned">Unassigned</option>
+            </select>
+
+            <button
+              onClick={handleExecuteBulkAssign}
+              disabled={!bulkAssignOwner || bulkLoading}
+              className="px-3.5 py-1.5 bg-[#C8A147] hover:bg-[#b48e35] text-[#081428] font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>{bulkLoading ? 'Assigning...' : 'Assign Selected'}</span>
+            </button>
+
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkLoading}
+              className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Trash</span>
+            </button>
+
+            <button
+              onClick={() => setSelectedIds([])}
+              className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              title="Clear selection"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 6. CREATE / EDIT MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1303,33 +1796,41 @@ export default function OwnerDataPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Property Name <span className="text-slate-400 font-normal">(e.g. Marina Gate 2 Duplex)</span>
+                      Property Name <span className="text-slate-400 font-normal">(e.g. 48 Parkside, Marina Gate 2)</span>
                     </label>
-                    <input
-                      type="text"
+                    <SearchableSelect
+                      options={computedPropertyNameOptions}
                       value={formData.property_name}
-                      onChange={(e) => setFormData({ ...formData, property_name: e.target.value })}
-                      placeholder="e.g. Burj Crown High Floor"
-                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
+                      onChange={(val) => setFormData({ ...formData, property_name: val })}
+                      onAddOption={(newVal) => {
+                        setCustomPropertyNames((prev) => [...prev, newVal]);
+                        setFormData({ ...formData, property_name: newVal });
+                      }}
+                      allowCustomAdd={true}
+                      placeholder="Search or enter property name..."
                     />
                   </div>
 
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Area / Community <span className="text-slate-400 font-normal">(e.g. Downtown Dubai)</span>
+                      Area / Community <span className="text-slate-400 font-normal">(e.g. Arjan, Downtown Dubai)</span>
                     </label>
-                    <input
-                      type="text"
+                    <SearchableSelect
+                      options={computedCommunityOptions}
                       value={formData.area}
-                      onChange={(e) => setFormData({ ...formData, area: e.target.value })}
-                      placeholder="e.g. Palm Jumeirah, Downtown"
-                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
+                      onChange={(val) => setFormData({ ...formData, area: val })}
+                      onAddOption={(newVal) => {
+                        setCustomCommunities((prev) => [...prev, newVal]);
+                        setFormData({ ...formData, area: newVal });
+                      }}
+                      allowCustomAdd={true}
+                      placeholder="Search or enter area / community..."
                     />
                   </div>
 
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Property / Unit Number <span className="text-slate-400 font-normal">(e.g. Unit 1204)</span>
+                      Property / Unit Number <span className="text-slate-400 font-normal">(e.g. Unit 1204, Villa N-24)</span>
                     </label>
                     <input
                       type="text"
@@ -1342,50 +1843,49 @@ export default function OwnerDataPage() {
 
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Building / Cluster Name <span className="text-slate-400 font-normal">(e.g. Princess Tower)</span>
+                      Building / Cluster Name <span className="text-slate-400 font-normal">(e.g. 104, Princess Tower)</span>
                     </label>
-                    <input
-                      type="text"
+                    <SearchableSelect
+                      options={computedProjectOptions}
                       value={formData.building_name}
-                      onChange={(e) => setFormData({ ...formData, building_name: e.target.value })}
-                      placeholder="e.g. Burj Crown, Address Sky View"
-                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
+                      onChange={(val) => setFormData({ ...formData, building_name: val })}
+                      onAddOption={(newVal) => {
+                        setCustomProjects((prev) => [...prev, newVal]);
+                        setFormData({ ...formData, building_name: newVal });
+                      }}
+                      allowCustomAdd={true}
+                      placeholder="Search or enter building / cluster..."
                     />
                   </div>
 
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Property Type</label>
-                    <select
+                    <SearchableSelect
+                      options={computedPropertyTypeOptions}
                       value={formData.property_type}
-                      onChange={(e) => setFormData({ ...formData, property_type: e.target.value })}
-                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] bg-white cursor-pointer"
-                    >
-                      <option value="Apartment">Apartment</option>
-                      <option value="Villa">Villa</option>
-                      <option value="Townhouse">Townhouse</option>
-                      <option value="Penthouse">Penthouse</option>
-                      <option value="Duplex">Duplex</option>
-                      <option value="Commercial">Commercial / Office</option>
-                      <option value="Plot">Residential Plot</option>
-                    </select>
+                      onChange={(val) => setFormData({ ...formData, property_type: val })}
+                      onAddOption={(newVal) => {
+                        setCustomPropertyTypes((prev) => [...prev, newVal]);
+                        setFormData({ ...formData, property_type: newVal });
+                      }}
+                      allowCustomAdd={true}
+                      placeholder="Select or enter property type..."
+                    />
                   </div>
 
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">No. of Bedrooms</label>
-                    <select
+                    <SearchableSelect
+                      options={computedBedroomOptions}
                       value={formData.bedrooms}
-                      onChange={(e) => setFormData({ ...formData, bedrooms: e.target.value })}
-                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] bg-white cursor-pointer"
-                    >
-                      <option value="Studio">Studio</option>
-                      <option value="1 Bedroom">1 Bedroom</option>
-                      <option value="2 Bedrooms">2 Bedrooms</option>
-                      <option value="3 Bedrooms">3 Bedrooms</option>
-                      <option value="4 Bedrooms">4 Bedrooms</option>
-                      <option value="5 Bedrooms">5 Bedrooms</option>
-                      <option value="6+ Bedrooms">6+ Bedrooms</option>
-                      <option value="Commercial">Commercial / Retail</option>
-                    </select>
+                      onChange={(val) => setFormData({ ...formData, bedrooms: val })}
+                      onAddOption={(newVal) => {
+                        setCustomBedrooms((prev) => [...prev, newVal]);
+                        setFormData({ ...formData, bedrooms: newVal });
+                      }}
+                      allowCustomAdd={true}
+                      placeholder="Select or enter bedrooms..."
+                    />
                   </div>
                 </div>
               </div>
@@ -1413,27 +1913,23 @@ export default function OwnerDataPage() {
 
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Mobile Number <span className="text-slate-400 font-normal">(WhatsApp active)</span>
+                      Primary Phone Number <span className="text-slate-400 font-normal">(WhatsApp active)</span>
                     </label>
-                    <input
-                      type="text"
+                    <PhoneInput
                       value={formData.mobile_number}
-                      onChange={(e) => setFormData({ ...formData, mobile_number: e.target.value })}
+                      onChange={(val) => setFormData({ ...formData, mobile_number: val })}
                       placeholder="e.g. +971 50 123 4567"
-                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] font-mono"
                     />
                   </div>
 
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Phone Number <span className="text-slate-400 font-normal">(Landline / Office)</span>
+                      Secondary Phone Number <span className="text-slate-400 font-normal">(Landline / Office / Alt)</span>
                     </label>
-                    <input
-                      type="text"
+                    <PhoneInput
                       value={formData.phone_number}
-                      onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+                      onChange={(val) => setFormData({ ...formData, phone_number: val })}
                       placeholder="e.g. +971 4 399 1122"
-                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] font-mono"
                     />
                   </div>
 
@@ -1448,18 +1944,6 @@ export default function OwnerDataPage() {
                     />
                   </div>
 
-                  <div className="sm:col-span-2">
-                    <label className="block font-semibold text-slate-700 mb-1">Property Status</label>
-                    <select
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] bg-white cursor-pointer font-semibold text-[#081428]"
-                    >
-                      <option value="Available">Available (Open for Sale / Lease)</option>
-                      <option value="Rented">Rented (Currently Tenanted)</option>
-                      <option value="Sold">Sold (Deal Completed)</option>
-                    </select>
-                  </div>
 
                   <div className="sm:col-span-2">
                     <label className="block font-semibold text-slate-700 mb-1">Notes / Qualification</label>
@@ -1470,6 +1954,58 @@ export default function OwnerDataPage() {
                       placeholder="e.g. Motivated seller, tenanted until Q4 2026, viewing on 24h notice..."
                       className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
                     />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Lead Assignment & Ownership */}
+              <div className="bg-[#FAF8F5] p-4 rounded-lg border border-[#E8E2D9] space-y-3">
+                <h3 className="font-bold text-sm text-[#081428] border-b border-[#E8E2D9] pb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-[#C9A84C]" />
+                    <span>3. Lead Assignment & Ownership</span>
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider font-bold text-[#C9A84C] bg-[#081428] px-2 py-0.5 rounded">
+                    Sales Distribution
+                  </span>
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Assigned Agent / Owner <span className="text-slate-400 font-normal">(Sales Advisor)</span>
+                    </label>
+                    <SearchableSelect
+                      options={ownerSelectOptions}
+                      value={formData.assigned_to}
+                      onChange={(val) => setFormData({ ...formData, assigned_to: val })}
+                      placeholder="Select Advisor or Auto-Distribute..."
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1">
+                      <span>💡</span>
+                      <span>
+                        Choose advisor or <strong>"Auto-Distribute"</strong> for rotation.
+                      </span>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Record Status
+                    </label>
+                    <select
+                      value={formData.status || 'active'}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                      className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:outline-none focus:border-[#C8A147] focus:bg-white transition-colors cursor-pointer"
+                    >
+                      <option value="active">Active (Available)</option>
+                      <option value="contacted">Contacted / In Discussion</option>
+                      <option value="unresponsive">Unresponsive</option>
+                      <option value="deal_closed">Deal Closed</option>
+                    </select>
+                    <p className="text-[11px] text-slate-500 mt-1.5">
+                      Current lifecycle state in Property Owner Bank.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -1497,63 +2033,330 @@ export default function OwnerDataPage() {
         </div>
       )}
 
-      {/* 7. CSV IMPORT MODAL */}
+      {/* 7. CSV IMPORT MODAL WITH VALUE MAPPING & STANDARDIZATION */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-lg overflow-hidden animate-fade-in">
+          <div className={`bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full ${importStep === 'mapping' ? 'max-w-4xl' : 'max-w-lg'} overflow-hidden animate-fade-in transition-all`}>
             <div className="bg-[#081428] text-white px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-[#C9A84C]" />
-                <h2 className="font-heading font-bold text-base">Import Owner Data (CSV)</h2>
+                <h2 className="font-heading font-bold text-base">
+                  {importStep === 'mapping' ? 'Standardize Owner Data Catalogs (Area, Project, Type)' : 'Import Owner Data (CSV)'}
+                </h2>
               </div>
-              <button onClick={() => setIsImportModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setImportStep('upload');
+                  setParsedImportRows([]);
+                  setImportPreviewData(null);
+                }}
+                className="text-slate-400 hover:text-white cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs">
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold">Expected CSV Header Format:</p>
-                  <p className="text-[11px] text-amber-800 mt-1 font-mono">
-                    Property Name, Area, Property Number, Building Name, Bedrooms, Property Types, Owner Name, Phone Number, Mobile Number, Email
-                  </p>
+            {/* STEP 1: FILE UPLOAD */}
+            {importStep === 'upload' && (
+              <div className="p-6 space-y-4 text-xs">
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Expected CSV Header Format:</p>
+                    <p className="text-[11px] text-amber-800 mt-1 font-mono">
+                      Property Name, Area, Property Number, Building Name, Bedrooms, Property Type, Owner Name, Primary Phone, Secondary Phone, Email
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-slate-600">Need the exact CSV format?</span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadSampleCsv}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#081428] font-bold rounded text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#C9A84C]" />
+                    <span>Download Sample Template</span>
+                  </button>
+                </div>
+
+                <div className="border-2 border-dashed border-[#E8E2D9] rounded-xl p-8 text-center bg-[#FAF8F5] hover:bg-slate-50 transition-colors">
+                  <Upload className="w-8 h-8 text-[#C9A84C] mx-auto mb-2" />
+                  <p className="font-bold text-sm text-[#081428]">Select CSV File to Upload</p>
+                  <p className="text-slate-400 text-xs mt-1">Supports UTF-8 formatted CSV spreadsheets</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileUpload}
+                    className="mt-4 text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#081428] file:text-[#C9A84C] hover:file:bg-[#122444] cursor-pointer"
+                  />
+                </div>
+
+                {importing && (
+                  <div className="flex items-center justify-center gap-2 text-[#081428] font-semibold py-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-[#C9A84C]" />
+                    <span>Analyzing file against master catalogs...</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* STEP 2: VALUE MAPPING & CATALOG STANDARDIZATION */}
+            {importStep === 'mapping' && importPreviewData && (
+              <div className="p-6 space-y-4 text-xs">
+                {/* Header Info Banner */}
+                <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-lg flex items-start gap-2.5 text-[#081428]">
+                  <Sparkles className="w-4 h-4 text-[#C9A84C] shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold text-xs text-[#081428]">
+                      Standardize Imported Catalog Values ({parsedImportRows.length} total rows)
+                    </div>
+                    <p className="text-[11px] text-[#6E6E6E] mt-0.5">
+                      We detected Community/Area names, Project/Building names, or Property Types in your CSV that do not match existing Settings catalogs.
+                      Choose whether to map to an existing catalog name, add as a new official entry, or keep raw values.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Category Filter Tabs */}
+                <div className="flex items-center gap-2 border-b border-[#E8E2D9] pb-2 overflow-x-auto">
+                  {[
+                    { key: 'all', label: 'All Unmatched' },
+                    { key: 'community', label: 'Communities / Areas', count: importPreviewData.unmatched?.community?.length || 0 },
+                    { key: 'project', label: 'Projects / Buildings', count: importPreviewData.unmatched?.project?.length || 0 },
+                    { key: 'property_type', label: 'Property Types', count: importPreviewData.unmatched?.property_type?.length || 0 },
+                  ].map((tab) => {
+                    const isActive = ownerMappingCategoryTab === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setOwnerMappingCategoryTab(tab.key as any)}
+                        className={`px-3 py-1.5 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                          isActive
+                            ? 'bg-[#081428] text-[#C9A84C] shadow-2xs'
+                            : 'bg-white border border-[#E8E2D9] text-[#6E6E6E] hover:text-[#081428]'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        {tab.count !== undefined && tab.count > 0 && (
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                            isActive ? 'bg-[#C8A147] text-[#081428]' : 'bg-amber-100 text-amber-900 font-bold'
+                          }`}>
+                            {tab.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Mapping Rows Table / List */}
+                <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1">
+                  {['community', 'project', 'property_type']
+                    .filter((cat) => ownerMappingCategoryTab === 'all' || ownerMappingCategoryTab === cat)
+                    .flatMap((cat) => (importPreviewData.unmatched?.[cat] || []).map((item) => ({ ...item, category: cat })))
+                    .map((item) => {
+                      const key = `${item.category}::${item.file_value}`;
+                      const currentAction = ownerMappingActions[key] || 'keep';
+                      const targetVal = ownerValueMappings[item.category]?.[item.file_value] || '';
+                      const catalogOptions = importPreviewData.catalogs?.[item.category] || [];
+
+                      const categoryLabels: Record<string, string> = {
+                        community: 'Area / Community',
+                        project: 'Building / Project',
+                        property_type: 'Property Type',
+                      };
+
+                      return (
+                        <div
+                          key={key}
+                          className="p-3 bg-white border border-[#E8E2D9] rounded-lg shadow-2xs space-y-2.5 hover:border-[#C9A84C]/50 transition-colors"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                                {categoryLabels[item.category] || item.category}
+                              </span>
+                              <span className="font-bold text-[#081428] text-xs">
+                                &quot;{item.file_value}&quot;
+                              </span>
+                              <span className="px-1.5 py-0.2 bg-amber-50 text-amber-800 text-[10px] rounded font-semibold border border-amber-200">
+                                {item.count} {item.count === 1 ? 'row' : 'rows'}
+                              </span>
+                            </div>
+
+                            {/* Suggested Match Indicator */}
+                            {item.suggested_match && (
+                              <div className="flex items-center gap-1 text-[11px]">
+                                <span className="text-[#6E6E6E]">Suggested:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOwnerMappingActions((prev) => ({ ...prev, [key]: 'map' }));
+                                    setOwnerValueMappings((prev) => ({
+                                      ...prev,
+                                      [item.category]: {
+                                        ...prev[item.category],
+                                        [item.file_value]: item.suggested_match,
+                                      },
+                                    }));
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold rounded cursor-pointer transition-colors text-[10px]"
+                                  title="Click to apply suggested match"
+                                >
+                                  <span>🎯 {item.suggested_match}</span>
+                                  <span className="text-emerald-600 font-mono">({item.confidence}%)</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Selection Controls */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-100">
+                            {/* 1. Map to Existing */}
+                            <label
+                              className={`flex flex-col gap-1.5 p-2 rounded border cursor-pointer transition-all ${
+                                currentAction === 'map'
+                                  ? 'bg-amber-50/50 border-[#C9A84C] ring-1 ring-[#C9A84C]/40'
+                                  : 'bg-slate-50/60 border-slate-200'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
+                                <input
+                                  type="radio"
+                                  name={`owner_action_${key}`}
+                                  checked={currentAction === 'map'}
+                                  onChange={() => {
+                                    setOwnerMappingActions((prev) => ({ ...prev, [key]: 'map' }));
+                                    if (!targetVal && item.suggested_match) {
+                                      setOwnerValueMappings((prev) => ({
+                                        ...prev,
+                                        [item.category]: {
+                                          ...prev[item.category],
+                                          [item.file_value]: item.suggested_match,
+                                        },
+                                      }));
+                                    } else if (!targetVal && catalogOptions.length > 0) {
+                                      setOwnerValueMappings((prev) => ({
+                                        ...prev,
+                                        [item.category]: {
+                                          ...prev[item.category],
+                                          [item.file_value]: catalogOptions[0],
+                                        },
+                                      }));
+                                    }
+                                  }}
+                                  className="accent-[#C9A84C]"
+                                />
+                                <span>Map to Catalog</span>
+                              </div>
+
+                              {currentAction === 'map' && (
+                                <select
+                                  value={targetVal}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    setOwnerValueMappings((prev) => ({
+                                      ...prev,
+                                      [item.category]: {
+                                        ...prev[item.category],
+                                        [item.file_value]: v,
+                                      },
+                                    }));
+                                  }}
+                                  className="w-full text-[11px] px-2 py-1 bg-white border border-[#E8E2D9] rounded focus:border-[#C9A84C] font-medium"
+                                >
+                                  {catalogOptions.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </label>
+
+                            {/* 2. Add as New to Catalog */}
+                            <label
+                              className={`flex flex-col gap-1 p-2 rounded border cursor-pointer transition-all ${
+                                currentAction === 'new'
+                                  ? 'bg-emerald-50/50 border-emerald-400 ring-1 ring-emerald-300'
+                                  : 'bg-slate-50/60 border-slate-200'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
+                                <input
+                                  type="radio"
+                                  name={`owner_action_${key}`}
+                                  checked={currentAction === 'new'}
+                                  onChange={() => setOwnerMappingActions((prev) => ({ ...prev, [key]: 'new' }))}
+                                  className="accent-emerald-600"
+                                />
+                                <span className="text-emerald-800">+ Add to Master Catalog</span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 pl-4">
+                                Registers as official Settings entry
+                              </span>
+                            </label>
+
+                            {/* 3. Keep Raw Value */}
+                            <label
+                              className={`flex flex-col gap-1 p-2 rounded border cursor-pointer transition-all ${
+                                currentAction === 'keep'
+                                  ? 'bg-slate-100 border-slate-400 ring-1 ring-slate-300'
+                                  : 'bg-slate-50/60 border-slate-200'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
+                                <input
+                                  type="radio"
+                                  name={`owner_action_${key}`}
+                                  checked={currentAction === 'keep'}
+                                  onChange={() => setOwnerMappingActions((prev) => ({ ...prev, [key]: 'keep' }))}
+                                  className="accent-slate-600"
+                                />
+                                <span>Keep Raw String</span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 pl-4">
+                                Stores unmapped text as-is
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Action Footer */}
+                <div className="flex items-center justify-between pt-3 border-t border-[#E8E2D9]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportStep('upload');
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                    className="px-3.5 py-2 bg-white border border-[#E8E2D9] text-[#6E6E6E] font-bold rounded hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Back to File</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleConfirmOwnerMappingAndImport}
+                    disabled={importing}
+                    className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded shadow-xs flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {importing && <RefreshCw className="w-4 h-4 animate-spin" />}
+                    <span>{importing ? 'Importing Records...' : 'Confirm & Import Records'}</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-
-              <div className="flex justify-between items-center pt-1">
-                <span className="text-slate-600">Need the exact CSV format?</span>
-                <button
-                  type="button"
-                  onClick={handleDownloadSampleCsv}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#081428] font-bold rounded text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5 text-[#C9A84C]" />
-                  <span>Download Sample Template</span>
-                </button>
-              </div>
-
-              <div className="border-2 border-dashed border-[#E8E2D9] rounded-xl p-8 text-center bg-[#FAF8F5] hover:bg-slate-50 transition-colors">
-                <Upload className="w-8 h-8 text-[#C9A84C] mx-auto mb-2" />
-                <p className="font-bold text-sm text-[#081428]">Select CSV File to Upload</p>
-                <p className="text-slate-400 text-xs mt-1">Supports UTF-8 formatted CSV spreadsheets</p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileUpload}
-                  className="mt-4 text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#081428] file:text-[#C9A84C] hover:file:bg-[#122444] cursor-pointer"
-                />
-              </div>
-
-              {importing && (
-                <div className="flex items-center justify-center gap-2 text-[#081428] font-semibold py-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-[#C9A84C]" />
-                  <span>Ingesting and indexing records...</span>
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -1587,15 +2390,7 @@ export default function OwnerDataPage() {
                   <div>Area: <strong className="text-[#081428]">{viewRecord.area || '—'}</strong></div>
                   <div>Bedrooms: <strong className="text-[#081428]">{viewRecord.bedrooms || '—'}</strong></div>
                   <div>Type: <strong className="text-[#081428]">{viewRecord.property_type || '—'}</strong></div>
-                  <div>Status: <span className={`px-2 py-0.5 font-bold rounded text-[10px] uppercase border ${
-                    viewRecord.status === 'Available' || viewRecord.status === 'active'
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : viewRecord.status === 'Rented'
-                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : viewRecord.status === 'Sold'
-                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}>{viewRecord.status === 'active' ? 'Available' : (viewRecord.status || 'Available')}</span></div>
+
                 </div>
               </div>
 
@@ -1604,13 +2399,13 @@ export default function OwnerDataPage() {
                 <div className="space-y-2 text-slate-700">
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5 text-slate-500">
-                      <Smartphone className="w-3.5 h-3.5 text-emerald-600" /> Mobile:
+                      <Smartphone className="w-3.5 h-3.5 text-emerald-600" /> Primary Phone:
                     </span>
                     <span className="font-mono font-bold text-[#081428]">{viewRecord.mobile_number || '—'}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5 text-slate-500">
-                      <Phone className="w-3.5 h-3.5 text-slate-400" /> Landline:
+                      <Phone className="w-3.5 h-3.5 text-slate-400" /> Secondary Phone:
                     </span>
                     <span className="font-mono font-bold text-[#081428]">{viewRecord.phone_number || '—'}</span>
                   </div>
@@ -1619,6 +2414,20 @@ export default function OwnerDataPage() {
                       <Mail className="w-3.5 h-3.5 text-slate-400" /> Email:
                     </span>
                     <span className="font-medium text-[#081428]">{viewRecord.email || '—'}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-[#E8E2D9]">
+                    <span className="flex items-center gap-1.5 text-slate-500">
+                      <UserCheck className="w-3.5 h-3.5 text-[#C9A84C]" /> Assigned Advisor:
+                    </span>
+                    <span className="font-bold text-[#081428]">
+                      {viewRecord.assigned_to && viewRecord.assigned_to !== 'Unassigned' ? (
+                        <span className="px-2 py-0.5 rounded bg-[#081428] text-[#C9A84C] text-[10px] font-bold">
+                          {viewRecord.assigned_to}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[11px]">Unassigned</span>
+                      )}
+                    </span>
                   </div>
                 </div>
               </div>

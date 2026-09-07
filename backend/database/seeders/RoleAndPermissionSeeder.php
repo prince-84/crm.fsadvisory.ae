@@ -35,12 +35,14 @@ class RoleAndPermissionSeeder extends Seeder
             'queue.view',
             'queue.update_status',
             'queue.calendar',
+            'queue.bulk_delete',
 
             // 4. Opportunities Pipeline
             'deals.view',
             'deals.create',
             'deals.edit',
             'deals.delete',
+            'deals.bulk_delete',
 
             // 5. 3CX Telephony & Calls
             'calls.make',
@@ -85,8 +87,8 @@ class RoleAndPermissionSeeder extends Seeder
                 'permissions' => [
                     'leads.view', 'leads.create', 'leads.edit', 'leads.delete', 'leads.assign', 'leads.export', 'leads.import',
                     'owner_data.view', 'owner_data.create', 'owner_data.edit', 'owner_data.export',
-                    'queue.view', 'queue.update_status', 'queue.calendar',
-                    'deals.view', 'deals.create', 'deals.edit',
+                    'queue.view', 'queue.update_status', 'queue.calendar', 'queue.bulk_delete',
+                    'deals.view', 'deals.create', 'deals.edit', 'deals.delete', 'deals.bulk_delete',
                     'calls.make', 'calls.view_logs', 'calls.listen_recordings',
                     'whatsapp.view', 'whatsapp.send_messages', 'whatsapp.send_voice',
                     'reports.view_team', 'reports.view_financials', 'reports.export',
