@@ -36,7 +36,7 @@ class LeadDistributionSetting extends Model
             'apply_to_lead_import' => true,
             'apply_to_owner_data' => true,
             'fallback_user_name' => 'Faraz Shafi',
-            'max_daily_leads_per_agent' => 20,
+            'max_daily_leads_per_agent' => null,
         ]);
     }
 }

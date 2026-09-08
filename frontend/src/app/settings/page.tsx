@@ -108,7 +108,7 @@ function SettingsContent() {
     distribution_mode: 'round_robin',
     apply_to_lead_pool: true,
     apply_to_owner_data: true,
-    max_daily_leads_per_agent: 20,
+    max_daily_leads_per_agent: '',
     fallback_user_name: 'Faraz Shafi',
   });
   const [distAgents, setDistAgents] = useState<any[]>([]);
@@ -286,7 +286,9 @@ function SettingsContent() {
         apply_to_lead_import: distSettings.apply_to_lead_import !== undefined ? Boolean(distSettings.apply_to_lead_import) : true,
         apply_to_owner_data: Boolean(distSettings.apply_to_owner_data),
         fallback_user_name: distSettings.fallback_user_name || 'Faraz Shafi',
-        max_daily_leads_per_agent: Number(distSettings.max_daily_leads_per_agent) || 20,
+        max_daily_leads_per_agent: distSettings.max_daily_leads_per_agent !== '' && distSettings.max_daily_leads_per_agent !== null && distSettings.max_daily_leads_per_agent !== undefined
+          ? Number(distSettings.max_daily_leads_per_agent)
+          : null,
       };
 
       const res = await fetchApi('/distribution/settings', {
@@ -2141,6 +2143,7 @@ function SettingsContent() {
                         <input
                           type="number"
                           min={1}
+                          placeholder="e.g. 50"
                           value={distSettings.max_daily_leads_per_agent ?? ''}
                           onChange={(e) => {
                             const val = e.target.value === '' ? '' : Number(e.target.value);
