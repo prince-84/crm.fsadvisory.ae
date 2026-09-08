@@ -18,6 +18,9 @@ class QueueController extends Controller
 
         // Calculate channel badges for tabs
         $regBadgeCount = Opportunity::whereNotIn('stage', ['closed_won', 'closed_lost'])
+            ->whereNotNull('current_owner_name')
+            ->where('current_owner_name', '!=', '')
+            ->where('current_owner_name', '!=', 'Unassigned')
             ->when($owner && $owner !== 'all', fn($q) => $q->where('current_owner_name', $owner))
             ->count() +
             Contact::whereNotNull('assigned_to')
@@ -106,7 +109,10 @@ class QueueController extends Controller
 
         // Regular Leads: Active Opportunities + Assigned Contacts (Awaiting qualification call)
         $oppQuery = Opportunity::with(['contact', 'buyerQualification', 'sellerQualification'])
-            ->whereNotIn('stage', ['closed_won', 'closed_lost']);
+            ->whereNotIn('stage', ['closed_won', 'closed_lost'])
+            ->whereNotNull('current_owner_name')
+            ->where('current_owner_name', '!=', '')
+            ->where('current_owner_name', '!=', 'Unassigned');
 
         if ($owner && $owner !== 'all') {
             $oppQuery->where('current_owner_name', $owner);

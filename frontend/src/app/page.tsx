@@ -548,34 +548,38 @@ export default function LeadPoolPage() {
         );
 
       case 'opportunity_type':
-        return <td key={colKey} className="p-3 font-semibold uppercase text-[11px] text-slate-700">{opp?.opportunity_type || '—'}</td>;
+        return <td key={colKey} className="p-3 font-semibold uppercase text-[11px] text-slate-700">{opp?.opportunity_type || ct.inquiry_specs?.opportunity_type || (ct.inquiry_specs ? 'buyer' : '—')}</td>;
 
       case 'developer':
-        return <td key={colKey} className="p-3 text-slate-700 font-medium">{opp?.developer || bq.developer || '—'}</td>;
+        return <td key={colKey} className="p-3 text-slate-700 font-medium">{opp?.developer || bq.developer || ct.inquiry_specs?.developer || '—'}</td>;
 
       case 'community':
-        return <td key={colKey} className="p-3 text-slate-700">{opp?.community || bq.community || '—'}</td>;
+        return <td key={colKey} className="p-3 text-slate-700">{opp?.community || bq.community || ct.inquiry_specs?.community || '—'}</td>;
 
       case 'project':
-        return <td key={colKey} className="p-3 text-slate-700 font-semibold">{opp?.project || bq.project || '—'}</td>;
+        return <td key={colKey} className="p-3 text-slate-700 font-semibold">{opp?.project || bq.project || ct.inquiry_specs?.project || '—'}</td>;
 
       case 'project_property':
-        return <td key={colKey} className="p-3 text-slate-700">{opp?.project_property || bq.project_property || '—'}</td>;
+        return <td key={colKey} className="p-3 text-slate-700">{opp?.project_property || bq.project_property || ct.inquiry_specs?.project_property || '—'}</td>;
 
       case 'bedrooms':
-        return <td key={colKey} className="p-3 text-slate-700">{opp?.bedrooms || bq.bedrooms || '—'}</td>;
+        return <td key={colKey} className="p-3 text-slate-700">{opp?.bedrooms || bq.bedrooms || ct.inquiry_specs?.bedrooms || '—'}</td>;
 
-      case 'budget_min':
-        return <td key={colKey} className="p-3 font-mono text-emerald-700 font-semibold">{opp?.budget_min ? `AED ${Number(opp.budget_min).toLocaleString()}` : '—'}</td>;
+      case 'budget_min': {
+        const bMin = opp?.budget_min || ct.inquiry_specs?.budget_min;
+        return <td key={colKey} className="p-3 font-mono text-emerald-700 font-semibold">{bMin ? `AED ${Number(bMin).toLocaleString()}` : '—'}</td>;
+      }
 
-      case 'budget_max':
-        return <td key={colKey} className="p-3 font-mono text-emerald-700 font-semibold">{opp?.budget_max ? `AED ${Number(opp.budget_max).toLocaleString()}` : '—'}</td>;
+      case 'budget_max': {
+        const bMax = opp?.budget_max || ct.inquiry_specs?.budget_max;
+        return <td key={colKey} className="p-3 font-mono text-emerald-700 font-semibold">{bMax ? `AED ${Number(bMax).toLocaleString()}` : '—'}</td>;
+      }
 
       case 'cash_or_finance':
-        return <td key={colKey} className="p-3 text-slate-700 font-medium">{opp?.cash_or_finance || bq.cash_or_finance || '—'}</td>;
+        return <td key={colKey} className="p-3 text-slate-700 font-medium">{opp?.cash_or_finance || bq.cash_or_finance || ct.inquiry_specs?.cash_or_finance || '—'}</td>;
 
       case 'key_requirement':
-        return <td key={colKey} className="p-3 text-slate-600 max-w-[200px] truncate">{opp?.key_requirement || '—'}</td>;
+        return <td key={colKey} className="p-3 text-slate-600 max-w-[200px] truncate">{opp?.key_requirement || ct.inquiry_specs?.key_requirement || '—'}</td>;
 
       case 'assigned_owner':
         const ownerName = ct.assigned_to || opp?.current_owner_name || 'Unassigned';

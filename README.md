@@ -920,6 +920,19 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Slide-Over Drawer (`ContactDrawer.tsx`)**: Updated URL card to evaluate `contact.campaign_url || contact.landing_page_url`.
     - **Edit Page (`leads/[id]/edit/page.tsx`)**: Seamlessly binds both keys and sends both on update.
 
+- **93 — Strict Separation of Inbound Leads from Opportunities & Queue with Decoupled Specification Accessor (`Contact.php`, `ContactController.php`, `QueueController.php`, `frontend/src/app/page.tsx`, `frontend/src/app/new-leads/page.tsx`, `leads/[id]/edit/page.tsx`)**:
+  - **Business Rules Alignment**:
+    1. Inbound leads (from webhooks, Postman, n8n, Meta Ads, and forms) are strictly **raw contacts** and must **NEVER** be auto-assigned. They land as unassigned (`assigned_to = null`) in the **New Leads** pool awaiting manual allocation.
+    2. Inbound leads must **NEVER** automatically generate `Opportunity` or `BuyerQualification` records on ingestion. Real estate deals/opportunities are strictly created manually by sales advisors in **My Queue** (`/queue`) after they telephone and qualify the client.
+    3. Unassigned inbound leads must **NEVER** appear in **My Queue** or the **Opportunities Pipeline**.
+  - **Backend Implementation**:
+    - **Removed Auto-Opportunity Creation**: Removed `Opportunity::create` and `BuyerQualification::create` from `ContactController::store`.
+    - **Inquiry Specs Model Accessor**: Added `$appends = ['campaign_url', 'inquiry_specs']` and `getInquirySpecsAttribute()` to [`Contact.php`](file:///d:/FSadvisory-crm/backend/app/Models/Contact.php), parsing developer, community, project, property type, bedrooms, budget, and key requirements dynamically from the activity note without needing an Opportunity record.
+    - **Queue Gating**: Hardened [`QueueController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/QueueController.php) regular channel queries to strictly filter `whereNotNull('current_owner_name')->where('current_owner_name', '!=', '')->where('current_owner_name', '!=', 'Unassigned')`, ensuring unassigned leads/deals never pollute advisors' daily calling queue.
+  - **Frontend Implementation**:
+    - **Lead Pool Table (`page.tsx`) & New Leads Table (`new-leads/page.tsx`)**: Updated cell rendering for Developer, Community, Project, Property Type, Bedrooms, Budget Min/Max, and Key Requirement to seamlessly fall back to `ct.inquiry_specs`, displaying all specifications in the table without requiring an active opportunity.
+    - **Edit Form (`leads/[id]/edit/page.tsx`)**: Pre-populates Section 3 ("Opportunity Workspace & Investment Qualifications") directly from `contactData.inquiry_specs`, allowing full visibility and editing of inquiry preferences.
+
 ---
 
 ## ⚙️ Installation & Running Instructions

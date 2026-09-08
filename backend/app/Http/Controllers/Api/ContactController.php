@@ -521,48 +521,8 @@ class ContactController extends Controller
                 ]);
             }
 
-            // If inquiry preferences were entered during lead registration/inbound webhook, create Opportunity & Qualification specs
-            $hasInquirySpecs = $request->filled('developer')
-                || $request->filled('community')
-                || $request->filled('project')
-                || $request->filled('project_property')
-                || $request->filled('property_type')
-                || $request->filled('bedrooms')
-                || $request->filled('budget_min')
-                || $request->filled('budget_max')
-                || $request->filled('key_requirement')
-                || $request->filled('opportunity_type');
-
-            if ($hasInquirySpecs) {
-                $opp = Opportunity::create([
-                    'contact_id'             => $contact->id,
-                    'opportunity_type'       => $request->get('opportunity_type', 'buyer') ?: 'buyer',
-                    'stage'                  => 'new',
-                    'temperature'            => $request->get('temperature', 'warm') ?: 'warm',
-                    'current_owner_name'     => $contact->assigned_to ?: 'Unassigned',
-                    'originating_agent_name' => $contact->assigned_to ?: 'Inbound Webhook',
-                    'department'             => 'telesales',
-                    'budget_min'             => $request->filled('budget_min') ? (float) $request->budget_min : null,
-                    'budget_max'             => $request->filled('budget_max') ? (float) $request->budget_max : null,
-                    'key_requirement'        => $request->key_requirement ?? ($request->activity_description ?? null),
-                    'next_action'            => $request->next_action ?? 'Initial qualification call',
-                    'next_action_due_at'     => $request->next_action_due_at ?? now()->addHours(2),
-                    'sla_status'             => 'on_track',
-                ]);
-
-                BuyerQualification::create([
-                    'opportunity_id'       => $opp->id,
-                    'community'            => $request->community ?? null,
-                    'project'              => $request->project ?? null,
-                    'developer'            => $request->developer ?? null,
-                    'property_type'        => $request->property_type ?? ($request->project_property ?? null),
-                    'bedrooms'             => $request->bedrooms ?? null,
-                    'cash_or_finance'      => $request->cash_or_finance ?? 'cash',
-                    'qualification_notes'  => $request->key_requirement ?? ($request->activity_description ?? null),
-                    'client_intent'        => 'end_user',
-                    'purchase_timeline'    => '1-3 months',
-                ]);
-            }
+            // Opportunity deals are strictly created MANUALLY by advisors from My Queue after qualification.
+            // Inquiry preferences are preserved as an initial inquiry activity note on the contact profile.
 
             $inquiryDetails = [];
             if ($request->filled('developer')) $inquiryDetails[] = "Developer: {$request->developer}";

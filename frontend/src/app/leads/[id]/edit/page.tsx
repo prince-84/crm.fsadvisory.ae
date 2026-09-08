@@ -428,21 +428,21 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
              || opp.seller_qualification || opp.sellerQualification
              || opp.landlord_qualification || opp.landlordQualification
              || opp.tenant_qualification || opp.tenantQualification || {})
-          : {};
+          : (contactData.inquiry_specs || {});
 
         // Fallback parsers for contacts created without opportunity
-        let fbDev = '';
-        let fbComm = '';
-        let fbProj = '';
-        let fbUnit = '';
-        let fbPropType = '';
-        let fbBeds = '';
-        let fbMin = '';
-        let fbMax = '';
-        let fbPm = '';
-        let fbKeyReq = '';
+        let fbDev = contactData.inquiry_specs?.developer || '';
+        let fbComm = contactData.inquiry_specs?.community || '';
+        let fbProj = contactData.inquiry_specs?.project || '';
+        let fbUnit = contactData.inquiry_specs?.project_property || '';
+        let fbPropType = contactData.inquiry_specs?.property_type || '';
+        let fbBeds = contactData.inquiry_specs?.bedrooms || '';
+        let fbMin = contactData.inquiry_specs?.budget_min ? String(contactData.inquiry_specs.budget_min) : '';
+        let fbMax = contactData.inquiry_specs?.budget_max ? String(contactData.inquiry_specs.budget_max) : '';
+        let fbPm = contactData.inquiry_specs?.cash_or_finance || '';
+        let fbKeyReq = contactData.inquiry_specs?.key_requirement || '';
         let fbNextAction = '';
-        let fbOppType = '';
+        let fbOppType = contactData.inquiry_specs?.opportunity_type || '';
         let fbTemp = '';
 
         if (!opp && Array.isArray(contactData.activities)) {
