@@ -1,28 +1,15 @@
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api').replace(/\/+$/, '');
 
-// Default fallback token for active UI session bootstrap (Faraz Shafi - Super Admin)
-export const DEFAULT_CRM_TOKEN = 'fsa_admin_SoV0AEsvUjupEOBRx11Wqr23525pUGofvmxGttz6jLDsKME0hT';
-
-export async function fetchApi(endpoint: string, options: RequestInit = {}, isRetry: boolean = false): Promise<any> {
+export async function fetchApi(endpoint: string, options: RequestInit = {}): Promise<any> {
   let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   if (cleanEndpoint.startsWith('/api/')) {
     cleanEndpoint = cleanEndpoint.replace(/^\/api/, '');
   }
 
-  // Retrieve active session token from localStorage or initialize with bootstrap token
+  // Retrieve active session token from localStorage
   let token: string | null = null;
   if (typeof window !== 'undefined') {
-    let stored = localStorage.getItem('crm_token');
-    // If token is missing, or is an old legacy string (does not start with fsa_), heal with DEFAULT_CRM_TOKEN
-    if (!stored || !stored.startsWith('fsa_')) {
-      stored = DEFAULT_CRM_TOKEN;
-      try {
-        localStorage.setItem('crm_token', DEFAULT_CRM_TOKEN);
-      } catch {}
-    }
-    token = stored;
-  } else {
-    token = DEFAULT_CRM_TOKEN;
+    token = localStorage.getItem('crm_token');
   }
 
   const authHeaders: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -46,12 +33,15 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}, isRe
   });
 
   if (!response.ok) {
-    // If token was rejected as invalid or expired (401) and we haven't retried yet, heal token and retry
-    if (response.status === 401 && !isRetry && typeof window !== 'undefined') {
+    // If token is invalid or expired (401), clear session and route to login
+    if (response.status === 401 && typeof window !== 'undefined') {
       try {
-        localStorage.setItem('crm_token', DEFAULT_CRM_TOKEN);
+        localStorage.removeItem('crm_token');
+        localStorage.removeItem('crm_user');
       } catch {}
-      return fetchApi(endpoint, options, true);
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
 
     const errorData = await response.json().catch(() => ({}));

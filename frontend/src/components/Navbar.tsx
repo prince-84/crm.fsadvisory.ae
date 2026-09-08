@@ -22,8 +22,6 @@ interface NavbarProps {
   onSearch?: (query: string) => void;
 }
 
-import { DEFAULT_CRM_USER } from '@/lib/permissions';
-
 export default function Navbar({ onSearch }: NavbarProps) {
   const router = useRouter();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);

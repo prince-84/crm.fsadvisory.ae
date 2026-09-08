@@ -32,6 +32,22 @@ import {
 export default function LoginPage() {
   const router = useRouter();
 
+  // Redirect if already authenticated
+  React.useEffect(() => {
+    try {
+      const token = localStorage.getItem('crm_token');
+      const userRaw = localStorage.getItem('crm_user');
+      if (token && userRaw) {
+        const u = JSON.parse(userRaw);
+        if (u?.role === 'Super Admin') {
+          router.replace('/');
+        } else {
+          router.replace('/queue');
+        }
+      }
+    } catch {}
+  }, [router]);
+
   // Mode: 'signin' | 'signup' | 'forgot'
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
 
