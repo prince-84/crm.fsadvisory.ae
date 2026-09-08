@@ -39,6 +39,9 @@ class LeadDistributionService
         if ($leadType === 'lead_pool' && !$settings->apply_to_lead_pool) {
             return null;
         }
+        if ($leadType === 'lead_import' && !($settings->apply_to_lead_import ?? $settings->apply_to_lead_pool)) {
+            return null;
+        }
         if ($leadType === 'owner_data' && !$settings->apply_to_owner_data) {
             return null;
         }
@@ -209,7 +212,7 @@ class LeadDistributionService
      * Auto-assign a Contact from Lead Pool WITHOUT auto-creating an Opportunity.
      * The sales advisor will qualify the contact first from My Queue and create an opportunity manually.
      */
-    public static function autoAssignContact(Contact $contact): ?User
+    public static function autoAssignContact(Contact $contact, string $scope = 'lead_pool'): ?User
     {
         // Never auto-assign duplicate contacts; keep them isolated in the Duplicate tab
         if ($contact->state === 'duplicate') {
@@ -217,11 +220,19 @@ class LeadDistributionService
         }
 
         $settings = static::getSettings();
-        if (!$settings->is_enabled || !$settings->apply_to_lead_pool) {
+        if (!$settings->is_enabled) {
             return null;
         }
 
-        $agent = static::getNextAgent('lead_pool');
+        $isScopeActive = ($scope === 'lead_import')
+            ? (bool) ($settings->apply_to_lead_import ?? $settings->apply_to_lead_pool)
+            : (bool) $settings->apply_to_lead_pool;
+
+        if (!$isScopeActive) {
+            return null;
+        }
+
+        $agent = static::getNextAgent($scope);
         if (!$agent) {
             if (!empty($settings->fallback_user_name)) {
                 $contact->update([

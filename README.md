@@ -979,6 +979,27 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Automated batch distribution test verified that leads distribute cleanly up to the configured daily cap (e.g. 20 assigned when cap is 40 and 20 were already assigned), with remaining leads safely preserved.
     - Full Next.js production build (`npm run build`) passed with exit code 0 across all 21 routes.
 
+- **97 — Granular Auto-Assignment Channel Scopes & Dynamic Settings Control (`backend/app/Services/LeadDistributionService.php`, `backend/app/Http/Controllers/Api/ContactController.php`, `backend/app/Http/Controllers/Api/PortalController.php`, `backend/app/Http/Controllers/Api/ImportController.php`, `backend/app/Http/Controllers/Api/LeadDistributionController.php`, `backend/database/migrations/2026_09_08_203500_add_apply_to_lead_import_to_lead_distribution_settings_table.php`, `frontend/src/app/settings/page.tsx`)**:
+  - **User Requirement**:
+    - Remove the hardcoded limitation where inbound leads / webhooks / portals were blocked from auto-assigning.
+    - Provide complete, granular control in Master Settings (`/settings` -> Lead Distribution tab) under **Auto-Assignment Scopes** so the user can independently decide for themselves whether inbound leads, batch file imports, and owner records auto-assign or remain unassigned.
+  - **Backend Implementation**:
+    - **Database Migration**: Created `2026_09_08_203500_add_apply_to_lead_import_to_lead_distribution_settings_table.php` adding boolean column `apply_to_lead_import` to `lead_distribution_settings` (default: true).
+    - **Scope Decoupling in LeadDistributionService**:
+      - `getNextAgent($leadType)` and `autoAssignContact($contact, $scope)` check the respective channel flag (`apply_to_lead_pool`, `apply_to_lead_import`, `apply_to_owner_data`).
+    - **Dynamic Inbound Auto-Routing**:
+      - `ContactController::store` and `PortalController::ingest` now dynamically evaluate `$settings->apply_to_lead_pool`. If enabled, inbound leads automatically route to active sales advisors in rotation; if disabled, they remain unassigned in the New Leads pool.
+    - **Dynamic File Import Auto-Routing**:
+      - `ImportController` evaluates `$settings->apply_to_lead_import`. If enabled, imported rows auto-assign to advisors; if disabled, rows land unassigned.
+  - **Frontend Implementation**:
+    - Upgraded **Auto-Assignment Scopes** in `/settings` into 3 responsive cards with real-time toggle states:
+      1. `Inbound Webhooks & Portals` (`apply_to_lead_pool`): Property Finder, Bayut, Dubizzle, Meta Ads, and Webhooks.
+      2. `Lead Pool File Imports` (`apply_to_lead_import`): Excel & CSV batch uploads.
+      3. `Owner Data & Resale Inquiries` (`apply_to_owner_data`): Property title deed records.
+  - **Verification**:
+    - Automated unit test confirmed: with `apply_to_lead_pool = false`, contact landed with `assigned_to = NULL` (unassigned); with `apply_to_lead_pool = true`, contact immediately auto-assigned to active advisor in rotation.
+    - Full Next.js production build (`npm run build`) passed with exit code 0 across all 21 routes.
+
 ---
 
 ## ⚙️ Installation & Running Instructions

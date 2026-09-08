@@ -76,6 +76,7 @@ class LeadDistributionController extends Controller
             'is_enabled' => 'nullable|boolean',
             'distribution_mode' => 'nullable|in:round_robin,load_balanced,weighted',
             'apply_to_lead_pool' => 'nullable|boolean',
+            'apply_to_lead_import' => 'nullable|boolean',
             'apply_to_owner_data' => 'nullable|boolean',
             'fallback_user_name' => 'nullable|string',
             'max_daily_leads_per_agent' => 'nullable|integer|min:1',

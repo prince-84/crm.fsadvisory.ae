@@ -787,7 +787,7 @@ class ImportController extends Controller
                             'state'       => 'assigned',
                         ]);
                     } else {
-                        \App\Services\LeadDistributionService::autoAssignContact($contact);
+                        \App\Services\LeadDistributionService::autoAssignContact($contact, 'lead_import');
                         $contact->refresh();
                     }
                 } else {

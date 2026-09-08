@@ -495,8 +495,7 @@ class ContactController extends Controller
                 'description' => "Duplicate contact created. Matches existing Contact #{$existingContact->id} ({$existingContact->name}, Phone: {$existingContact->phone}). Routed to Duplicate tab.",
             ]);
         } else {
-            // Real-Time Lead Distribution: Assign directly if specific advisor explicitly provided
-            // Note: Auto-assignment is strictly restricted to batch file imports (ImportController).
+            // Lead Distribution: Assign directly if specific advisor explicitly provided
             $assignedOwner = $request->input('assigned_owner');
             if (!empty($assignedOwner) && $assignedOwner !== 'auto' && $assignedOwner !== 'Unassigned') {
                 $contact->update([
@@ -512,13 +511,22 @@ class ContactController extends Controller
                     'description' => "Lead assigned to {$assignedOwner} (Awaiting qualification call).",
                 ]);
             } else {
-                // Not auto-assigned. Kept unassigned/available for review and manual allocation in New Leads
-                Activity::create([
-                    'contact_id'  => $contact->id,
-                    'user_name'   => 'Lead Engine',
-                    'type'        => 'note',
-                    'description' => "New lead registered and placed in New Leads pool (awaiting assignment).",
-                ]);
+                // Dynamic Lead Distribution according to Master Settings scope
+                $settings = LeadDistributionService::getSettings();
+                $autoAssigned = null;
+                if ($settings->is_enabled && $settings->apply_to_lead_pool) {
+                    $autoAssigned = LeadDistributionService::autoAssignContact($contact, 'lead_pool');
+                    $contact->refresh();
+                }
+
+                if (!$autoAssigned) {
+                    Activity::create([
+                        'contact_id'  => $contact->id,
+                        'user_name'   => 'Lead Engine',
+                        'type'        => 'note',
+                        'description' => "New lead registered and placed in New Leads pool (awaiting assignment).",
+                    ]);
+                }
             }
 
             // Opportunity deals are strictly created MANUALLY by advisors from My Queue after qualification.

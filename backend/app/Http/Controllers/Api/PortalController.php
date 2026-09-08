@@ -118,22 +118,30 @@ class PortalController extends Controller
             ], 201);
         }
 
-        // Brand New Inbound Lead: Not auto-assigned (auto-assign is restricted strictly to batch file imports)
-        // Stays available/unassigned for review in the New Leads page
-        Activity::create([
-            'contact_id' => $contact->id,
-            'opportunity_id' => null,
-            'user_name' => 'System / Webhook',
-            'type' => 'note',
-            'description' => "New Inbound Lead ingested from {$portalName}. Placed in New Leads pool awaiting allocation.",
-        ]);
+        // Dynamic Lead Distribution according to Master Settings scope
+        $settings = LeadDistributionService::getSettings();
+        $assignedAgent = null;
+        if ($settings->is_enabled && $settings->apply_to_lead_pool) {
+            $assignedAgent = LeadDistributionService::autoAssignContact($contact, 'lead_pool');
+            $contact->refresh();
+        }
+
+        if (!$assignedAgent) {
+            Activity::create([
+                'contact_id' => $contact->id,
+                'opportunity_id' => null,
+                'user_name' => 'System / Webhook',
+                'type' => 'note',
+                'description' => "New Inbound Lead ingested from {$portalName}. Placed in New Leads pool awaiting manual allocation.",
+            ]);
+        }
 
         return response()->json([
             'success' => true,
             'is_duplicate' => false,
-            'message' => "New Lead ingested from {$portalName}. Contact #{$contact->id} placed in New Leads pool.",
+            'message' => $assignedAgent ? "New Lead ingested from {$portalName} and assigned to {$assignedAgent->name}." : "New Lead ingested from {$portalName}. Contact #{$contact->id} placed in New Leads pool.",
             'contact' => $contact->fresh(),
-            'assigned_agent' => null,
+            'assigned_agent' => $assignedAgent ? $assignedAgent->name : null,
         ], 201);
     }
 }

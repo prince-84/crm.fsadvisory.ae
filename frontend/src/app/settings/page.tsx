@@ -2048,33 +2048,73 @@ function SettingsContent() {
 
                     {/* Channel Scopes */}
                     <div className="space-y-3">
-                      <label className="text-xs font-bold text-[#081428] uppercase tracking-wider">
-                        Auto-Assignment Scopes
-                      </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <label className="flex items-start gap-3 p-3.5 rounded-lg border border-[#E8E4DC] bg-white cursor-pointer hover:border-[#C9A84C] transition-colors">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-[#081428] uppercase tracking-wider">
+                          Auto-Assignment Scopes
+                        </label>
+                        <span className="text-[11px] text-slate-500">
+                          Configure which channels automatically distribute to active sales advisors
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Scope 1: Inbound Webhooks & Portals */}
+                        <label className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${
+                          distSettings.apply_to_lead_pool ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
+                        }`}>
                           <input
                             type="checkbox"
                             checked={Boolean(distSettings.apply_to_lead_pool)}
                             onChange={(e) => setDistSettings({ ...distSettings, apply_to_lead_pool: e.target.checked })}
-                            className="mt-0.5 rounded text-[#C9A84C] focus:ring-[#C9A84C]"
+                            className="mt-0.5 rounded text-[#C9A84C] focus:ring-[#C9A84C] cursor-pointer"
                           />
                           <div>
-                            <div className="font-bold text-xs text-[#081428]">Inbound Lead Pool & Portals</div>
-                            <div className="text-[11px] text-slate-500">Auto-routes Property Finder, Bayut, Dubizzle and new inquiries.</div>
+                            <div className="font-bold text-xs text-[#081428] flex items-center gap-1.5">
+                              <span>Inbound Webhooks & Portals</span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                              Auto-routes incoming leads from Property Finder, Bayut, Dubizzle, Meta Ads & Webhooks in real-time.
+                            </div>
                           </div>
                         </label>
 
-                        <label className="flex items-start gap-3 p-3.5 rounded-lg border border-[#E8E4DC] bg-white cursor-pointer hover:border-[#C9A84C] transition-colors">
+                        {/* Scope 2: Lead Pool File Imports */}
+                        <label className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${
+                          distSettings.apply_to_lead_import !== false ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
+                        }`}>
+                          <input
+                            type="checkbox"
+                            checked={distSettings.apply_to_lead_import !== false}
+                            onChange={(e) => setDistSettings({ ...distSettings, apply_to_lead_import: e.target.checked })}
+                            className="mt-0.5 rounded text-[#C9A84C] focus:ring-[#C9A84C] cursor-pointer"
+                          />
+                          <div>
+                            <div className="font-bold text-xs text-[#081428] flex items-center gap-1.5">
+                              <span>Lead Pool File Imports</span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                              Auto-routes contacts imported from Excel & CSV batch uploads across active sales advisors.
+                            </div>
+                          </div>
+                        </label>
+
+                        {/* Scope 3: Owner Data & Resale Inquiries */}
+                        <label className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${
+                          distSettings.apply_to_owner_data ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
+                        }`}>
                           <input
                             type="checkbox"
                             checked={Boolean(distSettings.apply_to_owner_data)}
                             onChange={(e) => setDistSettings({ ...distSettings, apply_to_owner_data: e.target.checked })}
-                            className="mt-0.5 rounded text-[#C9A84C] focus:ring-[#C9A84C]"
+                            className="mt-0.5 rounded text-[#C9A84C] focus:ring-[#C9A84C] cursor-pointer"
                           />
                           <div>
-                            <div className="font-bold text-xs text-[#081428]">Owner Data & Resale Inquiries</div>
-                            <div className="text-[11px] text-slate-500">Auto-routes imported or created property owner records.</div>
+                            <div className="font-bold text-xs text-[#081428] flex items-center gap-1.5">
+                              <span>Owner Data & Resale Inquiries</span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                              Auto-routes imported or created property owner title deed records.
+                            </div>
                           </div>
                         </label>
                       </div>
