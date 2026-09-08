@@ -918,8 +918,6 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Lead Pool Table (`page.tsx`)**: Added `utm_campaign` column to `ALL_COLUMNS`, `DEFAULT_COLUMN_VISIBILITY`, and `DEFAULT_COLUMN_ORDER` displaying the campaign badge and clickable external campaign link.
     - **New Leads Table (`new-leads/page.tsx`)**: Upgraded `utm_campaign` cell rendering to display clickable link for `campaign_url || landing_page_url`.
     - **Slide-Over Drawer (`ContactDrawer.tsx`)**: Updated URL card to evaluate `contact.campaign_url || contact.landing_page_url`.
-    - **Edit Page (`leads/[id]/edit/page.tsx`)**: Seamlessly binds both keys and sends both on update.
-
 - **93 — Strict Separation of Inbound Leads from Opportunities & Queue with Decoupled Specification Accessor (`Contact.php`, `ContactController.php`, `QueueController.php`, `frontend/src/app/page.tsx`, `frontend/src/app/new-leads/page.tsx`, `leads/[id]/edit/page.tsx`)**:
   - **Business Rules Alignment**:
     1. Inbound leads (from webhooks, Postman, n8n, Meta Ads, and forms) are strictly **raw contacts** and must **NEVER** be auto-assigned. They land as unassigned (`assigned_to = null`) in the **New Leads** pool awaiting manual allocation.
@@ -932,6 +930,16 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Frontend Implementation**:
     - **Lead Pool Table (`page.tsx`) & New Leads Table (`new-leads/page.tsx`)**: Updated cell rendering for Developer, Community, Project, Property Type, Bedrooms, Budget Min/Max, and Key Requirement to seamlessly fall back to `ct.inquiry_specs`, displaying all specifications in the table without requiring an active opportunity.
     - **Edit Form (`leads/[id]/edit/page.tsx`)**: Pre-populates Section 3 ("Opportunity Workspace & Investment Qualifications") directly from `contactData.inquiry_specs`, allowing full visibility and editing of inquiry preferences.
+
+- **94 — New Leads Page Visual Structure & Architecture Alignment with Lead Pool (`frontend/src/app/new-leads/page.tsx`)**:
+  - **User Requirement**: Realign the New Leads (`/new-leads`) command center to mirror the visual layout, KPI cards, status tabs, and column structure of the Lead Pool master table (`/`).
+  - **Implementation Details**:
+    1. **5 KPI Stat Summary Cards**: Re-introduced the 5 top summary metric cards on `/new-leads` (`Total Contacts` [Master Lead Bank], `Available` [Ready to assign], `Active Opportunities` [In-progress deals], `Reactivation` [Eligible], `Duplicates` [Need review]) connected directly to real-time database statistics.
+    2. **Horizontal Status Tabs**: Standardized top navigation tabs to `All Leads`, `New`, `Duplicate`, and `Deleted` with active gold underline styling and pill counters, defaulting to `all`.
+    3. **Header Actions**: Added the `Export` action button alongside `+ Create Lead` in the top header.
+    4. **8 Default Columns Visibility**: Aligned `DEFAULT_COLUMN_VISIBILITY` and `DEFAULT_COLUMN_ORDER` so the default table view displays the exact 8 primary columns (`Client Profile`, `Source Channel`, `Primary Phone`, `Email Address`, `Assigned Owner`, `Created Date`, `UTM Campaign / URL`, `Actions`), with `state`, `opportunity`, and `nationality` hidden by default to yield the `Columns (8)` badge.
+    5. **Centered Floating Bottom Pill Toolbar**: Replaced the inline bulk notification bar with the fixed centered bottom floating toolbar (`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 ...`) supporting bulk advisor assignment, multi-lead permanent purge, bulk restore, and dismiss.
+    6. **Pagination Controls**: Standardized the server-side database pagination footer bar to match Lead Pool typography, button icons (`<ChevronLeft />`, `<ChevronRight />`), and active page number badge styling.
 
 ---
 

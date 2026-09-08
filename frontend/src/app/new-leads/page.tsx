@@ -12,7 +12,8 @@ import {
   Search, Plus, Users, CheckCircle2, RotateCcw, Copy, 
   ChevronLeft, ChevronRight, RefreshCw, Trash2, Undo2, UserX,
   ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, GripVertical, UserCheck, X,
-  Eye, Edit3, MessageSquare, Check, Zap, Filter, Flame, Globe, Radio
+  Eye, Edit3, MessageSquare, Check, Zap, Filter, Flame, Globe, Radio,
+  Briefcase, Upload
 } from 'lucide-react';
 import Link from 'next/link';
 import { hasPermission, refreshCurrentUser } from '@/lib/permissions';
@@ -47,12 +48,12 @@ export default function NewLeadsPage() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // Top Tabs State: 'unassigned' (Default) | 'all' | 'assigned' | 'duplicate' | 'deleted'
-  const [activeTab, setActiveTab] = useState<'unassigned' | 'all' | 'assigned' | 'duplicate' | 'deleted'>('unassigned');
+  // Top Tabs State: 'all' (Default) | 'unassigned' | 'duplicate' | 'deleted'
+  const [activeTab, setActiveTab] = useState<'all' | 'unassigned' | 'duplicate' | 'deleted'>('all');
   const [tabCounts, setTabCounts] = useState({ all: 0, unassigned: 0, new: 0, assigned: 0, duplicate: 0, deleted: 0 });
 
   // Sorting
-  const [sortBy, setSortBy] = useState('created_at');
+  const [sortBy, setSortBy] = useState('updated_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Search
@@ -96,7 +97,7 @@ export default function NewLeadsPage() {
     { key: 'budget_max', label: 'Max Budget', category: 'Opportunity Specs' },
     { key: 'cash_or_finance', label: 'Payment Method', category: 'Opportunity Specs' },
     { key: 'key_requirement', label: 'Key Requirement', category: 'Opportunity Specs' },
-    { key: 'assigned_owner', label: 'Assigned Advisor', category: 'SLA & Owner' },
+    { key: 'assigned_owner', label: 'Assigned Owner', category: 'SLA & Owner' },
     { key: 'next_action', label: 'Next Action', category: 'SLA & Owner' },
     { key: 'next_action_due_at', label: 'Next Action Due', category: 'SLA & Owner' },
     { key: 'actions', label: 'Actions', category: 'Core' },
@@ -105,17 +106,17 @@ export default function NewLeadsPage() {
   const DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = {
     name: true,
     source: true,
-    state: true,
-    opportunity: true,
-    assigned_owner: true,
-    actions: true,
     phone: true,
-    secondary_phone: false,
     email: true,
-    nationality: true,
+    assigned_owner: true,
     created_at: true,
-    sub_source: false,
     utm_campaign: true,
+    actions: true,
+    state: false,
+    opportunity: false,
+    secondary_phone: false,
+    nationality: false,
+    sub_source: false,
     opportunity_type: false,
     developer: false,
     community: false,
@@ -132,17 +133,17 @@ export default function NewLeadsPage() {
 
   const DEFAULT_COLUMN_ORDER = [
     'name',
-    'phone',
     'source',
+    'phone',
+    'email',
+    'assigned_owner',
     'created_at',
+    'utm_campaign',
     'state',
     'opportunity',
-    'assigned_owner',
     'secondary_phone',
-    'email',
     'nationality',
     'sub_source',
-    'utm_campaign',
     'opportunity_type',
     'developer',
     'community',
@@ -208,11 +209,11 @@ export default function NewLeadsPage() {
           if (Array.isArray(parsed) && parsed.length > 0) {
             let sanitized = parsed.filter((k: string) => validKeys.includes(k) && k !== 'actions');
             if (!sanitized.includes('created_at')) {
-              const srcIdx = sanitized.indexOf('source');
+              const srcIdx = sanitized.indexOf('assigned_owner');
               if (srcIdx !== -1) {
                 sanitized.splice(srcIdx + 1, 0, 'created_at');
               } else {
-                sanitized.splice(3, 0, 'created_at');
+                sanitized.splice(5, 0, 'created_at');
               }
             }
             const missing = DEFAULT_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
@@ -462,12 +463,12 @@ export default function NewLeadsPage() {
   };
 
   const handleResetFilters = () => {
-    setActiveTab('unassigned');
+    setActiveTab('all');
     setSelectedOwner('all');
     setAdvancedFilters(INITIAL_ADVANCED_FILTERS);
     setDateRange({ from: '', to: '', preset: 'all' });
     setSearchQuery('');
-    setSortBy('created_at');
+    setSortBy('updated_at');
     setSortOrder('desc');
     setCurrentPage(1);
   };
@@ -794,15 +795,14 @@ export default function NewLeadsPage() {
               className="flex items-center gap-2.5 cursor-pointer group w-fit"
               onClick={() => handleOpenDrawer(ct)}
             >
-              <div className="w-8 h-8 rounded-full font-bold text-xs flex items-center justify-center shrink-0 bg-[#081428] text-[#C8A147] group-hover:bg-[#C8A147] group-hover:text-white transition-colors">
+              <div className={`w-8 h-8 rounded-full font-bold text-xs flex items-center justify-center shrink-0 ${
+                activeTab === 'deleted' ? 'bg-red-100 text-red-800' : 'bg-[#081428] text-[#C8A147] group-hover:bg-[#C8A147] group-hover:text-white transition-colors'
+              }`}>
                 {ct.initials || ct.name?.substring(0, 2).toUpperCase() || 'CT'}
               </div>
               <div>
                 <div className="font-bold text-[#081428] group-hover:text-[#C8A147] group-hover:underline transition-colors text-xs flex items-center gap-1.5 flex-wrap">
                   <span>{ct.name}</span>
-                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-mono font-normal bg-slate-100 text-slate-500 border border-slate-200">
-                    #{ct.id}
-                  </span>
                   {ct.state === 'duplicate' && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-300">
                       <Copy className="w-2.5 h-2.5 text-purple-600 shrink-0" />
@@ -1152,7 +1152,7 @@ export default function NewLeadsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-[#1A1A1A] flex font-['Poppins',sans-serif]">
+    <div className="min-h-screen bg-[#FAF8F5] text-[#1A1A1A] flex">
       {/* Deep Navy Sidebar */}
       <Sidebar />
 
@@ -1164,37 +1164,69 @@ export default function NewLeadsPage() {
           {/* Header Bar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-heading font-bold text-2xl text-[#081428]">New Leads</h1>
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                  <Flame className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-                  <span>Live Inbound</span>
-                </span>
-              </div>
+              <h1 className="font-heading font-bold text-2xl text-[#081428]">New Leads</h1>
               <p className="text-xs text-[#6E6E6E] mt-0.5">
-                Real-time portal webhooks, campaign inquiries, and manual registrations awaiting allocation
+                Centralized Lead Bank for all Website, Social Media, Portals & Live Inbound Leads
               </p>
             </div>
 
             <div className="flex items-center gap-2.5 text-xs font-medium min-h-[36px]">
-              {mounted && hasPermission('leads.create') && (
-                <Link
-                  href="/leads/create"
-                  className="px-4 py-2 bg-[#C8A147] hover:bg-[#b48e35] text-white font-bold rounded-md shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4 text-white" />
-                  <span className="text-white">Create Lead</span>
-                </Link>
-              )}
+              {mounted ? (
+                <>
+                  {hasPermission('leads.export') && (
+                    <button 
+                      onClick={() => alert("Exporting New Leads database to Excel format...")}
+                      className="px-3 py-2 bg-white border border-[#E8E4DC] rounded-md text-[#1A1A1A] hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-[#6E6E6E]" />
+                      <span>Export</span>
+                    </button>
+                  )}
+
+                  {hasPermission('leads.create') && (
+                    <Link
+                      href="/leads/create"
+                      className="px-4 py-2 bg-[#C8A147] hover:bg-[#b48e35] text-white font-bold rounded-md shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4 text-white" />
+                      <span className="text-white">Create Lead</span>
+                    </Link>
+                  )}
+                </>
+              ) : null}
             </div>
           </div>
 
-          {/* Top Tab Navigation (New / Unassigned, All Inbound, Assigned, Duplicate) */}
+          {/* 5 KPI Stat Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {[
+              { label: 'Total Contacts', value: Number(stats?.total || 0).toLocaleString(), sub: 'Master Lead Bank', subColor: 'text-emerald-600', icon: Users, iconBg: 'bg-amber-100 text-amber-800' },
+              { label: 'Available', value: Number(stats?.available || 0).toLocaleString(), sub: 'Ready to assign', subColor: 'text-emerald-600', icon: CheckCircle2, iconBg: 'bg-emerald-100 text-emerald-700' },
+              { label: 'Active Opportunities', value: Number(stats?.active || 0).toLocaleString(), sub: 'In-progress deals', subColor: 'text-slate-500', icon: Briefcase, iconBg: 'bg-blue-100 text-blue-700' },
+              { label: 'Reactivation', value: Number(stats?.reactivation || 0).toLocaleString(), sub: 'Eligible', subColor: 'text-slate-500', icon: RotateCcw, iconBg: 'bg-orange-100 text-orange-700' },
+              { label: 'Duplicates', value: Number(stats?.duplicates || 0).toLocaleString(), sub: 'Need review', subColor: 'text-purple-600', icon: Copy, iconBg: 'bg-purple-100 text-purple-700' },
+            ].map((card, idx) => {
+              const Icon = card.icon;
+              return (
+                <div key={idx} className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${card.iconBg}`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-heading font-bold text-xl text-[#081428] leading-tight">{card.value}</div>
+                    <div className="text-[11px] font-medium text-[#6E6E6E]">{card.label}</div>
+                    <div className={`text-[10px] font-semibold ${card.subColor}`}>{card.sub}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* MAIN NEW LEADS TOP TAB NAVIGATION (All, New, Duplicate, Deleted) */}
           <div className="bg-white border border-[#E8E4DC] rounded-lg px-4 shadow-2xs flex items-center gap-2 overflow-x-auto">
             {[
-              { id: 'unassigned', label: 'New / Awaiting Allocation', count: tabCounts.new ?? tabCounts.unassigned, color: 'text-amber-800' },
-              { id: 'all', label: 'All Inbound Leads', count: tabCounts.all, color: 'text-[#081428]' },
-              { id: 'assigned', label: 'Assigned', count: tabCounts.assigned, color: 'text-emerald-800' },
+              { id: 'all', label: 'All Leads', count: tabCounts.all, color: 'text-[#081428]' },
+              { id: 'unassigned', label: 'New', count: tabCounts.unassigned ?? tabCounts.new, color: 'text-amber-800' },
               { id: 'duplicate', label: 'Duplicate', count: tabCounts.duplicate, color: 'text-purple-800' },
               { id: 'deleted', label: 'Deleted', count: tabCounts.deleted, color: 'text-red-800' },
             ].map((tab) => {
@@ -1286,7 +1318,6 @@ export default function NewLeadsPage() {
                   {currentUser?.role === 'Super Admin' ? (
                     <>
                       <option value="all">👥 All Assigned Leads (Entire Team)</option>
-                      <option value="Unassigned">⏳ Unassigned Leads Only</option>
                       {currentUser?.name && (
                         <option value={currentUser.name}>⭐ My Leads ({currentUser.name})</option>
                       )}
@@ -1297,8 +1328,7 @@ export default function NewLeadsPage() {
                   ) : (
                     <>
                       <option value={currentUser?.name || 'auto'}>🎯 My Assigned Leads ({currentUser?.name || 'Assigned to Me'})</option>
-                      <option value="all">👥 View All Inbound Leads</option>
-                      <option value="Unassigned">⏳ Unassigned Leads Only</option>
+                      <option value="all">👥 View Entire Lead Pool</option>
                     </>
                   )}
                 </select>
@@ -1379,113 +1409,6 @@ export default function NewLeadsPage() {
             </div>
           </div>
 
-          {/* Floating Bulk Assignment Action Bar */}
-          {selectedContactIds.length > 0 && (
-            <div className="p-3 bg-[#081428] text-white rounded-lg shadow-xl flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-center gap-3">
-                <span className="px-2.5 py-1 bg-[#C8A147] text-[#081428] font-bold rounded text-xs font-mono">
-                  {selectedContactIds.length} Selected
-                </span>
-                <span className="text-xs text-slate-300">
-                  {activeTab === 'deleted' ? 'Manage selected deleted records:' : 'Bulk allocate inbound leads to an advisor or trigger round-robin distribution:'}
-                </span>
-              </div>
-
-              {activeTab === 'deleted' ? (
-                <div className="flex items-center gap-2 flex-wrap">
-                  {mounted && hasPermission('leads.restore') && (
-                    <button
-                      onClick={handleExecuteBulkRestore}
-                      disabled={bulkLoading}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                      title="Restore all selected leads back to active pool"
-                    >
-                      <Undo2 className="w-3.5 h-3.5" />
-                      <span>{bulkLoading ? 'Restoring...' : 'Restore Selected'}</span>
-                    </button>
-                  )}
-
-                  {mounted && hasPermission('leads.delete') && (
-                    <button
-                      onClick={handleExecuteBulkPermanentDelete}
-                      disabled={bulkLoading}
-                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded text-xs transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                      title="Permanently purge selected leads from database"
-                    >
-                      <UserX className="w-3.5 h-3.5" />
-                      <span>{bulkLoading ? 'Purging...' : 'Purge Permanently'}</span>
-                    </button>
-                  )}
-
-                  {/* Cancel / Clear Selection */}
-                  <button
-                    onClick={() => setSelectedContactIds([])}
-                    className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-[#152744] transition-colors cursor-pointer"
-                    title="Clear Selection"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Advisor Select Dropdown */}
-                  <select
-                    value={bulkAssignOwner}
-                    onChange={(e) => setBulkAssignOwner(e.target.value)}
-                    disabled={bulkLoading}
-                    className="bg-[#152744] text-white border border-[#233d66] rounded px-3 py-1.5 text-xs focus:outline-none focus:border-[#C8A147]"
-                  >
-                    <option value="">-- Choose Advisor --</option>
-                    {activeAgents.map((agent: any) => (
-                      <option key={agent.id} value={agent.name}>
-                        {agent.name} ({agent.role || 'Advisor'})
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    onClick={() => handleExecuteBulkAssign()}
-                    disabled={bulkLoading || !bulkAssignOwner}
-                    className="px-3 py-1.5 bg-[#C8A147] hover:bg-[#b48e35] text-white font-bold rounded text-xs transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span>Assign to Advisor</span>
-                  </button>
-
-                  {/* Auto-Distribute Selected Button */}
-                  <button
-                    onClick={() => handleExecuteBulkAssign('auto')}
-                    disabled={bulkLoading}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-xs transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                    title="Distribute evenly across active advisors using intelligent round-robin"
-                  >
-                    <Zap className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Auto-Distribute</span>
-                  </button>
-
-                  {/* Bulk Delete */}
-                  <button
-                    onClick={handleExecuteBulkDelete}
-                    disabled={bulkLoading}
-                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded text-xs transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Trash</span>
-                  </button>
-
-                  {/* Cancel / Clear Selection */}
-                  <button
-                    onClick={() => setSelectedContactIds([])}
-                    className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-[#152744] transition-colors cursor-pointer"
-                    title="Clear Selection"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* New Inbound Leads Table */}
           <div className="bg-white border border-[#E8E4DC] rounded-lg shadow-2xs overflow-hidden">
             <div className="overflow-x-auto">
@@ -1565,57 +1488,44 @@ export default function NewLeadsPage() {
               </table>
             </div>
 
-            {/* Pagination Controls */}
-            <div className="p-4 bg-[#FAF8F5] border-t border-[#E8E4DC] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-3 text-[#6E6E6E]">
-                <span>
-                  Showing <span className="font-bold text-[#081428]">{paginationMeta.from}</span> to{' '}
-                  <span className="font-bold text-[#081428]">{paginationMeta.to}</span> of{' '}
-                  <span className="font-bold text-[#081428]">{paginationMeta.total}</span> inbound leads
-                </span>
-
-                <div className="flex items-center gap-1.5 ml-2">
-                  <span>Per page:</span>
-                  <select
-                    value={perPage}
-                    onChange={(e) => handlePerPageChange(Number(e.target.value))}
-                    className="bg-white border border-[#E8E4DC] rounded px-2 py-1 text-xs font-semibold text-[#081428] focus:outline-none"
-                  >
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                </div>
+            {/* SERVER-SIDE DATABASE PAGINATION FOOTER BAR */}
+            <div className="p-4 bg-[#FAF8F5] border-t border-[#E8E4DC] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#6E6E6E]">
+              <div>
+                Showing <span className="font-bold text-[#081428]">{paginationMeta.from || 0}</span> to{' '}
+                <span className="font-bold text-[#081428]">{paginationMeta.to || 0}</span> of{' '}
+                <span className="font-bold text-[#081428]">{Number(paginationMeta.total || 0).toLocaleString()}</span> results
               </div>
 
               <div className="flex items-center gap-1">
+                {/* Previous Button */}
                 <button
                   onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage <= 1}
-                  className="px-2.5 py-1.5 bg-white border border-[#E8E4DC] rounded text-[#081428] hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium cursor-pointer"
+                  disabled={currentPage <= 1 || loading}
+                  className="p-1.5 border border-[#E8E4DC] rounded hover:bg-white text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span>Prev</span>
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
 
+                {/* Dynamic Page Buttons */}
                 {getPageNumbers().map((p, idx) => {
-                  if (p === '...') {
+                  if (typeof p === 'string') {
                     return (
-                      <span key={`ellipsis-${idx}`} className="px-2 py-1 text-slate-400">
+                      <span key={`dots-${idx}`} className="px-1 text-slate-400 font-semibold">
                         ...
                       </span>
                     );
                   }
-                  const isCur = currentPage === p;
+
+                  const isCurrent = p === currentPage;
                   return (
                     <button
                       key={`page-${p}`}
-                      onClick={() => handlePageChange(Number(p))}
-                      className={`w-7 h-7 rounded text-xs font-bold transition-colors cursor-pointer ${
-                        isCur
-                          ? 'bg-[#081428] text-[#C8A147] shadow-2xs'
-                          : 'bg-white border border-[#E8E4DC] text-[#081428] hover:bg-slate-50'
+                      onClick={() => handlePageChange(p as number)}
+                      disabled={loading}
+                      className={`w-7 h-7 rounded text-xs transition-colors cursor-pointer ${
+                        isCurrent
+                          ? 'font-bold bg-[#C8A147] text-white shadow-xs'
+                          : 'font-medium border border-[#E8E4DC] hover:bg-white text-[#1A1A1A]'
                       }`}
                     >
                       {p}
@@ -1623,17 +1533,121 @@ export default function NewLeadsPage() {
                   );
                 })}
 
+                {/* Next Button */}
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage >= paginationMeta.last_page}
-                  className="px-2.5 py-1.5 bg-white border border-[#E8E4DC] rounded text-[#081428] hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1 font-medium cursor-pointer"
+                  disabled={currentPage >= paginationMeta.last_page || loading}
+                  className="p-1.5 border border-[#E8E4DC] rounded hover:bg-white text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
                 >
-                  <span>Next</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
+
+              {/* Per Page Select Dropdown */}
+              <select
+                value={perPage}
+                onChange={(e) => handlePerPageChange(Number(e.target.value))}
+                className="p-1.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-medium"
+              >
+                <option value={10}>10 / page</option>
+                <option value={20}>20 / page</option>
+                <option value={50}>50 / page</option>
+                <option value={100}>100 / page</option>
+              </select>
             </div>
           </div>
+
+          {/* Floating Bulk Action Bar */}
+          {selectedContactIds.length > 0 && (
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#081428] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-4 border border-[#C8A147]/40 backdrop-blur-md animate-in fade-in slide-in-from-bottom-4 duration-200">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-[#C8A147] text-[#081428] font-bold text-xs flex items-center justify-center">
+                  {selectedContactIds.length}
+                </span>
+                <span className="text-xs font-semibold">Leads Selected</span>
+              </div>
+
+              <div className="h-4 w-px bg-white/20" />
+
+              {activeTab === 'deleted' ? (
+                <div className="flex items-center gap-2">
+                  {mounted && hasPermission('leads.restore') && (
+                    <button
+                      onClick={handleExecuteBulkRestore}
+                      disabled={bulkLoading}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                      title="Restore selected leads back to Lead Pool"
+                    >
+                      <Undo2 className="w-3.5 h-3.5" />
+                      <span>{bulkLoading ? 'Restoring...' : 'Restore to Pool'}</span>
+                    </button>
+                  )}
+
+                  {mounted && hasPermission('leads.delete') && (
+                    <button
+                      onClick={handleExecuteBulkPermanentDelete}
+                      disabled={bulkLoading}
+                      className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                      title="Permanently purge selected leads from database"
+                    >
+                      <UserX className="w-3.5 h-3.5" />
+                      <span>{bulkLoading ? 'Purging...' : 'Purge Permanently'}</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => setSelectedContactIds([])}
+                    className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    title="Clear selection"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={bulkAssignOwner}
+                    onChange={(e) => setBulkAssignOwner(e.target.value)}
+                    className="bg-[#122444] border border-[#1f3864] text-white text-xs font-semibold rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#C8A147]"
+                  >
+                    <option value="">Select Advisor / Owner...</option>
+                    {activeAgents.map((ag: any) => (
+                      <option key={ag.id} value={ag.name}>
+                        {ag.name} ({ag.role || 'Agent'})
+                      </option>
+                    ))}
+                    <option value="Unassigned">Unassigned</option>
+                  </select>
+
+                  <button
+                    onClick={() => handleExecuteBulkAssign()}
+                    disabled={!bulkAssignOwner || bulkLoading}
+                    className="px-3.5 py-1.5 bg-[#C8A147] hover:bg-[#b48e35] text-[#081428] font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>{bulkLoading ? 'Assigning...' : 'Assign Selected'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleExecuteBulkDelete}
+                    disabled={bulkLoading}
+                    className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Trash</span>
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedContactIds([])}
+                    className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    title="Clear selection"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </main>
       </div>
 
