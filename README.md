@@ -1018,6 +1018,8 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - Updated copy button tooltip in `OwnerDrawer.tsx` from "Copy Mobile" to "Copy Primary Phone".
     - **Owner Data Templates Verification (`owner-data/page.tsx`)**:
       - Verified that Owner Data's `handleDownloadSampleCsv` and `handleExportCsv` already strictly use `Primary Phone` and `Secondary Phone` with no redundant mobile number column.
+    - **New Leads Page KPI Cards Removal (`frontend/src/app/new-leads/page.tsx`)**:
+      - Removed the 5 KPI stat summary cards (Total Contacts, Available, Active Opportunities, Reactivation, Duplicates) from the top of the New Leads page per user preference, streamlining the screen directly into top tab navigation and lead tables.
   - **Verification**:
     - Ran full Next.js production build (`npm run build`) passing with exit code 0 across all 21 routes.
 

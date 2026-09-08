@@ -1197,31 +1197,6 @@ export default function NewLeadsPage() {
             </div>
           </div>
 
-          {/* 5 KPI Stat Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {[
-              { label: 'Total Contacts', value: Number(stats?.total || 0).toLocaleString(), sub: 'Master Lead Bank', subColor: 'text-emerald-600', icon: Users, iconBg: 'bg-amber-100 text-amber-800' },
-              { label: 'Available', value: Number(stats?.available || 0).toLocaleString(), sub: 'Ready to assign', subColor: 'text-emerald-600', icon: CheckCircle2, iconBg: 'bg-emerald-100 text-emerald-700' },
-              { label: 'Active Opportunities', value: Number(stats?.active || 0).toLocaleString(), sub: 'In-progress deals', subColor: 'text-slate-500', icon: Briefcase, iconBg: 'bg-blue-100 text-blue-700' },
-              { label: 'Reactivation', value: Number(stats?.reactivation || 0).toLocaleString(), sub: 'Eligible', subColor: 'text-slate-500', icon: RotateCcw, iconBg: 'bg-orange-100 text-orange-700' },
-              { label: 'Duplicates', value: Number(stats?.duplicates || 0).toLocaleString(), sub: 'Need review', subColor: 'text-purple-600', icon: Copy, iconBg: 'bg-purple-100 text-purple-700' },
-            ].map((card, idx) => {
-              const Icon = card.icon;
-              return (
-                <div key={idx} className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${card.iconBg}`}>
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-heading font-bold text-xl text-[#081428] leading-tight">{card.value}</div>
-                    <div className="text-[11px] font-medium text-[#6E6E6E]">{card.label}</div>
-                    <div className={`text-[10px] font-semibold ${card.subColor}`}>{card.sub}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
           {/* MAIN NEW LEADS TOP TAB NAVIGATION (All, New, Duplicate, Deleted) */}
           <div className="bg-white border border-[#E8E4DC] rounded-lg px-4 shadow-2xs flex items-center gap-2 overflow-x-auto">
             {[
