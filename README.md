@@ -890,6 +890,25 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Problem**: When external lead webhooks (such as n8n, Meta Lead Ads, or forms) submit contacts where `email` is missing, blank, or improperly mapped, strict validation `'email' => 'required|email'` caused a 422 error and dropped the inbound lead.
   - **Solution**: Added proactive email auto-healing in `ContactController::store` prior to validation. If `email` is empty or invalid, the backend automatically generates a sanitized lead email (`name.phone@fsadvisory-lead.ae`), preserving the lead and ensuring zero dropped leads from external ad webhooks. Valid emails provided by the client are retained without alteration.
 
+- **91 — Inbound Webhook & API Opportunity Auto-Persistence and Lead Pool Edit Form Specification Mapping (`ContactController.php`, `leads/[id]/edit/page.tsx`)**:
+  - **Issue Identified**:
+    1. When external leads arrived via webhook or Postman (`POST /api/contacts`) with inquiry specifications (e.g. `developer`, `community`, `project`, `property_type`, `bedrooms`, `budget_min`, `budget_max`, `key_requirement`), `ContactController::store` previously created only a `Contact` profile and a text note (`"Initial Inquiry Details: ..."`), without creating linked `Opportunity` and `BuyerQualification` records.
+    2. Because no `Opportunity` existed, the Lead Pool master table displayed `—` across developer, community, project, property type, and budget columns.
+    3. When opening the Lead Pool edit page (`/leads/[id]/edit`), Section 3 ("Opportunity Workspace & Investment Qualifications") remained unpopulated (`Please Select...`). The fallback activity parser was strictly looking for `"Initial Inquiry Requirements:"` or `"Lead created via"`, completely missing notes formatted with `"Initial Inquiry Details:"`.
+  - **Backend Implementation (`ContactController.php`)**:
+    - Enhanced `store()` to detect inbound inquiry preferences (`$hasInquirySpecs`) across `developer`, `community`, `project`, `property_type`, `bedrooms`, `budget_min`, `budget_max`, `key_requirement`, and `opportunity_type`.
+    - Automatically creates an `Opportunity` (`stage = 'new'`, `temperature = 'warm'`, `budget_min`, `budget_max`, `key_requirement`, `next_action`, `sla_status = 'on_track'`) and linked `BuyerQualification` (`community`, `project`, `developer`, `property_type`, `bedrooms`, `cash_or_finance`, `qualification_notes`, `client_intent = 'end_user'`, `purchase_timeline = '1-3 months'`).
+    - Standardized the audit activity note format to `"Initial Inquiry Requirements: Developer: ... | Location/Community: ... | Project: ... | Property Type: ... | Beds: ... | Budget: AED ... - ... | Notes: ..."`, perfectly matching parser standards.
+    - Eager loads `opportunities.buyerQualification` and `activities` in the API response (`201 Created`).
+  - **Frontend Implementation (`leads/[id]/edit/page.tsx`)**:
+    - Expanded fallback activity parser in `useEffect` to recognize `"Initial Inquiry Requirements:"`, `"Initial Inquiry Details:"`, `"Initial Inquiry"`, and `"Lead created via"`, guaranteeing 100% backward compatibility for existing leads created prior to this update.
+    - Seamlessly binds `opp.developer || qual.developer`, `opp.community || qual.community`, `opp.project || qual.project`, `opp.property_type || qual.property_type`, `opp.bedrooms || qual.bedrooms`, and budget ranges into form state and dynamic dropdowns.
+  - **Automated Verification**:
+    - Verified via automated test script (`test_contact_store.php`) with the exact sample payload from the user:
+      - `POST /api/contacts` returns HTTP 201 with Contact, Opportunity, BuyerQualification, and Activity logs.
+      - `GET /api/contacts/{id}` returns complete nested qualification specs (`developer = 'Emaar'`, `project = 'Park Horizon'`, `community = 'Dubai Hills Estate'`).
+    - Next.js production build (`npm run build`) completed successfully with zero TypeScript or Turbopack errors across all 21 routes.
+
 ---
 
 ## ⚙️ Installation & Running Instructions

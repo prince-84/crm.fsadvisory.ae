@@ -448,7 +448,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
         if (!opp && Array.isArray(contactData.activities)) {
           for (const act of contactData.activities) {
             const desc = act.description || '';
-            if (desc.includes('Initial Inquiry Requirements:') || desc.includes('Lead created via')) {
+            if (desc.includes('Initial Inquiry Requirements:') || desc.includes('Initial Inquiry Details:') || desc.includes('Initial Inquiry') || desc.includes('Lead created via')) {
               const devMatch = desc.match(/(?:Developer|Dev):\s*([^,|]+)/i);
               if (devMatch) fbDev = devMatch[1].trim();
 

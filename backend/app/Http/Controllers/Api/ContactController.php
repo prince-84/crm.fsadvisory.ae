@@ -512,14 +512,55 @@ class ContactController extends Controller
                 ]);
             }
 
-            // Opportunity deals are strictly created MANUALLY by agents from My Queue after calling & qualifying the client.
-            // If inquiry preferences were entered during lead registration, preserve them as an initial inquiry activity note on the contact profile.
+            // If inquiry preferences were entered during lead registration/inbound webhook, create Opportunity & Qualification specs
+            $hasInquirySpecs = $request->filled('developer')
+                || $request->filled('community')
+                || $request->filled('project')
+                || $request->filled('project_property')
+                || $request->filled('property_type')
+                || $request->filled('bedrooms')
+                || $request->filled('budget_min')
+                || $request->filled('budget_max')
+                || $request->filled('key_requirement')
+                || $request->filled('opportunity_type');
+
+            if ($hasInquirySpecs) {
+                $opp = Opportunity::create([
+                    'contact_id'             => $contact->id,
+                    'opportunity_type'       => $request->get('opportunity_type', 'buyer') ?: 'buyer',
+                    'stage'                  => 'new',
+                    'temperature'            => $request->get('temperature', 'warm') ?: 'warm',
+                    'current_owner_name'     => $contact->assigned_to ?: 'Unassigned',
+                    'originating_agent_name' => $contact->assigned_to ?: 'Inbound Webhook',
+                    'department'             => 'telesales',
+                    'budget_min'             => $request->filled('budget_min') ? (float) $request->budget_min : null,
+                    'budget_max'             => $request->filled('budget_max') ? (float) $request->budget_max : null,
+                    'key_requirement'        => $request->key_requirement ?? ($request->activity_description ?? null),
+                    'next_action'            => $request->next_action ?? 'Initial qualification call',
+                    'next_action_due_at'     => $request->next_action_due_at ?? now()->addHours(2),
+                    'sla_status'             => 'on_track',
+                ]);
+
+                BuyerQualification::create([
+                    'opportunity_id'       => $opp->id,
+                    'community'            => $request->community ?? null,
+                    'project'              => $request->project ?? null,
+                    'developer'            => $request->developer ?? null,
+                    'property_type'        => $request->property_type ?? ($request->project_property ?? null),
+                    'bedrooms'             => $request->bedrooms ?? null,
+                    'cash_or_finance'      => $request->cash_or_finance ?? 'cash',
+                    'qualification_notes'  => $request->key_requirement ?? ($request->activity_description ?? null),
+                    'client_intent'        => 'end_user',
+                    'purchase_timeline'    => '1-3 months',
+                ]);
+            }
+
             $inquiryDetails = [];
             if ($request->filled('developer')) $inquiryDetails[] = "Developer: {$request->developer}";
-            if ($request->filled('community')) $inquiryDetails[] = "Area: {$request->community}";
+            if ($request->filled('community')) $inquiryDetails[] = "Location/Community: {$request->community}";
             if ($request->filled('project')) $inquiryDetails[] = "Project: {$request->project}";
             if ($request->filled('project_property')) $inquiryDetails[] = "Unit: {$request->project_property}";
-            if ($request->filled('property_type')) $inquiryDetails[] = "Type: {$request->property_type}";
+            if ($request->filled('property_type')) $inquiryDetails[] = "Property Type: {$request->property_type}";
             if ($request->filled('bedrooms')) $inquiryDetails[] = "Beds: {$request->bedrooms}";
             if ($request->filled('budget_min') || $request->filled('budget_max')) {
                 $inquiryDetails[] = "Budget: AED " . ($request->budget_min ?: '0') . " - " . ($request->budget_max ?: 'Max');
@@ -531,7 +572,7 @@ class ContactController extends Controller
                     'contact_id'  => $contact->id,
                     'user_name'   => 'Lead Engine',
                     'type'        => 'note',
-                    'description' => 'Initial Inquiry Details: ' . implode(' | ', $inquiryDetails),
+                    'description' => 'Initial Inquiry Requirements: ' . implode(' | ', $inquiryDetails),
                 ]);
             }
         }
