@@ -279,10 +279,25 @@ function SettingsContent() {
   const handleSaveDistSettings = async () => {
     setSavingDist(true);
     try {
-      await fetchApi('/distribution/settings', {
+      const payload = {
+        is_enabled: distSettings.is_enabled !== undefined ? distSettings.is_enabled : true,
+        distribution_mode: distSettings.distribution_mode || 'round_robin',
+        apply_to_lead_pool: Boolean(distSettings.apply_to_lead_pool),
+        apply_to_lead_import: distSettings.apply_to_lead_import !== undefined ? Boolean(distSettings.apply_to_lead_import) : true,
+        apply_to_owner_data: Boolean(distSettings.apply_to_owner_data),
+        fallback_user_name: distSettings.fallback_user_name || 'Faraz Shafi',
+        max_daily_leads_per_agent: Number(distSettings.max_daily_leads_per_agent) || 20,
+      };
+
+      const res = await fetchApi('/distribution/settings', {
         method: 'PUT',
-        body: JSON.stringify(distSettings),
+        body: JSON.stringify(payload),
       });
+
+      if (res && res.settings) {
+        setDistSettings(res.settings);
+      }
+
       Swal.fire({
         icon: 'success',
         title: 'Rules Saved!',
@@ -290,7 +305,6 @@ function SettingsContent() {
         timer: 1600,
         showConfirmButton: false,
       });
-      loadData();
     } catch (e: any) {
       Swal.fire('Error', e.message || 'Failed to save rules', 'error');
     } finally {
@@ -2060,12 +2074,12 @@ function SettingsContent() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {/* Scope 1: Inbound Webhooks & Portals */}
                         <label className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${
-                          distSettings.apply_to_lead_pool ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
+                          Boolean(distSettings.apply_to_lead_pool) ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
                         }`}>
                           <input
                             type="checkbox"
                             checked={Boolean(distSettings.apply_to_lead_pool)}
-                            onChange={(e) => setDistSettings({ ...distSettings, apply_to_lead_pool: e.target.checked })}
+                            onChange={(e) => setDistSettings((prev: any) => ({ ...prev, apply_to_lead_pool: e.target.checked }))}
                             className="mt-0.5 rounded text-[#C9A84C] focus:ring-[#C9A84C] cursor-pointer"
                           />
                           <div>
@@ -2080,12 +2094,12 @@ function SettingsContent() {
 
                         {/* Scope 2: Lead Pool File Imports */}
                         <label className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${
-                          distSettings.apply_to_lead_import !== false ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
+                          distSettings.apply_to_lead_import !== undefined ? Boolean(distSettings.apply_to_lead_import) : true ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
                         }`}>
                           <input
                             type="checkbox"
-                            checked={distSettings.apply_to_lead_import !== false}
-                            onChange={(e) => setDistSettings({ ...distSettings, apply_to_lead_import: e.target.checked })}
+                            checked={distSettings.apply_to_lead_import !== undefined ? Boolean(distSettings.apply_to_lead_import) : true}
+                            onChange={(e) => setDistSettings((prev: any) => ({ ...prev, apply_to_lead_import: e.target.checked }))}
                             className="mt-0.5 rounded text-[#C9A84C] focus:ring-[#C9A84C] cursor-pointer"
                           />
                           <div>
@@ -2100,12 +2114,12 @@ function SettingsContent() {
 
                         {/* Scope 3: Owner Data & Resale Inquiries */}
                         <label className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${
-                          distSettings.apply_to_owner_data ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
+                          Boolean(distSettings.apply_to_owner_data) ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
                         }`}>
                           <input
                             type="checkbox"
                             checked={Boolean(distSettings.apply_to_owner_data)}
-                            onChange={(e) => setDistSettings({ ...distSettings, apply_to_owner_data: e.target.checked })}
+                            onChange={(e) => setDistSettings((prev: any) => ({ ...prev, apply_to_owner_data: e.target.checked }))}
                             className="mt-0.5 rounded text-[#C9A84C] focus:ring-[#C9A84C] cursor-pointer"
                           />
                           <div>
@@ -2127,8 +2141,11 @@ function SettingsContent() {
                         <input
                           type="number"
                           min={1}
-                          value={distSettings.max_daily_leads_per_agent || 20}
-                          onChange={(e) => setDistSettings({ ...distSettings, max_daily_leads_per_agent: Number(e.target.value) })}
+                          value={distSettings.max_daily_leads_per_agent ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? '' : Number(e.target.value);
+                            setDistSettings((prev: any) => ({ ...prev, max_daily_leads_per_agent: val }));
+                          }}
                           className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-bold text-[#081428] focus:ring-2 focus:ring-[#C9A84C] focus:outline-none"
                         />
                         <p className="text-[11px] text-slate-400 mt-1">Directly controls the daily lead limit for all active advisors in rotation.</p>
@@ -2138,7 +2155,7 @@ function SettingsContent() {
                         <input
                           type="text"
                           value={distSettings.fallback_user_name || 'Faraz Shafi'}
-                          onChange={(e) => setDistSettings({ ...distSettings, fallback_user_name: e.target.value })}
+                          onChange={(e) => setDistSettings((prev: any) => ({ ...prev, fallback_user_name: e.target.value }))}
                           className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-bold text-[#081428] focus:ring-2 focus:ring-[#C9A84C] focus:outline-none"
                         />
                       </div>

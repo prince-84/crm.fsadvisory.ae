@@ -11,6 +11,8 @@ use App\Models\Opportunity;
 use App\Models\OwnerRecord;
 use App\Services\LeadDistributionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
 
 class LeadDistributionController extends Controller
 {
@@ -83,6 +85,18 @@ class LeadDistributionController extends Controller
         ]);
 
         $settings = LeadDistributionService::getSettings();
+
+        // Auto-heal table if apply_to_lead_import column is missing on production DB
+        if (!Schema::hasColumn('lead_distribution_settings', 'apply_to_lead_import')) {
+            try {
+                Schema::table('lead_distribution_settings', function (Blueprint $table) {
+                    $table->boolean('apply_to_lead_import')->default(true)->after('apply_to_lead_pool');
+                });
+            } catch (\Throwable $e) {
+                unset($validated['apply_to_lead_import']);
+            }
+        }
+
         $settings->update($validated);
 
         return response()->json([
