@@ -367,15 +367,26 @@ function MyQueueContent() {
   const [selectedOwner, setSelectedOwner] = useState<string>('auto');
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('crm_user');
-      if (raw) {
-        setCurrentUser(JSON.parse(raw));
+    const syncUser = () => {
+      try {
+        const raw = localStorage.getItem('crm_user');
+        if (raw) {
+          setCurrentUser(JSON.parse(raw));
+        }
+      } catch (e) {
+        console.error(e);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    };
+    syncUser();
+    window.addEventListener('crm_user_updated', syncUser);
+    window.addEventListener('storage', syncUser);
+    return () => {
+      window.removeEventListener('crm_user_updated', syncUser);
+      window.removeEventListener('storage', syncUser);
+    };
+  }, []);
 
+  useEffect(() => {
     // Load saved column preferences & order from localStorage
     if (typeof window !== 'undefined') {
       const savedReg = localStorage.getItem('queue_regular_column_visibility');

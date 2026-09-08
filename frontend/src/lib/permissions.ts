@@ -60,21 +60,15 @@ export function isSuperUser(user: UserPermissionProfile | null | undefined): boo
 }
 
 /**
- * Retrieve current user from localStorage with auto-healing fallback to DEFAULT_CRM_USER.
+ * Retrieve current user from localStorage.
  */
 export function getCurrentUser(): UserPermissionProfile | null {
-  if (typeof window === 'undefined') return DEFAULT_CRM_USER;
+  if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem('crm_user');
-    if (!raw) {
-      localStorage.setItem('crm_user', JSON.stringify(DEFAULT_CRM_USER));
-      return DEFAULT_CRM_USER;
-    }
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed || !parsed.name) {
-      localStorage.setItem('crm_user', JSON.stringify(DEFAULT_CRM_USER));
-      return DEFAULT_CRM_USER;
-    }
+    if (!parsed || !parsed.name) return null;
 
     // Auto-heal permissions if user is CEO / Super Admin but cached without wildcard
     if (isSuperUser(parsed)) {
@@ -86,7 +80,7 @@ export function getCurrentUser(): UserPermissionProfile | null {
 
     return parsed;
   } catch {
-    return DEFAULT_CRM_USER;
+    return null;
   }
 }
 

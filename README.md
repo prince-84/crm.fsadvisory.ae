@@ -856,7 +856,20 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Automated Verification**:
     - Tested auto-healing with `test_heal_53.php`: Verified Contact ID 53 (`Hamdan Al-Falasi123`) was automatically healed from `duplicate` to `available`.
     - Tested bulk endpoints with `test_bulk_delete.php`: Verified 2 trashed contacts were permanently purged (`Contact::withTrashed()->count() === 0`).
-    - Tested Next.js production build (`npm run build`): Completed with exit code 0 across all 21 routes.
+- **88 — Resolved Session Flashing & User Identity Bleed between Faraz Shafi & Babar Ali Khan (`AuthController.php`, `Navbar.tsx`, `permissions.ts`, `page.tsx`, `new-leads/page.tsx`, `queue/page.tsx`)**:
+  - **Root Cause Analysis**:
+    1. **Navbar Initial State Bleed (`Navbar.tsx`)**: `useState` in `Navbar.tsx` had hardcoded initial state (`name: 'Faraz Shafi'`, `email: 'faraz@fsadvisory.ae'`, `role: 'CEO · FS Advisory'`, `initials: 'FS'`). When accessing `crm.fsadvisory.ae` on live or refreshing the page, SSR and the initial HTML paint rendered Faraz Shafi before `useEffect` ran and read `localStorage.getItem('crm_user')`.
+    2. **Backend Auth Resolution Fallback (`AuthController.php`)**: When `refreshCurrentUser()` triggered `/api/auth/me`, `AuthController::me` previously looked for `X-User-Id` or query `email` and, if omitted, immediately defaulted to `User::first()` (Faraz Shafi) instead of reading the authenticated Bearer token user via `$request->user() ?? Auth::user()`. This caused `/auth/me` to overwrite Babar Ali Khan's session back to Faraz Shafi in `localStorage`.
+    3. **Forced Default User Fallback (`permissions.ts`)**: `getCurrentUser()` returned `DEFAULT_CRM_USER` (Faraz Shafi) and wrote it into `localStorage` whenever `typeof window === 'undefined'` or `crm_user` was empty.
+  - **Implemented Technical Solution**:
+    - **Dynamic Session Hydration in Navbar (`Navbar.tsx`)**: Removed hardcoded Faraz Shafi initial state. Added `mounted` check and sleek skeleton shimmer placeholder (`bg-slate-200 animate-pulse`) during the brief initial load. Once mounted, it immediately reads `localStorage.getItem('crm_user')`, eliminating any visual flash of Faraz Shafi.
+    - **Event-Driven User Synchronization**: Subscribed `Navbar`, `page.tsx` (Lead Pool), `new-leads/page.tsx`, and `queue/page.tsx` to `crm_user_updated` and `storage` events, ensuring instant reactive updates whenever the authenticated user logs in or switches profile.
+    - **Prioritized Token Authentication in `/auth/me` (`AuthController.php`)**: Updated `AuthController::me` to prioritize `$request->user() ?? Auth::user()`. Validated with unit test script `scratch/test_me.php` that Bearer token requests for Babar Ali Khan return Babar Ali Khan's profile and permissions without fallback to Faraz Shafi.
+    - **Clean Permission Guard (`permissions.ts`)**: Updated `getCurrentUser()` to return `null` on server or unauthenticated state instead of forcibly injecting Faraz Shafi into `localStorage`.
+  - **Automated Verification**:
+    - Ran backend test `scratch/test_me.php` confirming `/api/auth/me` with Babar's token returns:
+      `{"success":true,"user":{"id":16,"name":"Babar Ali Khan","email":"babar@coreunitysolutions.com","role":"Operations Coordinator","initials":"BA",...}}`
+    - Executed Next.js production build (`npm run build`) with zero errors across all 21 routes.
 
 ---
 

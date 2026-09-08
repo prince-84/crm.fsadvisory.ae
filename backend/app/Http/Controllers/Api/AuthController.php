@@ -178,10 +178,14 @@ class AuthController extends Controller
      */
     public function me(Request $request)
     {
+        $user = $request->user() ?? \Illuminate\Support\Facades\Auth::user();
+
         $userId = $request->header('X-User-Id') ?? $request->query('user_id');
-        $user = null;
         if ($userId) {
-            $user = User::find($userId);
+            $explicitUser = User::find($userId);
+            if ($explicitUser) {
+                $user = $explicitUser;
+            }
         }
         if (!$user && $request->filled('email')) {
             $user = User::where('email', $request->query('email'))->first();

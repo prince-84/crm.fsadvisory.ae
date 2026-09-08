@@ -28,32 +28,41 @@ export default function Navbar({ onSearch }: NavbarProps) {
   const router = useRouter();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // User state - defaults to Faraz Shafi, synced with localStorage if present
-  const [currentUser, setCurrentUser] = useState({
-    name: 'Faraz Shafi',
-    email: 'faraz@fsadvisory.ae',
-    role: 'CEO · FS Advisory',
-    initials: 'FS',
-  });
+  const [mounted, setMounted] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{
+    name: string;
+    email: string;
+    role: string;
+    initials: string;
+  } | null>(null);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('crm_user');
-      if (stored) {
-        const u = JSON.parse(stored);
-        setCurrentUser({
-          name: u.name || 'Faraz Shafi',
-          email: u.email || 'faraz@fsadvisory.ae',
-          role: u.role ? `${u.role} · FS Advisory` : 'CEO · FS Advisory',
-          initials: u.initials || u.name?.substring(0, 2).toUpperCase() || 'FS',
-        });
-      } else {
-        localStorage.setItem('crm_user', JSON.stringify(DEFAULT_CRM_USER));
+    setMounted(true);
+    const syncUser = () => {
+      try {
+        const stored = localStorage.getItem('crm_user');
+        if (stored) {
+          const u = JSON.parse(stored);
+          const computedInitials = u.initials || (u.name ? u.name.split(' ').filter(Boolean).map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() : 'FA');
+          setCurrentUser({
+            name: u.name || 'Advisor',
+            email: u.email || '',
+            role: u.role ? (u.role.includes('·') ? u.role : `${u.role} · FS Advisory`) : 'FS Advisory',
+            initials: computedInitials,
+          });
+        }
+      } catch (e) {
+        console.error(e);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    };
+
+    syncUser();
+    window.addEventListener('crm_user_updated', syncUser);
+    window.addEventListener('storage', syncUser);
+    return () => {
+      window.removeEventListener('crm_user_updated', syncUser);
+      window.removeEventListener('storage', syncUser);
+    };
   }, []);
 
   // Close dropdown on click outside
@@ -124,31 +133,43 @@ export default function Navbar({ onSearch }: NavbarProps) {
 
         {/* 3. User Profile Widget with Dropdown on the Right Side End */}
         <div className="relative" ref={dropdownRef}>
-          <button
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center gap-3 p-1.5 pr-2.5 rounded-lg hover:bg-[#FAF8F5] border border-transparent hover:border-[#E8E2D9] transition-all cursor-pointer select-none"
-          >
-            {/* Avatar Initials Circle with Gold Styling */}
-            <div className="w-8 h-8 rounded-full bg-[#081428] text-[#C9A84C] font-bold text-xs flex items-center justify-center border border-[#C9A84C]/40 shadow-2xs shrink-0">
-              {currentUser.initials}
-            </div>
-
-            {/* Name & Role */}
-            <div className="text-left hidden sm:block">
-              <div className="text-xs font-bold text-[#081428] leading-tight flex items-center gap-1">
-                <span>{currentUser.name}</span>
-              </div>
-              <div className="text-[10px] text-[#7A7A7A] leading-tight">
-                {currentUser.role}
+          {!mounted || !currentUser ? (
+            <div className="flex items-center gap-3 p-1.5 pr-2.5 rounded-lg border border-transparent select-none">
+              {/* Skeleton Avatar */}
+              <div className="w-8 h-8 rounded-full bg-slate-200 animate-pulse shrink-0" />
+              {/* Skeleton Text */}
+              <div className="hidden sm:flex flex-col gap-1.5">
+                <div className="w-20 h-2.5 bg-slate-200 rounded animate-pulse" />
+                <div className="w-14 h-2 bg-slate-100 rounded animate-pulse" />
               </div>
             </div>
+          ) : (
+            <button
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className="flex items-center gap-3 p-1.5 pr-2.5 rounded-lg hover:bg-[#FAF8F5] border border-transparent hover:border-[#E8E2D9] transition-all cursor-pointer select-none"
+            >
+              {/* Avatar Initials Circle with Gold Styling */}
+              <div className="w-8 h-8 rounded-full bg-[#081428] text-[#C9A84C] font-bold text-xs flex items-center justify-center border border-[#C9A84C]/40 shadow-2xs shrink-0">
+                {currentUser.initials}
+              </div>
 
-            {/* Chevron Arrow */}
-            <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180 text-[#C9A84C]' : ''}`} />
-          </button>
+              {/* Name & Role */}
+              <div className="text-left hidden sm:block">
+                <div className="text-xs font-bold text-[#081428] leading-tight flex items-center gap-1">
+                  <span>{currentUser.name}</span>
+                </div>
+                <div className="text-[10px] text-[#7A7A7A] leading-tight">
+                  {currentUser.role}
+                </div>
+              </div>
+
+              {/* Chevron Arrow */}
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180 text-[#C9A84C]' : ''}`} />
+            </button>
+          )}
 
           {/* Dropdown Menu */}
-          {isDropdownOpen && (
+          {isDropdownOpen && currentUser && (
             <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-[#E8E2D9] py-2 z-50 animate-fade-in text-xs">
               {/* Dropdown Header: User Info Card */}
               <div className="px-4 py-3 border-b border-[#E8E2D9] bg-[#FAF8F5]/80 flex items-center gap-3">
@@ -164,7 +185,7 @@ export default function Navbar({ onSearch }: NavbarProps) {
                   </div>
                   <div className="mt-1">
                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-[#081428] text-[#C9A84C]">
-                      {currentUser.role.split('·')[0].trim()}
+                      {(currentUser.role || '').split('·')[0].trim()}
                     </span>
                   </div>
                 </div>

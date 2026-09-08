@@ -37,10 +37,19 @@ export default function LeadPoolPage() {
 
   useEffect(() => {
     setMounted(true);
-    try {
-      const raw = localStorage.getItem('crm_user');
-      if (raw) setCurrentUser(JSON.parse(raw));
-    } catch {}
+    const syncUser = () => {
+      try {
+        const raw = localStorage.getItem('crm_user');
+        if (raw) setCurrentUser(JSON.parse(raw));
+      } catch {}
+    };
+    syncUser();
+    window.addEventListener('crm_user_updated', syncUser);
+    window.addEventListener('storage', syncUser);
+    return () => {
+      window.removeEventListener('crm_user_updated', syncUser);
+      window.removeEventListener('storage', syncUser);
+    };
   }, []);
 
   useEffect(() => {
