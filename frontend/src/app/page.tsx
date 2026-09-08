@@ -344,8 +344,14 @@ export default function LeadPoolPage() {
                 {ct.initials || ct.name?.substring(0, 2).toUpperCase() || 'CT'}
               </div>
               <div>
-                <div className="font-bold text-[#081428] group-hover:text-[#C8A147] group-hover:underline transition-colors text-xs">
+                <div className="font-bold text-[#081428] group-hover:text-[#C8A147] group-hover:underline transition-colors text-xs flex items-center gap-1.5 flex-wrap">
                   <span>{ct.name}</span>
+                  {ct.state === 'duplicate' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-300">
+                      <Copy className="w-2.5 h-2.5 text-purple-600 shrink-0" />
+                      <span>Duplicate</span>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -458,8 +464,9 @@ export default function LeadPoolPage() {
                   </span>
                 )}
                 {ct.state === 'duplicate' && (
-                  <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px] uppercase font-bold">
-                    Duplicate
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px] uppercase font-bold border border-purple-300">
+                    <Copy className="w-3 h-3 text-purple-600 shrink-0" />
+                    <span>Duplicate</span>
                   </span>
                 )}
               </>
@@ -1323,6 +1330,7 @@ export default function LeadPoolPage() {
                         key={ct.id} 
                         className={`transition-colors ${
                           isSelected ? 'bg-amber-50/60' :
+                          ct.state === 'duplicate' ? 'bg-purple-50/30 hover:bg-purple-50/50' :
                           activeTab === 'deleted' ? 'bg-red-50/20 hover:bg-red-50/40' : 'hover:bg-slate-50/50'
                         }`}
                       >

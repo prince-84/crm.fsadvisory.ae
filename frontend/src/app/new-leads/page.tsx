@@ -11,7 +11,7 @@ import Swal from 'sweetalert2';
 import { 
   Search, Plus, Users, CheckCircle2, RotateCcw, Copy, 
   ChevronLeft, ChevronRight, RefreshCw, Trash2, Undo2, UserX,
-  ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, UserCheck, X,
+  ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, GripVertical, UserCheck, X,
   Eye, Edit3, MessageSquare, Check, Zap, Filter, Flame, Globe, Radio
 } from 'lucide-react';
 import Link from 'next/link';
@@ -40,7 +40,6 @@ export default function NewLeadsPage() {
   const [canViewLeads, setCanViewLeads] = useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [selectedOwner, setSelectedOwner] = useState<string>('all');
-  const [channelFilter, setChannelFilter] = useState<string>('all');
   const [mounted, setMounted] = useState<boolean>(false);
 
   // Drawer & Modals
@@ -74,41 +73,197 @@ export default function NewLeadsPage() {
     return Object.values(advancedFilters).filter((v) => v && v.trim() !== '' && v !== 'all').length;
   }, [advancedFilters]);
 
-  // Default Column Visibility
+  // Categorized Table Columns Definition (Matching Lead Pool Architecture)
+  const ALL_COLUMNS = [
+    { key: 'name', label: 'Client Profile', category: 'Core' },
+    { key: 'source', label: 'Source Channel', category: 'Core' },
+    { key: 'state', label: 'Lifecycle State', category: 'Core' },
+    { key: 'opportunity', label: 'Opportunity Workspace', category: 'Core' },
+    { key: 'phone', label: 'Primary Phone', category: 'Client Details' },
+    { key: 'secondary_phone', label: 'Secondary Phone', category: 'Client Details' },
+    { key: 'email', label: 'Email Address', category: 'Client Details' },
+    { key: 'nationality', label: 'Nationality', category: 'Client Details' },
+    { key: 'created_at', label: 'Created Date', category: 'Client Details' },
+    { key: 'sub_source', label: 'Sub-Source Campaign', category: 'Source Details' },
+    { key: 'utm_campaign', label: 'UTM Campaign / URL', category: 'Source Details' },
+    { key: 'opportunity_type', label: 'Opportunity Type', category: 'Opportunity Specs' },
+    { key: 'developer', label: 'Developer', category: 'Opportunity Specs' },
+    { key: 'community', label: 'Community', category: 'Opportunity Specs' },
+    { key: 'project', label: 'Project', category: 'Opportunity Specs' },
+    { key: 'project_property', label: 'Unit / Property Type', category: 'Opportunity Specs' },
+    { key: 'bedrooms', label: 'Bedrooms', category: 'Opportunity Specs' },
+    { key: 'budget_min', label: 'Min Budget', category: 'Opportunity Specs' },
+    { key: 'budget_max', label: 'Max Budget', category: 'Opportunity Specs' },
+    { key: 'cash_or_finance', label: 'Payment Method', category: 'Opportunity Specs' },
+    { key: 'key_requirement', label: 'Key Requirement', category: 'Opportunity Specs' },
+    { key: 'assigned_owner', label: 'Assigned Advisor', category: 'SLA & Owner' },
+    { key: 'next_action', label: 'Next Action', category: 'SLA & Owner' },
+    { key: 'next_action_due_at', label: 'Next Action Due', category: 'SLA & Owner' },
+    { key: 'actions', label: 'Actions', category: 'Core' },
+  ];
+
   const DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = {
     name: true,
+    source: true,
+    state: true,
+    opportunity: true,
+    assigned_owner: true,
+    actions: true,
     phone: true,
     secondary_phone: false,
     email: true,
     nationality: true,
-    source: true,
-    utm_campaign: true,
-    state: true,
-    assigned_owner: true,
     created_at: true,
-    actions: true,
+    sub_source: false,
+    utm_campaign: true,
+    opportunity_type: false,
+    developer: false,
+    community: false,
+    project: false,
+    project_property: false,
+    bedrooms: false,
+    budget_min: false,
+    budget_max: false,
+    cash_or_finance: false,
+    key_requirement: false,
+    next_action: false,
+    next_action_due_at: false,
   };
 
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(DEFAULT_COLUMN_VISIBILITY);
-  const [isColumnDropdownOpen, setIsColumnDropdownOpen] = useState(false);
-
-  const AVAILABLE_COLUMNS = [
-    { key: 'name', label: 'Client Name', mandatory: true },
-    { key: 'phone', label: 'Primary Phone', mandatory: true },
-    { key: 'secondary_phone', label: 'Secondary Phone', mandatory: false },
-    { key: 'email', label: 'Email Address', mandatory: true },
-    { key: 'nationality', label: 'Nationality', mandatory: false },
-    { key: 'source', label: 'Inbound Channel / Portal', mandatory: false },
-    { key: 'utm_campaign', label: 'UTM Campaign / URL', mandatory: false },
-    { key: 'state', label: 'Lifecycle Status', mandatory: false },
-    { key: 'assigned_owner', label: 'Assigned Advisor', mandatory: false },
-    { key: 'created_at', label: 'Created Date & Time', mandatory: false },
-    { key: 'actions', label: 'Actions', mandatory: true },
+  const DEFAULT_COLUMN_ORDER = [
+    'name',
+    'phone',
+    'source',
+    'created_at',
+    'state',
+    'opportunity',
+    'assigned_owner',
+    'secondary_phone',
+    'email',
+    'nationality',
+    'sub_source',
+    'utm_campaign',
+    'opportunity_type',
+    'developer',
+    'community',
+    'project',
+    'project_property',
+    'bedrooms',
+    'budget_min',
+    'budget_max',
+    'cash_or_finance',
+    'key_requirement',
+    'next_action',
+    'next_action_due_at',
+    'actions',
   ];
 
-  const toggleColumn = (colKey: string) => {
-    if (colKey === 'name' || colKey === 'phone' || colKey === 'email' || colKey === 'actions') return;
-    setColumnVisibility((prev) => ({ ...prev, [colKey]: !prev[colKey] }));
+  // Dynamic Column Visibility State (Persisted in localStorage)
+  const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(DEFAULT_COLUMN_VISIBILITY);
+
+  const updateColumnVisibility = (newVisibility: Record<string, boolean>) => {
+    setColumnVisibility(newVisibility);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('new_leads_column_visibility', JSON.stringify(newVisibility));
+    }
+  };
+
+  // Drag & Drop Column Order State (Persisted in localStorage)
+  const [columnOrder, setColumnOrder] = useState<string[]>(DEFAULT_COLUMN_ORDER);
+
+  const updateColumnOrder = (newOrder: string[]) => {
+    setColumnOrder(newOrder);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('new_leads_column_order', JSON.stringify(newOrder));
+    }
+  };
+
+  // Load saved column preferences from localStorage after client hydration
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const validKeys = ALL_COLUMNS.map((c) => c.key);
+      const savedVis = localStorage.getItem('new_leads_column_visibility');
+      if (savedVis) {
+        try {
+          const parsedVis = JSON.parse(savedVis);
+          const cleanVis: Record<string, boolean> = { ...DEFAULT_COLUMN_VISIBILITY };
+          validKeys.forEach((k) => {
+            if (k in parsedVis) {
+              cleanVis[k] = !!parsedVis[k];
+            }
+          });
+          cleanVis.created_at = true; // By default Created Date must be visible
+          cleanVis.actions = true;
+          cleanVis.name = true;
+          setColumnVisibility(cleanVis);
+        } catch (e) {
+          console.error('Error parsing column visibility:', e);
+        }
+      }
+      const savedOrder = localStorage.getItem('new_leads_column_order');
+      if (savedOrder) {
+        try {
+          const parsed = JSON.parse(savedOrder);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            let sanitized = parsed.filter((k: string) => validKeys.includes(k) && k !== 'actions');
+            if (!sanitized.includes('created_at')) {
+              const srcIdx = sanitized.indexOf('source');
+              if (srcIdx !== -1) {
+                sanitized.splice(srcIdx + 1, 0, 'created_at');
+              } else {
+                sanitized.splice(3, 0, 'created_at');
+              }
+            }
+            const missing = DEFAULT_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
+            const finalOrder = [...sanitized, ...missing, 'actions'];
+            setColumnOrder(finalOrder);
+            localStorage.setItem('new_leads_column_order', JSON.stringify(finalOrder));
+          }
+        } catch (e) {
+          console.error('Error parsing column order:', e);
+        }
+      }
+    }
+  }, []);
+
+  // Drag and Drop States for Header Reordering
+  const [draggedColKey, setDraggedColKey] = useState<string | null>(null);
+  const [dragOverColKey, setDragOverColKey] = useState<string | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, colKey: string) => {
+    setDraggedColKey(colKey);
+    e.dataTransfer.setData('text/plain', colKey);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetColKey: string) => {
+    e.preventDefault();
+    if (draggedColKey && draggedColKey !== targetColKey) {
+      setDragOverColKey(targetColKey);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverColKey(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetColKey: string) => {
+    e.preventDefault();
+    setDragOverColKey(null);
+    if (!draggedColKey || draggedColKey === targetColKey) return;
+
+    const newOrder = [...columnOrder];
+    const draggedIndex = newOrder.indexOf(draggedColKey);
+    const targetIndex = newOrder.indexOf(targetColKey);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      newOrder.splice(draggedIndex, 1);
+      newOrder.splice(targetIndex, 0, draggedColKey);
+      updateColumnOrder(newOrder);
+    }
+    setDraggedColKey(null);
   };
 
   // Pagination
@@ -170,8 +325,7 @@ export default function NewLeadsPage() {
     sOrder = sortOrder,
     ownerOverride?: string,
     advFiltersOverride?: AdvancedFiltersState,
-    dateRangeOverride?: DateRangeValue,
-    chanOverride?: string
+    dateRangeOverride?: DateRangeValue
   ) => {
     setLoading(true);
     try {
@@ -180,12 +334,6 @@ export default function NewLeadsPage() {
       
       if (searchQuery) {
         endpoint += `&search=${encodeURIComponent(searchQuery)}`;
-      }
-
-      // Channel / Portal Filter
-      const activeChan = chanOverride !== undefined ? chanOverride : channelFilter;
-      if (activeChan && activeChan !== 'all') {
-        endpoint += `&source=${encodeURIComponent(activeChan)}`;
       }
 
       // Date Range Calendar Filter
@@ -205,9 +353,7 @@ export default function NewLeadsPage() {
       if (activeFilters.availability && activeFilters.availability !== 'all') {
         endpoint += `&availability=${encodeURIComponent(activeFilters.availability)}`;
       }
-      if (activeFilters.source && (!activeChan || activeChan === 'all')) {
-        endpoint += `&source=${encodeURIComponent(activeFilters.source)}`;
-      }
+      if (activeFilters.source) endpoint += `&source=${encodeURIComponent(activeFilters.source)}`;
       if (activeFilters.subSource) endpoint += `&sub_source=${encodeURIComponent(activeFilters.subSource)}`;
       if (activeFilters.opportunityType) endpoint += `&opportunity_type=${encodeURIComponent(activeFilters.opportunityType)}`;
       if (activeFilters.temperature) endpoint += `&temperature=${encodeURIComponent(activeFilters.temperature)}`;
@@ -221,7 +367,17 @@ export default function NewLeadsPage() {
       if (activeFilters.budgetMin) endpoint += `&budget_min=${encodeURIComponent(activeFilters.budgetMin)}`;
       if (activeFilters.budgetMax) endpoint += `&budget_max=${encodeURIComponent(activeFilters.budgetMax)}`;
 
-      const targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
+      let raw = localStorage.getItem('crm_user');
+      let user = currentUser;
+      if (!user && raw) {
+        try { user = JSON.parse(raw); } catch {}
+      }
+
+      let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
+      if (targetOwner === 'auto') {
+        targetOwner = user?.role === 'Super Admin' ? 'all' : (user?.name || 'all');
+      }
+
       if (targetOwner && targetOwner !== 'all') {
         endpoint += `&assigned_owner=${encodeURIComponent(targetOwner)}`;
       }
@@ -254,7 +410,12 @@ export default function NewLeadsPage() {
         inbound_campaigns: 0,
       });
 
-      setTabCounts(res.tab_counts || { all: 0, unassigned: 0, new: 0, assigned: 0, duplicate: 0, deleted: 0 });
+      const freshTabCounts = res.tab_counts || { all: 0, unassigned: 0, new: 0, assigned: 0, duplicate: 0, deleted: 0 };
+      setTabCounts(freshTabCounts);
+      if (typeof window !== 'undefined') {
+        const count = freshTabCounts.new ?? freshTabCounts.unassigned ?? 0;
+        window.dispatchEvent(new CustomEvent('crm_new_leads_count', { detail: count }));
+      }
       setLoading(false);
     } catch (err) {
       console.error('Failed to load inbound contacts:', err);
@@ -265,8 +426,8 @@ export default function NewLeadsPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-    loadData(1, perPage, sortBy, sortOrder, selectedOwner, advancedFilters, dateRange, channelFilter);
-  }, [activeTab, searchQuery, selectedOwner, channelFilter, advancedFilters, dateRange]);
+    loadData(1, perPage, sortBy, sortOrder, selectedOwner, advancedFilters, dateRange);
+  }, [activeTab, searchQuery, selectedOwner, advancedFilters, dateRange]);
 
   const handleSort = (columnKey: string) => {
     let newOrder: 'asc' | 'desc' = 'asc';
@@ -294,7 +455,6 @@ export default function NewLeadsPage() {
   const handleResetFilters = () => {
     setActiveTab('unassigned');
     setSelectedOwner('all');
-    setChannelFilter('all');
     setAdvancedFilters(INITIAL_ADVANCED_FILTERS);
     setDateRange({ from: '', to: '', preset: 'all' });
     setSearchQuery('');
@@ -438,46 +598,108 @@ export default function NewLeadsPage() {
     });
   };
 
-  // Render Table Cell Helper
-  const renderCell = (colKey: string, ct: any) => {
+  const renderHeaderCell = (colKey: string) => {
+    const colMeta = ALL_COLUMNS.find((c) => c.key === colKey);
+    if (!colMeta || !columnVisibility[colKey]) return null;
+
+    const label = colMeta.label || colKey;
+    const isSortable = colKey !== 'actions';
+    const isSorted = sortBy === colKey;
+
+    return (
+      <th
+        key={colKey}
+        draggable
+        onDragStart={(e) => handleDragStart(e, colKey)}
+        onDragOver={(e) => handleDragOver(e, colKey)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, colKey)}
+        onClick={() => {
+          if (isSortable) handleSort(colKey);
+        }}
+        className={`p-3 font-semibold uppercase tracking-wider text-[10px] select-none transition-all group ${
+          colKey === 'actions' ? 'text-right pr-4' : ''
+        } ${isSortable ? 'hover:bg-[#F3EEDD] cursor-pointer' : 'cursor-grab active:cursor-grabbing'} ${
+          dragOverColKey === colKey ? 'border-l-2 border-[#C8A147] bg-amber-50/60' : ''
+        } ${draggedColKey === colKey ? 'opacity-40' : ''}`}
+        title={isSortable ? 'Click to sort | Drag & drop to reorder column' : 'Drag & drop to reorder column'}
+      >
+        <div className={`flex items-center gap-1.5 ${colKey === 'actions' ? 'justify-end' : ''}`}>
+          {colKey !== 'actions' && (
+            <GripVertical className="w-3.5 h-3.5 text-slate-400 opacity-60 hover:opacity-100 shrink-0 cursor-grab" />
+          )}
+          <span>{label}</span>
+          {isSortable && (
+            isSorted ? (
+              sortOrder === 'asc' ? (
+                <ArrowUp className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+              ) : (
+                <ArrowDown className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+              )
+            ) : (
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+            )
+          )}
+        </div>
+      </th>
+    );
+  };
+
+  // Render Table Cell Helper (Matching Lead Pool Architecture)
+  const renderBodyCell = (ct: any, opp: any, bq: any, colKey: string) => {
+    const colMeta = ALL_COLUMNS.find((c) => c.key === colKey);
+    if (!colMeta || !columnVisibility[colKey]) return null;
+
     switch (colKey) {
       case 'name':
         return (
-          <td key={colKey} className="p-3 font-medium text-[#1A1A1A]">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-full bg-[#081428] text-[#C8A147] font-bold text-[11px] flex items-center justify-center shrink-0 shadow-xs border border-[#C8A147]/30">
+          <td key={colKey} className="p-3 pl-4">
+            <div 
+              className="flex items-center gap-2.5 cursor-pointer group w-fit"
+              onClick={() => handleOpenDrawer(ct)}
+            >
+              <div className="w-8 h-8 rounded-full font-bold text-xs flex items-center justify-center shrink-0 bg-[#081428] text-[#C8A147] group-hover:bg-[#C8A147] group-hover:text-white transition-colors">
                 {ct.initials || ct.name?.substring(0, 2).toUpperCase() || 'CT'}
               </div>
-              <button
-                onClick={() => handleOpenDrawer(ct)}
-                className="font-bold text-[#081428] hover:text-[#C8A147] transition-colors text-left flex items-center gap-1.5 cursor-pointer"
-              >
-                <span>{ct.name}</span>
-                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-mono font-normal bg-slate-100 text-slate-500 border border-slate-200">
-                  #{ct.id}
-                </span>
-              </button>
+              <div>
+                <div className="font-bold text-[#081428] group-hover:text-[#C8A147] group-hover:underline transition-colors text-xs flex items-center gap-1.5 flex-wrap">
+                  <span>{ct.name}</span>
+                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-mono font-normal bg-slate-100 text-slate-500 border border-slate-200">
+                    #{ct.id}
+                  </span>
+                  {ct.state === 'duplicate' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-300">
+                      <Copy className="w-2.5 h-2.5 text-purple-600 shrink-0" />
+                      <span>Duplicate</span>
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           </td>
         );
 
       case 'phone':
         return (
-          <td key={colKey} className="p-3 font-mono text-[#1A1A1A] font-semibold">
-            <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-              <span className="font-mono text-xs text-slate-800">{ct.phone}</span>
-              <button
-                onClick={(e) => copyToClipboard(ct.phone, `phone-${ct.id}`, e)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer p-0.5"
-                title="Copy Phone"
-              >
-                {copiedField === `phone-${ct.id}` ? (
-                  <Check className="w-3 h-3 text-emerald-600" />
-                ) : (
-                  <Copy className="w-3 h-3" />
-                )}
-              </button>
-            </div>
+          <td key={colKey} className="p-3 font-mono text-slate-700 font-medium">
+            {ct.phone ? (
+              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <span className="font-mono text-xs">{ct.phone}</span>
+                <button
+                  onClick={(e) => copyToClipboard(ct.phone, `phone-${ct.id}`, e)}
+                  className="text-slate-400 hover:text-slate-700 cursor-pointer p-0.5"
+                  title="Copy Phone"
+                >
+                  {copiedField === `phone-${ct.id}` ? (
+                    <Check className="w-3 h-3 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
+            ) : (
+              '—'
+            )}
           </td>
         );
 
@@ -511,7 +733,14 @@ export default function NewLeadsPage() {
       case 'nationality':
         return <td key={colKey} className="p-3 text-slate-700 font-medium text-xs">{ct.nationality || '—'}</td>;
 
-      case 'source':
+      case 'created_at':
+        return (
+          <td key={colKey} className="p-3 text-slate-600 font-medium text-xs font-mono">
+            {ct.created_at ? ct.created_at.replace('T', ' ').substring(0, 16) : '—'}
+          </td>
+        );
+
+      case 'source': {
         const src = ct.source || 'Direct Inbound';
         const isPortal = src.includes('Property Finder') || src.includes('Bayut') || src.includes('Dubizzle');
         const isCampaign = src.includes('Meta') || src.includes('Facebook') || src.includes('Google') || src.includes('Ads');
@@ -529,8 +758,12 @@ export default function NewLeadsPage() {
             </span>
           </td>
         );
+      }
 
-      case 'utm_campaign':
+      case 'sub_source':
+        return <td key={colKey} className="p-3 text-slate-600 text-xs">{ct.source?.match(/\((.*?)\)/)?.[1] || ct.utm_source || '—'}</td>;
+
+      case 'utm_campaign': {
         const campaign = ct.utm_campaign || ct.utm_source;
         return (
           <td key={colKey} className="p-3 text-xs max-w-[180px] truncate text-slate-600">
@@ -543,10 +776,11 @@ export default function NewLeadsPage() {
                 {ct.landing_page_url}
               </span>
             ) : (
-              <span className="text-slate-400">—</span>
+              '—'
             )}
           </td>
         );
+      }
 
       case 'state':
         return (
@@ -567,15 +801,78 @@ export default function NewLeadsPage() {
               </span>
             )}
             {ct.state === 'duplicate' && (
-              <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px] uppercase font-bold">
-                Duplicate
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px] uppercase font-bold border border-purple-300">
+                <Copy className="w-3 h-3 text-purple-600 shrink-0" />
+                <span>Duplicate</span>
               </span>
             )}
           </td>
         );
 
-      case 'assigned_owner':
-        const ownerName = ct.assigned_to || ct.opportunity?.current_owner_name || 'Unassigned';
+      case 'opportunity':
+        return (
+          <td key={colKey} className="p-3">
+            {opp ? (
+              <div className="space-y-0.5">
+                <Link 
+                  href={`/opportunities/${opp.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="font-bold text-[#081428] hover:text-[#C8A147] hover:underline text-xs flex items-center gap-1"
+                >
+                  <span>{opp.buyer_qualification?.community || opp.community || 'Dubai Project'}</span>
+                  <span className="text-[10px] font-normal text-[#6E6E6E]">({opp.bedrooms || '2BR'})</span>
+                </Link>
+                <div className="text-[10px] text-[#6E6E6E]">
+                  Owner: <span className="font-semibold text-[#081428]">{opp.current_owner_name || ct.assigned_to || 'Unassigned'}</span>
+                </div>
+              </div>
+            ) : ct.assigned_to ? (
+              <div className="space-y-0.5">
+                <span className="text-xs text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                  Assigned (No Deal Yet)
+                </span>
+                <div className="text-[10px] text-[#6E6E6E]">
+                  Advisor: <span className="font-semibold text-[#081428]">{ct.assigned_to}</span>
+                </div>
+              </div>
+            ) : (
+              <span className="text-xs text-[#6E6E6E] font-medium">Unassigned Lead</span>
+            )}
+          </td>
+        );
+
+      case 'opportunity_type':
+        return <td key={colKey} className="p-3 font-semibold uppercase text-[11px] text-slate-700">{opp?.opportunity_type || '—'}</td>;
+
+      case 'developer':
+        return <td key={colKey} className="p-3 text-slate-700 font-medium text-xs">{opp?.developer || bq?.developer || '—'}</td>;
+
+      case 'community':
+        return <td key={colKey} className="p-3 text-slate-700 text-xs">{opp?.community || bq?.community || '—'}</td>;
+
+      case 'project':
+        return <td key={colKey} className="p-3 text-slate-700 font-semibold text-xs">{opp?.project || bq?.project || '—'}</td>;
+
+      case 'project_property':
+        return <td key={colKey} className="p-3 text-slate-700 text-xs">{opp?.project_property || bq?.project_property || '—'}</td>;
+
+      case 'bedrooms':
+        return <td key={colKey} className="p-3 text-slate-700 text-xs">{opp?.bedrooms || bq?.bedrooms || '—'}</td>;
+
+      case 'budget_min':
+        return <td key={colKey} className="p-3 font-mono text-emerald-700 font-semibold text-xs">{opp?.budget_min ? `AED ${Number(opp.budget_min).toLocaleString()}` : '—'}</td>;
+
+      case 'budget_max':
+        return <td key={colKey} className="p-3 font-mono text-emerald-700 font-semibold text-xs">{opp?.budget_max ? `AED ${Number(opp.budget_max).toLocaleString()}` : '—'}</td>;
+
+      case 'cash_or_finance':
+        return <td key={colKey} className="p-3 text-slate-700 font-medium text-xs">{opp?.cash_or_finance || bq?.cash_or_finance || '—'}</td>;
+
+      case 'key_requirement':
+        return <td key={colKey} className="p-3 text-slate-600 max-w-[200px] truncate text-xs">{opp?.key_requirement || '—'}</td>;
+
+      case 'assigned_owner': {
+        const ownerName = ct.assigned_to || opp?.current_owner_name || 'Unassigned';
         const isUnassigned = !ownerName || ownerName === 'Unassigned';
         return (
           <td key={colKey} className="p-3">
@@ -589,13 +886,13 @@ export default function NewLeadsPage() {
             </span>
           </td>
         );
+      }
 
-      case 'created_at':
-        return (
-          <td key={colKey} className="p-3 text-slate-600 font-medium text-xs font-mono">
-            {ct.created_at ? ct.created_at.replace('T', ' ').substring(0, 16) : '—'}
-          </td>
-        );
+      case 'next_action':
+        return <td key={colKey} className="p-3 text-slate-600 max-w-[180px] truncate text-xs">{opp?.next_action || '—'}</td>;
+
+      case 'next_action_due_at':
+        return <td key={colKey} className="p-3 text-slate-600 text-xs">{opp?.next_action_due_at ? opp.next_action_due_at.substring(0, 16).replace('T', ' ') : '—'}</td>;
 
       case 'actions':
         return (
@@ -647,31 +944,6 @@ export default function NewLeadsPage() {
       default:
         return <td key={colKey} className="p-3 text-slate-400 text-xs">—</td>;
     }
-  };
-
-  // Render Sort Header Helper
-  const renderSortableHeader = (columnKey: string, label: string) => {
-    const isSorted = sortBy === columnKey;
-    return (
-      <th 
-        key={columnKey}
-        onClick={() => handleSort(columnKey)}
-        className="p-3 cursor-pointer hover:bg-[#F3EEDD] transition-colors select-none group"
-      >
-        <div className="flex items-center gap-1.5 font-semibold text-xs text-[#081428]">
-          <span>{label}</span>
-          {isSorted ? (
-            sortOrder === 'asc' ? (
-              <ArrowUp className="w-3.5 h-3.5 text-[#C8A147]" />
-            ) : (
-              <ArrowDown className="w-3.5 h-3.5 text-[#C8A147]" />
-            )
-          ) : (
-            <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-40 group-hover:opacity-100 transition-opacity" />
-          )}
-        </div>
-      </th>
-    );
   };
 
   // Dynamic Page Numbers
@@ -744,31 +1016,6 @@ export default function NewLeadsPage() {
             </div>
           </div>
 
-          {/* 5 KPI Stat Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {[
-              { label: 'Total Inbound Leads', value: Number(stats?.inbound_total || stats?.total || 0).toLocaleString(), sub: 'Non-Imported Master Pool', subColor: 'text-emerald-600', icon: Users, iconBg: 'bg-amber-100 text-amber-800' },
-              { label: 'Awaiting Allocation', value: Number(stats?.inbound_unassigned || stats?.available || 0).toLocaleString(), sub: 'Requires Assignment', subColor: 'text-rose-600', icon: CheckCircle2, iconBg: 'bg-rose-100 text-rose-700' },
-              { label: 'Portal Inquiries', value: Number(stats?.inbound_portals || 0).toLocaleString(), sub: 'PF, Bayut, Dubizzle', subColor: 'text-purple-600', icon: Radio, iconBg: 'bg-purple-100 text-purple-700' },
-              { label: 'Campaign Ads', value: Number(stats?.inbound_campaigns || 0).toLocaleString(), sub: 'Meta, Google & Web', subColor: 'text-blue-600', icon: Globe, iconBg: 'bg-blue-100 text-blue-700' },
-              { label: 'Allocated / In Deal', value: Number(tabCounts?.assigned || stats?.active || 0).toLocaleString(), sub: 'Assigned to Advisors', subColor: 'text-emerald-600', icon: UserCheck, iconBg: 'bg-emerald-100 text-emerald-700' },
-            ].map((card, idx) => {
-              const Icon = card.icon;
-              return (
-                <div key={idx} className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${card.iconBg}`}>
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-heading font-bold text-xl text-[#081428] leading-tight">{card.value}</div>
-                    <div className="text-[11px] font-medium text-[#6E6E6E]">{card.label}</div>
-                    <div className={`text-[10px] font-semibold ${card.subColor}`}>{card.sub}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
           {/* Top Tab Navigation (New / Unassigned, All Inbound, Assigned, Duplicate) */}
           <div className="bg-white border border-[#E8E4DC] rounded-lg px-4 shadow-2xs flex items-center gap-2 overflow-x-auto">
             {[
@@ -806,11 +1053,11 @@ export default function NewLeadsPage() {
             })}
           </div>
 
-          {/* Secondary Filter Toolbar */}
+          {/* Secondary Filter Bar (Search, Date, Advanced, Advisor Selector, Reset on Left | Columns on Right) */}
           <div className="p-3 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
-            {/* Left Group: Search, Date, Channel, Advisor, Advanced */}
+            {/* Left Group: Search Input + Filters + Reset */}
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Search */}
+              {/* Live Search Input (Compact) */}
               <div className="flex items-center gap-2 w-56 sm:w-64 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 focus-within:border-[#C8A147] focus-within:bg-white transition-colors shrink-0">
                 <Search className="w-3.5 h-3.5 text-[#6E6E6E] shrink-0" />
                 <input
@@ -822,7 +1069,7 @@ export default function NewLeadsPage() {
                 />
               </div>
 
-              {/* Date Range Calendar */}
+              {/* Date Range Calendar Filter */}
               <DateRangePicker
                 value={dateRange}
                 onChange={(val) => {
@@ -831,113 +1078,129 @@ export default function NewLeadsPage() {
                 }}
               />
 
-              {/* Inbound Channel / Portal Filter */}
-              <select
-                value={channelFilter}
-                onChange={(e) => {
-                  setChannelFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 text-xs text-[#1A1A1A] font-medium focus:outline-none focus:border-[#C8A147]"
-              >
-                <option value="all">All Inbound Channels</option>
-                <option value="Property Finder">Property Finder</option>
-                <option value="Bayut">Bayut UAE</option>
-                <option value="Dubizzle">Dubizzle</option>
-                <option value="Meta Ads">Meta (Facebook / IG)</option>
-                <option value="Google Ads">Google Ads</option>
-                <option value="Website">Direct Website Form</option>
-                <option value="Manual">Manual Entry</option>
-              </select>
-
-              {/* Assigned Advisor Filter */}
-              <select
-                value={selectedOwner}
-                onChange={(e) => {
-                  setSelectedOwner(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 text-xs text-[#1A1A1A] font-medium focus:outline-none focus:border-[#C8A147]"
-              >
-                <option value="all">All Advisors</option>
-                <option value="Unassigned">Unassigned Only</option>
-                {activeAgents.map((agent: any) => (
-                  <option key={agent.id} value={agent.name}>
-                    {agent.name} ({agent.role || 'Advisor'})
-                  </option>
-                ))}
-              </select>
-
-              {/* Advanced Filters Trigger Button */}
+              {/* Advanced Filter Button */}
               <button
+                type="button"
                 onClick={() => setIsAdvancedFilterOpen(true)}
-                className={`px-3 py-1.5 rounded border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                className={`p-1.5 px-3 rounded border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                   activeAdvancedCount > 0
-                    ? 'bg-[#081428] text-[#C8A147] border-[#081428]'
-                    : 'bg-[#FAF8F5] text-[#1A1A1A] border-[#E8E4DC] hover:bg-slate-100'
+                    ? 'bg-[#081428] text-[#C8A147] border-[#C8A147] shadow-xs'
+                    : 'bg-[#FAF8F5] border-[#E8E4DC] text-[#081428] hover:border-[#C8A147]'
                 }`}
+                title="Open Advanced Filters"
               >
-                <Filter className="w-3.5 h-3.5" />
-                <span>Filters</span>
+                <Filter className="w-3.5 h-3.5 text-[#C8A147]" />
+                <span>Advanced</span>
                 {activeAdvancedCount > 0 && (
-                  <span className="w-4 h-4 rounded-full bg-[#C8A147] text-white text-[10px] font-bold flex items-center justify-center">
+                  <span className="bg-[#C8A147] text-[#081428] text-[10px] font-extrabold px-1.5 py-0.5 rounded-full leading-none">
                     {activeAdvancedCount}
                   </span>
                 )}
               </button>
 
-              {/* Reset Filters */}
-              {(searchQuery || selectedOwner !== 'all' || channelFilter !== 'all' || activeAdvancedCount > 0 || dateRange.from || activeTab !== 'unassigned') && (
-                <button
-                  onClick={handleResetFilters}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#6E6E6E] hover:text-[#081428] rounded border border-slate-200 transition-colors cursor-pointer flex items-center gap-1 text-xs"
-                  title="Reset all active filters"
+              {/* Agent / Scope Selector */}
+              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
+                <UserCheck className="w-3.5 h-3.5 text-[#C8A147]" />
+                <select
+                  value={selectedOwner}
+                  onChange={(e) => {
+                    setSelectedOwner(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
                 >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Reset</span>
-                </button>
-              )}
+                  {currentUser?.role === 'Super Admin' ? (
+                    <>
+                      <option value="all">👥 All Assigned Leads (Entire Team)</option>
+                      <option value="Unassigned">⏳ Unassigned Leads Only</option>
+                      {currentUser?.name && (
+                        <option value={currentUser.name}>⭐ My Leads ({currentUser.name})</option>
+                      )}
+                      {activeAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
+                        <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <option value={currentUser?.name || 'auto'}>🎯 My Assigned Leads ({currentUser?.name || 'Assigned to Me'})</option>
+                      <option value="all">👥 View All Inbound Leads</option>
+                      <option value="Unassigned">⏳ Unassigned Leads Only</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* Reset Button */}
+              <button 
+                onClick={handleResetFilters} 
+                className="text-xs text-[#C8A147] font-bold hover:underline px-1 transition-colors ml-1 cursor-pointer"
+              >
+                Reset
+              </button>
             </div>
 
-            {/* Right Group: Column Customization Dropdown */}
+            {/* Right Group: Columns Selector Dropdown */}
             <div className="relative">
               <button
-                onClick={() => setIsColumnDropdownOpen(!isColumnDropdownOpen)}
-                className="px-3 py-1.5 bg-[#FAF8F5] border border-[#E8E4DC] hover:bg-white text-[#1A1A1A] rounded flex items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer"
+                type="button"
+                onClick={() => setColumnsDropdownOpen(!columnsDropdownOpen)}
+                className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] hover:border-[#C8A147] rounded text-xs text-[#081428] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-[#6E6E6E]" />
-                <span>Customize Columns</span>
+                <SlidersHorizontal className="w-3.5 h-3.5 text-[#C8A147]" />
+                <span>Columns</span>
+                <span className="bg-[#C8A147] text-white text-[10px] px-1.5 rounded-full font-bold">
+                  {Object.values(columnVisibility).filter(Boolean).length}
+                </span>
               </button>
 
-              {isColumnDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white border border-[#E8E4DC] rounded-lg shadow-xl z-20 p-2 space-y-1">
-                  <div className="text-[11px] font-bold text-[#6E6E6E] px-2 py-1 uppercase tracking-wider">
-                    Toggle Table Columns
+              {columnsDropdownOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setColumnsDropdownOpen(false)} 
+                  />
+                  <div className="absolute right-0 mt-2 w-72 bg-white border border-[#E8E4DC] rounded-lg shadow-xl z-50 p-3 text-xs space-y-2 max-h-96 overflow-y-auto">
+                    <div className="flex items-center justify-between border-b border-[#E8E4DC] pb-2 font-bold text-[#081428]">
+                      <span>Manage Table Columns</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateColumnVisibility(DEFAULT_COLUMN_VISIBILITY);
+                          updateColumnOrder(DEFAULT_COLUMN_ORDER);
+                        }}
+                        className="text-[11px] text-[#C8A147] hover:underline cursor-pointer"
+                      >
+                        Reset Default
+                      </button>
+                    </div>
+
+                    {['Core', 'Client Details', 'Source Details', 'Opportunity Specs', 'SLA & Owner'].map((cat) => (
+                      <div key={cat} className="space-y-1 pt-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-[#6E6E6E] bg-[#FAF8F5] px-1.5 py-0.5 rounded">
+                          {cat}
+                        </div>
+                        {ALL_COLUMNS.filter((c) => c.category === cat && c.key !== 'actions').map((col) => (
+                          <label key={col.key} className="flex items-center gap-2 p-1 hover:bg-[#FAF8F5] rounded cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={!!columnVisibility[col.key]}
+                              onChange={(e) => {
+                                updateColumnVisibility({
+                                  ...columnVisibility,
+                                  [col.key]: e.target.checked,
+                                });
+                              }}
+                              className="accent-[#C8A147] rounded cursor-pointer"
+                            />
+                            <span className={columnVisibility[col.key] ? 'font-semibold text-[#081428]' : 'text-slate-500'}>
+                              {col.label}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    ))}
                   </div>
-                  <div className="max-h-64 overflow-y-auto space-y-1">
-                    {AVAILABLE_COLUMNS.map((col) => {
-                      // Actions column is permanent and mandatory per domain rule
-                      if (col.key === 'actions') return null;
-                      return (
-                        <label
-                          key={col.key}
-                          className="flex items-center justify-between px-2 py-1.5 hover:bg-slate-50 rounded cursor-pointer text-xs"
-                        >
-                          <span className={col.mandatory ? 'font-semibold text-slate-700' : 'text-slate-600'}>
-                            {col.label} {col.mandatory && <span className="text-[10px] text-slate-400">(Required)</span>}
-                          </span>
-                          <input
-                            type="checkbox"
-                            checked={!!columnVisibility[col.key]}
-                            onChange={() => toggleColumn(col.key)}
-                            disabled={col.mandatory}
-                            className="rounded border-slate-300 text-[#C8A147] focus:ring-[#C8A147]"
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -1026,23 +1289,14 @@ export default function NewLeadsPage() {
                         className="rounded border-slate-300 text-[#C8A147] focus:ring-[#C8A147] cursor-pointer"
                       />
                     </th>
-                    {AVAILABLE_COLUMNS.filter((c) => columnVisibility[c.key]).map((col) => {
-                      if (col.key === 'actions') {
-                        return (
-                          <th key={col.key} className="p-3 pr-4 text-right">
-                            <span className="font-semibold text-xs text-[#081428]">{col.label}</span>
-                          </th>
-                        );
-                      }
-                      return renderSortableHeader(col.key, col.label);
-                    })}
+                    {columnOrder.map((colKey) => renderHeaderCell(colKey))}
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-[#E8E4DC]">
                   {loading ? (
                     <tr>
-                      <td colSpan={12} className="p-12 text-center text-[#6E6E6E]">
+                      <td colSpan={(Object.values(columnVisibility).filter(Boolean).length || 1) + 1} className="p-12 text-center text-[#6E6E6E]">
                         <div className="flex flex-col items-center justify-center gap-3">
                           <RefreshCw className="w-6 h-6 animate-spin text-[#C8A147]" />
                           <span className="font-medium">Loading New Inbound Leads...</span>
@@ -1051,7 +1305,7 @@ export default function NewLeadsPage() {
                     </tr>
                   ) : contacts.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="p-16 text-center">
+                      <td colSpan={(Object.values(columnVisibility).filter(Boolean).length || 1) + 1} className="p-16 text-center">
                         <div className="max-w-sm mx-auto flex flex-col items-center justify-center gap-3">
                           <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200">
                             <Flame className="w-6 h-6" />
@@ -1071,13 +1325,16 @@ export default function NewLeadsPage() {
                     </tr>
                   ) : (
                     contacts.map((contact) => {
+                      const opp = contact.opportunities && contact.opportunities.length > 0 ? contact.opportunities[0] : (contact.active_opportunity || contact.opportunity);
+                      const bq = opp?.buyer_qualification || {};
                       const isSelected = selectedContactIds.includes(contact.id);
                       return (
                         <tr
                           key={contact.id}
-                          onClick={() => handleOpenDrawer(contact)}
-                          className={`hover:bg-[#FAF8F5]/80 transition-colors cursor-pointer ${
-                            isSelected ? 'bg-amber-50/60' : ''
+                          className={`transition-colors ${
+                            isSelected ? 'bg-amber-50/60' :
+                            contact.state === 'duplicate' ? 'bg-purple-50/30 hover:bg-purple-50/50' :
+                            'hover:bg-[#FAF8F5]/80'
                           }`}
                         >
                           <td className="p-3 pl-4" onClick={(e) => e.stopPropagation()}>
@@ -1088,9 +1345,7 @@ export default function NewLeadsPage() {
                               className="rounded border-slate-300 text-[#C8A147] focus:ring-[#C8A147] cursor-pointer"
                             />
                           </td>
-                          {AVAILABLE_COLUMNS.filter((c) => columnVisibility[c.key]).map((col) =>
-                            renderCell(col.key, contact)
-                          )}
+                          {columnOrder.map((colKey) => renderBodyCell(contact, opp, bq, colKey))}
                         </tr>
                       );
                     })

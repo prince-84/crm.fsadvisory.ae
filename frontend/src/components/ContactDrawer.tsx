@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { 
   X, Phone, Mail, Clock, MessageSquare, 
-  PhoneCall, Edit2, Target, Link2, ExternalLink 
+  PhoneCall, Edit2, Target, Link2, ExternalLink, Copy 
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -71,7 +71,15 @@ export default function ContactDrawer({
                 {contact.initials || contact.name?.substring(0, 2).toUpperCase() || 'CT'}
               </div>
               <div className="space-y-1">
-                <h2 className="font-heading font-bold text-lg text-[#081428]">{contact.name}</h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="font-heading font-bold text-lg text-[#081428]">{contact.name}</h2>
+                  {contact.state === 'duplicate' && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-300">
+                      <Copy className="w-2.5 h-2.5 text-purple-600 shrink-0" />
+                      <span>Duplicate</span>
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-[#6E6E6E] space-y-0.5">
                   <div>{contact.nationality || 'Emirati'}</div>
                   <div className="text-[11px] text-slate-500">Arabic / English</div>

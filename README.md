@@ -770,8 +770,8 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - Dynamic `stats` and `tab_counts` calculation: returns both `'new'` and `'unassigned'` counts identically, and computes `inbound_total`, `inbound_unassigned`, `inbound_portals`, and `inbound_campaigns`.
       - Enhanced `bulkAssign()` endpoint to support `assigned_owner: 'auto'`, enabling 1-click round-robin distribution for selected leads.
     - **Dedicated New Inbound Leads Desk ([`frontend/src/app/new-leads/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/new-leads/page.tsx))**:
-      - **Sidebar Placement**: Added **New Leads** navigation link directly **above** Lead Pool in [`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx) with a distinctive flame icon and gold "New" badge.
-      - **5 Luxury KPI Metric Cards**: Total Inbound Leads, Awaiting Allocation (New), Portal Inquiries (PF, Bayut, Dubizzle), Campaign Ads (Meta, Google, Web), and Allocated / In Deal.
+      - **Sidebar Placement & Dynamic Circle Counter**: Added **New Leads** navigation link directly **above** Lead Pool in [`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx) with a flame icon and a real-time circular counter badge showing live unallocated inbound leads.
+      - **Streamlined Card-Free Workspace**: Removed the top KPI cards to maximize above-the-fold vertical screen real estate, flowing directly into the status tabs and leads table.
       - **4 Navigation Tabs**: *New / Awaiting Allocation* (default active), *All Inbound Leads*, *Assigned*, and *Duplicate*.
       - **Search & Filtering Suite**: Search by Name/Phone/Email, Date Range Calendar Picker ([`DateRangePicker.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/DateRangePicker.tsx)), Channel/Portal dropdown, Advisor dropdown, and Advanced Filters Modal ([`AdvancedFilterModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/AdvancedFilterModal.tsx)) with active filter badge counter.
       - **Floating Bulk Action Toolbar**: Select multiple leads to assign to an advisor from dropdown, auto-distribute across active agents via Round-Robin with 1 click, or move to trash.
@@ -788,8 +788,56 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Executed automated backend test script (`test_lead_workflow.php`) verifying:
       1. Portal ingestion creates unassigned contact with `is_imported = false`.
       2. Manual lead registration creates unassigned contact with `is_imported = false`.
-      3. Contact index endpoint with `inbound_only=1` accurately queries and computes counts.
+- **85 — New Leads Filter Toolbar, Customize Columns & Drag-and-Drop Table Architecture Alignment with Lead Pool (`/new-leads`, `frontend/src/app/new-leads/page.tsx`)**:
+  - **Filter Toolbar Alignment with Lead Pool**:
+    - Harmonized the secondary filter toolbar on New Leads to mirror the exact clean, balanced structure and styling of Lead Pool:
+      1. **Live Search Input**: Compact input with search icon (`Search name, phone, email...`).
+      2. **Date Range Calendar Filter**: Full `DateRangePicker` component supporting all presets and custom date ranges.
+      3. **Advanced Filter Button**: Bold `Advanced` button with gold `<Filter />` icon, styled with dark navy/gold active highlight and dynamic active filter counter badge (`activeAdvancedCount`).
+      4. **Advisor / Scope Selector**: Role-based agent scope dropdown housed in a styled pill with gold `<UserCheck />` icon (`👥 All Assigned Leads (Entire Team)`, `⏳ Unassigned Leads Only`, `⭐ My Leads`, `👤 {agent}`).
+      5. **Reset Action**: Minimalist, high-contrast gold text link (`Reset`) restoring defaults in 1 click.
+    - Removed cluttered standalone channel dropdown from the main toolbar; channel/source filtering is cleanly handled through the comprehensive **Advanced Filters Modal** (`AdvancedFilterModal.tsx`).
+  - **Categorized Column Spectrum (`ALL_COLUMNS`)**:
+    - Grouped all 24 table columns into standard categories:
+      - **Core**: Client Profile (`name`), Source Channel (`source`), Lifecycle State (`state`), Opportunity Workspace (`opportunity`), Actions (`actions`).
+      - **Client Details**: Primary Phone (`phone`), Secondary Phone (`secondary_phone`), Email Address (`email`), Nationality (`nationality`), Created Date (`created_at`).
+      - **Source Details**: Sub-Source Campaign (`sub_source`), UTM Campaign / URL (`utm_campaign`).
+      - **Opportunity Specs**: Opportunity Type (`opportunity_type`), Developer (`developer`), Community (`community`), Project (`project`), Unit / Property Type (`project_property`), Bedrooms (`bedrooms`), Min Budget (`budget_min`), Max Budget (`budget_max`), Payment Method (`cash_or_finance`), Key Requirement (`key_requirement`).
+      - **SLA & Owner**: Assigned Advisor (`assigned_owner`), Next Action (`next_action`), Next Action Due (`next_action_due_at`).
+  - **HTML5 Drag & Drop Header Reordering**:
+    - Added drag handlers (`handleDragStart`, `handleDragOver`, `handleDragLeave`, `handleDrop`) and visual reordering indicators (`GripVertical`, highlight borders, drag over effects) on table headers.
+    - Preserved customized column order and column visibility in `localStorage` under `new_leads_column_order` and `new_leads_column_visibility` with hydration fallbacks.
+  - **Interactive Dropdown with Group Sections & Reset**:
+    - Categorized dropdown menu with category section headers, individual checkboxes, active column counter badge on button, backdrop dismiss, and a **Reset Default** action restoring default order and visibility.
+    - Strictly enforced domain rules: `actions` column is permanent, mandatory, and excluded from toggle checkboxes; `created_at` formatted as `YYYY-MM-DD HH:mm` enabled by default.
+  - **Dynamic Body Cell Rendering (`renderBodyCell`)**:
+    - Comprehensive rendering for all 24 columns including opportunity specs, budget formatting (`AED X,XXX,XXX`), source badges with portal/campaign icons, and advisor badges.
+  - **Verification**:
     - Verified clean Next.js production build (`npm run build`) with zero TypeScript errors across all 21 routes.
+- **86 — Inbound Duplicate Leads Inclusion in First Tabs with Duplicate Tag Badges & Cross-Tab Visibility (`ContactController.php`, `frontend/src/app/page.tsx`, `frontend/src/app/new-leads/page.tsx`, `frontend/src/components/ContactDrawer.tsx`)**:
+  - **Business Requirement & Operational Goal**:
+    - When an external duplicate inquiry arrives (from real estate portals like Property Finder, Bayut, Dubizzle, advertising campaigns, website webhooks, or manual registration matching an existing phone number), it is marked as duplicate (`state = 'duplicate'`).
+    - Previously, backend tab queries on `all` and `unassigned` / `new` strictly filtered out `state != 'duplicate'`, hiding duplicate inquiries entirely from the default landing tabs.
+    - Sales coordinators and managers required that duplicate leads arriving from outside **MUST display in the first default tab of both pages** (Lead Pool's "All Leads" tab and New Leads' "New / Awaiting Allocation" tab) with a prominent **Duplicate Tag / Badge**, and ALSO display in the dedicated **Duplicate tab**.
+  - **Technical Implementation**:
+    - **Backend API Query Filter Refactoring (`ContactController.php`)**:
+      - **First Tab of Lead Pool (`$tab === 'all'`)**: Removed `where('contacts.state', '!=', 'duplicate')`. The "All Leads" tab now returns all primary contacts and duplicate inquiries side by side.
+      - **First Tab of New Leads (`$tab === 'unassigned' || $tab === 'new'`)**: Removed `where('contacts.state', '!=', 'duplicate')`. Inbound unassigned duplicate inquiries (`assigned_to IS NULL`) now appear directly on the "New / Awaiting Allocation" desk so coordinators can immediately review and allocate them.
+      - **Dedicated Duplicate Tab (`$tab === 'duplicate'`)**: Preserved strict filter `where('contacts.state', 'duplicate')` across both pages.
+      - **Tab Counts & KPI Statistics Update**: Updated `$unassignedCount`, `$stats['total']`, `$stats['inbound_total']`, `$stats['inbound_unassigned']`, and `$tabCounts['all']` so badges accurately reflect the number of leads displayed in each tab.
+    - **Frontend Prominent Duplicate Badge Integration (`page.tsx` & `new-leads/page.tsx`)**:
+      - **Client Profile Column (`case 'name'`)**: Placed a bold purple Duplicate tag pill (`bg-purple-100 text-purple-800 border border-purple-300`) with `<Copy className="w-2.5 h-2.5 text-purple-600" />` directly adjacent to the contact name. Guarantees immediate visibility even if the `state` column is hidden by user column customization.
+      - **Lifecycle State Column (`case 'state'`)**: Enhanced the duplicate pill with `<Copy className="w-3 h-3 text-purple-600" />` and explicit border for instant recognition.
+      - **Table Row Subtle Visual Tint**: Added soft purple tint (`bg-purple-50/30 hover:bg-purple-50/50`) to `<tr>` for duplicate records.
+    - **Slide-Over Profile Drawer (`ContactDrawer.tsx`)**:
+      - Added duplicate badge with `<Copy />` icon next to the contact name in the drawer header.
+  - **Automated Verification**:
+    - Ran automated backend validation script (`test_duplicate_tabs.php`) confirming:
+      1. Lead Pool First Tab (`all`): Duplicate lead present (PASS).
+      2. Lead Pool Duplicate Tab (`duplicate`): Duplicate lead present (PASS).
+      3. New Leads First Tab (`unassigned`): Duplicate lead present (PASS).
+      4. New Leads Duplicate Tab (`duplicate`): Duplicate lead present (PASS).
+    - Ran Next.js production build (`npm run build`) with zero errors across all 21 routes.
 
 ---
 

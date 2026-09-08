@@ -25,12 +25,45 @@ import {
   ShieldCheck,
   Flame 
 } from 'lucide-react';
+import { fetchApi } from '@/lib/api';
 
 function SidebarInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentTab = searchParams ? searchParams.get('tab') : null;
   const [currentUser, setCurrentUser] = React.useState<any>(null);
+  const [newLeadsCount, setNewLeadsCount] = React.useState<number>(0);
+
+  React.useEffect(() => {
+    const fetchNewLeadsCount = () => {
+      fetchApi('/contacts?inbound_only=1&tab=new&per_page=1')
+        .then((res) => {
+          const count = res?.tab_counts?.new ?? res?.tab_counts?.unassigned ?? res?.contacts?.total ?? 0;
+          setNewLeadsCount(Number(count) || 0);
+        })
+        .catch(() => {});
+    };
+
+    fetchNewLeadsCount();
+    const interval = setInterval(fetchNewLeadsCount, 30000);
+
+    const handleCountUpdate = (e: any) => {
+      if (e?.detail !== undefined && typeof e.detail === 'number') {
+        setNewLeadsCount(e.detail);
+      } else {
+        fetchNewLeadsCount();
+      }
+    };
+
+    window.addEventListener('crm_new_leads_count', handleCountUpdate);
+    window.addEventListener('crm_contacts_updated', fetchNewLeadsCount);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('crm_new_leads_count', handleCountUpdate);
+      window.removeEventListener('crm_contacts_updated', fetchNewLeadsCount);
+    };
+  }, []);
 
   React.useEffect(() => {
     const syncUser = () => {
@@ -70,7 +103,7 @@ function SidebarInner() {
     {
       title: 'SALES',
       items: [
-        { key: 'new_leads', name: 'New Leads', href: '/new-leads', icon: Flame, badge: 'New', permission: 'leads.view' },
+        { key: 'new_leads', name: 'New Leads', href: '/new-leads', icon: Flame, permission: 'leads.view' },
         { key: 'lead_pool', name: 'Lead Pool', href: '/', icon: Users, permission: 'leads.view' },
         { key: 'owner_data', name: 'Owner Data', href: '/owner-data', icon: Building2, permission: 'owner_data.view' },
         { key: 'queue', name: 'My Queue', href: '/queue', icon: ListOrdered, permission: 'queue.view' },
@@ -149,11 +182,21 @@ function SidebarInner() {
                   >
                     <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#081428]' : 'text-[#8A9AB5]'}`} />
                     <span className="flex-1">{item.name}</span>
-                    {(item as any).badge && (
+                    {item.key === 'new_leads' ? (
+                      <span
+                        className={`min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center transition-colors shadow-xs ${
+                          isActive
+                            ? 'bg-[#081428] text-[#C8A147]'
+                            : 'bg-[#C8A147] text-[#081428]'
+                        }`}
+                      >
+                        {newLeadsCount}
+                      </span>
+                    ) : (item as any).badge ? (
                       <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                         {(item as any).badge}
                       </span>
-                    )}
+                    ) : null}
                   </Link>
                 );
               })}

@@ -28,39 +28,37 @@ class ContactController extends Controller
 
         // Apply Tab Filter Logic
         if ($tab === 'unassigned' || $tab === 'new') {
-            $query->where('contacts.state', '!=', 'duplicate')
-                  ->where(function($q) {
-                      $q->where(function($sub) {
-                          $sub->whereNull('contacts.assigned_to')
-                              ->orWhere('contacts.assigned_to', '')
-                              ->orWhere('contacts.assigned_to', 'Unassigned');
-                      })->where(function($sub) {
-                          $sub->whereDoesntHave('opportunities')
-                              ->orWhereHas('opportunities', function($oppQ) {
-                                  $oppQ->whereNull('current_owner_name')
-                                       ->orWhere('current_owner_name', '')
-                                       ->orWhere('current_owner_name', 'Unassigned');
-                              });
-                      });
-                  });
+            // Include unassigned leads awaiting allocation (including duplicate inbound leads)
+            $query->where(function($q) {
+                $q->where(function($sub) {
+                    $sub->whereNull('contacts.assigned_to')
+                        ->orWhere('contacts.assigned_to', '')
+                        ->orWhere('contacts.assigned_to', 'Unassigned');
+                })->where(function($sub) {
+                    $sub->whereDoesntHave('opportunities')
+                        ->orWhereHas('opportunities', function($oppQ) {
+                            $oppQ->whereNull('current_owner_name')
+                                 ->orWhere('current_owner_name', '')
+                                 ->orWhere('current_owner_name', 'Unassigned');
+                        });
+                });
+            });
         } elseif ($tab === 'assigned') {
-            $query->where('contacts.state', '!=', 'duplicate')
-                  ->where(function($q) {
-                      $q->where(function($sub) {
-                          $sub->whereNotNull('contacts.assigned_to')
-                              ->where('contacts.assigned_to', '!=', '')
-                              ->where('contacts.assigned_to', '!=', 'Unassigned');
-                      })->orWhereHas('opportunities', function($oppQ) {
-                          $oppQ->whereNotNull('current_owner_name')
-                               ->where('current_owner_name', '!=', '')
-                               ->where('current_owner_name', '!=', 'Unassigned');
-                      });
-                  });
+            $query->where(function($q) {
+                $q->where(function($sub) {
+                    $sub->whereNotNull('contacts.assigned_to')
+                        ->where('contacts.assigned_to', '!=', '')
+                        ->where('contacts.assigned_to', '!=', 'Unassigned');
+                })->orWhereHas('opportunities', function($oppQ) {
+                    $oppQ->whereNotNull('current_owner_name')
+                         ->where('current_owner_name', '!=', '')
+                         ->where('current_owner_name', '!=', 'Unassigned');
+                });
+            });
         } elseif ($tab === 'duplicate') {
             $query->where('contacts.state', 'duplicate');
         } elseif ($tab === 'all') {
-            // 'all' tab displays all primary/non-duplicate leads
-            $query->where('contacts.state', '!=', 'duplicate');
+            // 'all' tab displays all leads (primary and duplicate inquiries)
         }
 
         // Filter by Inbound Only (non-imported leads: portals, campaign landing pages, webhooks, manual entries)
@@ -286,7 +284,7 @@ class ContactController extends Controller
             $baseCountQuery->where('is_imported', false);
         }
 
-        $unassignedCount = (clone $baseCountQuery)->where('state', '!=', 'duplicate')->where(function($q) {
+        $unassignedCount = (clone $baseCountQuery)->where(function($q) {
             $q->where(function($sub) {
                 $sub->whereNull('assigned_to')
                     ->orWhere('assigned_to', '')
@@ -301,7 +299,7 @@ class ContactController extends Controller
             });
         })->count();
 
-        $assignedCount = (clone $baseCountQuery)->where('state', '!=', 'duplicate')->where(function($q) {
+        $assignedCount = (clone $baseCountQuery)->where(function($q) {
             $q->where(function($sub) {
                 $sub->whereNotNull('assigned_to')
                     ->where('assigned_to', '!=', '')
@@ -314,13 +312,13 @@ class ContactController extends Controller
         })->count();
 
         $stats = [
-            'total' => (clone $baseCountQuery)->where('state', '!=', 'duplicate')->count(),
+            'total' => (clone $baseCountQuery)->count(),
             'available' => (clone $baseCountQuery)->where('state', 'available')->count(),
             'active' => (clone $baseCountQuery)->where('state', 'active')->count(),
             'reactivation' => (clone $baseCountQuery)->where('state', 'reactivation')->count(),
             'duplicates' => (clone $baseCountQuery)->where('state', 'duplicate')->count(),
-            'inbound_total' => Contact::where('is_imported', false)->where('state', '!=', 'duplicate')->count(),
-            'inbound_unassigned' => Contact::where('is_imported', false)->where('state', '!=', 'duplicate')->where(function($q) {
+            'inbound_total' => Contact::where('is_imported', false)->count(),
+            'inbound_unassigned' => Contact::where('is_imported', false)->where(function($q) {
                 $q->where(function($sub) {
                     $sub->whereNull('assigned_to')
                         ->orWhere('assigned_to', '')
@@ -334,12 +332,12 @@ class ContactController extends Controller
                         });
                 });
             })->count(),
-            'inbound_portals' => Contact::where('is_imported', false)->where('state', '!=', 'duplicate')->where(function($q) {
+            'inbound_portals' => Contact::where('is_imported', false)->where(function($q) {
                 $q->where('source', 'like', '%Property Finder%')
                   ->orWhere('source', 'like', '%Bayut%')
                   ->orWhere('source', 'like', '%Dubizzle%');
             })->count(),
-            'inbound_campaigns' => Contact::where('is_imported', false)->where('state', '!=', 'duplicate')->where(function($q) {
+            'inbound_campaigns' => Contact::where('is_imported', false)->where(function($q) {
                 $q->where('source', 'like', '%Meta%')
                   ->orWhere('source', 'like', '%Facebook%')
                   ->orWhere('source', 'like', '%Google%')
@@ -349,7 +347,7 @@ class ContactController extends Controller
         ];
 
         $tabCounts = [
-            'all' => (clone $baseCountQuery)->where('state', '!=', 'duplicate')->count(),
+            'all' => (clone $baseCountQuery)->count(),
             'unassigned' => $unassignedCount,
             'new' => $unassignedCount,
             'assigned' => $assignedCount,
