@@ -104,7 +104,7 @@ export default function OwnerDetailModal({
               </div>
 
               <div>
-                <label className="text-[10px] font-semibold text-[#6E6E6E] uppercase block mb-0.5">Primary Mobile Number</label>
+                <label className="text-[10px] font-semibold text-[#6E6E6E] uppercase block mb-0.5">Primary Phone</label>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs font-bold text-[#081428]">
                     {showPhone ? (primaryPhone || '—') : maskPhone(primaryPhone)}

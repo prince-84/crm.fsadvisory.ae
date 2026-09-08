@@ -323,7 +323,7 @@ class ImportController extends Controller
 
         if (!$hasNameHeader && !$hasPhoneHeader) {
             return response()->json([
-                'message' => 'Invalid file structure! The uploaded file does not match system columns (Missing Name, Primary Phone, or Mobile No columns). Please click "Download Sample Excel Template" to use the correct format.'
+                'message' => 'Invalid file structure! The uploaded file does not match system columns (Missing Name or Primary Phone columns). Please click "Download Sample Excel Template" to use the correct format.'
             ], 422);
         }
 

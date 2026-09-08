@@ -1001,6 +1001,26 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Removed Default 20 Cap Fallbacks**: Completely eliminated hardcoded default `20` fallback from `frontend/src/app/settings/page.tsx` state and save payload, `LeadDistributionSetting::current()`, and `LeadDistributionService::getNextAgent()`. The daily cap now cleanly accepts user input with `e.g. 50` placeholder and enforces only user-defined caps.
     - Full Next.js production build (`npm run build`) passed with exit code 0 across all 21 routes.
 
+- **98 — Template & Export Standardization: Removal of Deprecated Mobile Number Fields (`frontend/src/components/ImportLeadsModal.tsx`, `backend/app/Http/Controllers/Api/ImportController.php`, `frontend/src/app/page.tsx`, `frontend/src/components/ContactDetailModal.tsx`, `frontend/src/components/OwnerDetailModal.tsx`, `frontend/src/components/OwnerDrawer.tsx`)**:
+  - **User Requirement**:
+    - Remove "Mobile number" / "Mobile No" from the sample Excel template download in Lead Pool and export templates in Owner Data, keeping them aligned with the create/edit forms where Mobile Number was previously removed in favor of `Primary Phone` and `Secondary Phone`.
+  - **Changes Implemented**:
+    - **Lead Pool Sample Import Template (`ImportLeadsModal.tsx`)**:
+      - Removed `'Mobile No'` from the official XLSX headers list in `handleDownloadTemplate`.
+      - Removed the 4th column from all sample data rows (`sampleRows`), ensuring 1-to-1 parity with `Name`, `Primary Phone`, `Secondary Phone`, `Email`, `Nationality`, etc.
+      - Updated the template download banner copy to: `Includes pre-formatted Excel columns for Primary/Secondary Phone, Email, Created Date, Source & Specs.`
+    - **Backend Validation Cleanliness (`ImportController.php`)**:
+      - Updated structure validation error message to: `Invalid file structure! The uploaded file does not match system columns (Missing Name or Primary Phone columns). Please click "Download Sample Excel Template" to use the correct format.`
+    - **Lead Pool Export Implementation (`frontend/src/app/page.tsx`)**:
+      - Added dedicated `handleExportCsv` handler to the Lead Pool top action bar to generate a clean, standardized CSV with `Client Name`, `Primary Phone`, `Secondary Phone`, `Email`, `Nationality`, `Created Date`, `Source Channel`, `Sub-Source Campaign`, `UTM Campaign`, `Lifecycle State`, `Opportunity Type`, and `Assigned Advisor` without any deprecated mobile number column.
+    - **Contact & Owner Details UI Synchronization**:
+      - Updated labels in `ContactDetailModal.tsx` and `OwnerDetailModal.tsx` from "Mobile Number" / "Primary Mobile Number" to "Primary Phone".
+      - Updated copy button tooltip in `OwnerDrawer.tsx` from "Copy Mobile" to "Copy Primary Phone".
+    - **Owner Data Templates Verification (`owner-data/page.tsx`)**:
+      - Verified that Owner Data's `handleDownloadSampleCsv` and `handleExportCsv` already strictly use `Primary Phone` and `Secondary Phone` with no redundant mobile number column.
+  - **Verification**:
+    - Ran full Next.js production build (`npm run build`) passing with exit code 0 across all 21 routes.
+
 ---
 
 ## ⚙️ Installation & Running Instructions

@@ -955,6 +955,56 @@ export default function LeadPoolPage() {
     });
   };
 
+  // Export CSV for Lead Pool
+  const handleExportCsv = () => {
+    if (contacts.length === 0) {
+      Swal.fire({ icon: 'info', title: 'No Data', text: 'No leads available to export.' });
+      return;
+    }
+
+    const headers = [
+      'Client Name',
+      'Primary Phone',
+      'Secondary Phone',
+      'Email',
+      'Nationality',
+      'Created Date',
+      'Source Channel',
+      'Sub-Source Campaign',
+      'UTM Campaign',
+      'Lifecycle State',
+      'Opportunity Type',
+      'Assigned Advisor'
+    ];
+
+    const rows = contacts.map((c) => {
+      const opp = c.active_opportunity || c.opportunities?.[0];
+      return [
+        `"${(c.name || '').replace(/"/g, '""')}"`,
+        `"${c.phone || ''}"`,
+        `"${c.secondary_phone || ''}"`,
+        `"${c.email || ''}"`,
+        `"${c.nationality || ''}"`,
+        `"${c.created_at || ''}"`,
+        `"${c.source || ''}"`,
+        `"${c.sub_source || ''}"`,
+        `"${c.utm_campaign || ''}"`,
+        `"${c.state || ''}"`,
+        `"${opp?.opportunity_type || ''}"`,
+        `"${opp?.current_owner_name || c.assigned_to || ''}"`
+      ];
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `lead_pool_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   useEffect(() => {
     setCurrentPage(1);
     loadData(1, perPage, sortBy, sortOrder, selectedOwner);
@@ -1175,7 +1225,7 @@ export default function LeadPoolPage() {
                     )}
                     {hasPermission('leads.export') && (
                       <button 
-                        onClick={() => alert("Exporting Lead Pool database to Excel format...")}
+                        onClick={handleExportCsv}
                         className="px-3 py-2 bg-white border border-[#E8E4DC] rounded-md text-[#1A1A1A] hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
                       >
                         <Upload className="w-3.5 h-3.5 text-[#6E6E6E]" />

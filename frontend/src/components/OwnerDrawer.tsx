@@ -89,7 +89,7 @@ export default function OwnerDrawer({
                       <button
                         onClick={(e) => copyToClipboard(owner.mobile_number, `mob-${owner.id}`, e)}
                         className="text-slate-400 hover:text-slate-700 cursor-pointer p-0.5"
-                        title="Copy Mobile"
+                        title="Copy Primary Phone"
                       >
                         {copiedField === `mob-${owner.id}` ? (
                           <Check className="w-3 h-3 text-emerald-600" />
