@@ -961,7 +961,23 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **[`frontend/src/app/login/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/login/page.tsx) & [`frontend/src/components/Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx)**:
       - Authentication redirects route any super user directly to the primary Lead Pool dashboard (`/`), while sidebar RBAC checks leverage `isSuperUser(currentUser)` for full menu visibility.
   - **Verification**:
-    - Full production Next.js build compiled cleanly with zero TypeScript errors (`next build` exit code 0 across all 21 routes).
+- **96 — Streamlined Lead Distribution via Global Daily Cap & Clean Settings Experience (`backend/app/Services/LeadDistributionService.php`, `backend/app/Http/Controllers/Api/LeadDistributionController.php`, `frontend/src/app/settings/page.tsx`)**:
+  - **User Requirement**:
+    - Permanently remove the "Sales Advisors Rotation Pool" table from Master Settings (`/settings` -> Lead Distribution tab).
+    - Govern lead distribution strictly through the **Global Default Daily Cap (Leads/Agent)** field in Master Settings, so adjusting this single number immediately controls how many leads each sales advisor receives.
+    - Resolve the issue where imported leads were previously stuck assigned to Faraz Shafi (fallback user) even after resetting counters and triggering distribution ("Run Now").
+  - **Backend Implementation**:
+    - **Unified Global Daily Cap**: Updated `LeadDistributionService::getNextAgent()` to enforce `$globalCap = (int) ($settings->max_daily_leads_per_agent ?: 20);` uniformly across all active sales advisors.
+    - **Automatic Active Advisors Rotation**: Candidates dynamically include all active users (`where('is_active', true)->where('email', '!=', 'faraz@fsadvisory.ae')->where('name', '!=', 'Faraz Shafi')`), ensuring every active sales advisor automatically participates without requiring manual table checkboxes.
+    - **Fallback Re-Distribution in Batch Runner**: Updated `LeadDistributionService::batchDistributeLeadPool()` and `LeadDistributionController::getSettings()` to query leads where `assigned_to` is NULL/empty/Unassigned, OR currently stamped with the fallback assignee (`Faraz Shafi`) without active opportunities. Clicking "Run Now" (or running the distribution runner) seamlessly re-allocates fallback leads across active advisors up to the global cap.
+    - **Early Loop Break**: Added break conditions in both `batchDistributeLeadPool` and `batchDistributeOwnerData` when daily capacity is reached across all agents to avoid unnecessary database iterations.
+  - **Frontend Implementation**:
+    - **Removed Rotation Pool Table**: Permanently eliminated the "Sales Advisors Rotation Pool" table, per-agent cap inputs, priority weight dropdowns, and individual "In Pool / Excluded" toggle buttons from `/settings`.
+    - **Updated Active Rotation Stats Card**: Displays `Active Advisors: {distAgents.length}` and `Assigned Today` count directly.
+    - **Informative Guidance**: Added contextual helper text under "Global Default Daily Cap (Leads/Agent)" explaining that this single setting controls the daily limit for all advisors in rotation.
+  - **Verification**:
+    - Automated batch distribution test verified that leads distribute cleanly up to the configured daily cap (e.g. 20 assigned when cap is 40 and 20 were already assigned), with remaining leads safely preserved.
+    - Full Next.js production build (`npm run build`) passed with exit code 0 across all 21 routes.
 
 ---
 

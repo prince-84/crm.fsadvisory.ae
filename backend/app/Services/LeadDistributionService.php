@@ -43,14 +43,14 @@ class LeadDistributionService
             return null;
         }
 
-        // 3. Fetch all active agents in the distribution pool
+        // 3. Fetch all active sales advisors (all active users participate automatically)
         $candidates = User::where('is_active', true)
-            ->where('in_distribution_pool', true)
+            ->where('email', '!=', 'faraz@fsadvisory.ae')
+            ->where('name', '!=', 'Faraz Shafi')
             ->get();
 
         if ($candidates->isEmpty()) {
-            // Fallback to any active user
-            return User::where('is_active', true)->first();
+            $candidates = User::where('is_active', true)->get();
         }
 
         // Reset daily counts for users if their last assigned date was before today
@@ -61,10 +61,10 @@ class LeadDistributionService
             }
         }
 
-        // Filter out agents who have reached their daily lead capacity
-        $available = $candidates->filter(function ($agent) use ($settings) {
-            $cap = $agent->daily_lead_cap ?: ($settings->max_daily_leads_per_agent ?: 20);
-            return $agent->today_assigned_count < $cap;
+        // Filter out agents who have reached the global daily lead capacity
+        $globalCap = (int) ($settings->max_daily_leads_per_agent ?: 20);
+        $available = $candidates->filter(function ($agent) use ($globalCap) {
+            return $agent->today_assigned_count < $globalCap;
         });
 
         // Strict Cap: If all agents in pool reached their daily cap, stop assignment
@@ -274,13 +274,21 @@ class LeadDistributionService
     /**
      * Batch distribute unassigned leads in Lead Pool
      */
-    public static function batchDistributeLeadPool(int $limit = 50): array
+    public static function batchDistributeLeadPool(int $limit = 200): array
     {
-        $unassignedContactsQuery = Contact::where(function ($q) {
+        $settings = static::getSettings();
+        $fallback = $settings->fallback_user_name ?: 'Faraz Shafi';
+
+        // Distribute truly unassigned leads OR leads currently assigned to fallback assignee without an active opportunity
+        $unassignedContactsQuery = Contact::where(function ($q) use ($fallback) {
             $q->whereNull('assigned_to')
               ->orWhere('assigned_to', '')
-              ->orWhere('assigned_to', 'Unassigned');
-        });
+              ->orWhere('assigned_to', 'Unassigned')
+              ->orWhere(function ($fbQ) use ($fallback) {
+                  $fbQ->where('assigned_to', $fallback)
+                      ->whereDoesntHave('opportunities');
+              });
+        })->where('state', '!=', 'duplicate');
 
         $totalUnassigned = $unassignedContactsQuery->count();
         $contacts = $unassignedContactsQuery->limit($limit)->get();
@@ -321,6 +329,8 @@ class LeadDistributionService
             $assigned = static::autoAssignOwnerRecord($owner);
             if ($assigned) {
                 $assignedCount++;
+            } else {
+                break;
             }
         }
 

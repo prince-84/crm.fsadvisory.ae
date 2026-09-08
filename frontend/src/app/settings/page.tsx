@@ -2091,6 +2091,7 @@ function SettingsContent() {
                           onChange={(e) => setDistSettings({ ...distSettings, max_daily_leads_per_agent: Number(e.target.value) })}
                           className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-bold text-[#081428] focus:ring-2 focus:ring-[#C9A84C] focus:outline-none"
                         />
+                        <p className="text-[11px] text-slate-400 mt-1">Directly controls the daily lead limit for all active advisors in rotation.</p>
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-[#081428] mb-1">Fallback Assignee (If pool exhausted)</label>
@@ -2184,9 +2185,9 @@ function SettingsContent() {
                       <div className="grid grid-cols-2 gap-3 pt-1">
                         <div>
                           <div className="text-2xl font-bold font-mono text-white">
-                            {distAgents.filter(a => a.in_distribution_pool).length}
+                            {distAgents.length}
                           </div>
-                          <div className="text-[11px] text-slate-300">Agents in Pool</div>
+                          <div className="text-[11px] text-slate-300">Active Advisors</div>
                         </div>
                         <div>
                           <div className="text-2xl font-bold font-mono text-[#C9A84C]">
@@ -2199,113 +2200,6 @@ function SettingsContent() {
                   </div>
                 </div>
 
-                {/* Agent Rotation Pool Table */}
-                <div className="bg-white border border-[#E8E4DC] rounded-xl shadow-2xs overflow-hidden">
-                  <div className="p-5 border-b border-[#E8E4DC] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <h3 className="font-heading font-bold text-base text-[#081428]">Sales Advisors Rotation Pool</h3>
-                      <p className="text-xs text-[#6E6E6E]">Manage individual advisor participation, priority weighting, and daily caps.</p>
-                    </div>
-                    <div className="text-xs font-semibold text-slate-500">
-                      Showing {distAgents.length} Active Agents
-                    </div>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-[#FAF8F5] text-[#7A7A7A] border-b border-[#E8E4DC] text-[10px] font-bold uppercase tracking-wider">
-                          <th className="py-3 px-4">Sales Advisor</th>
-                          <th className="py-3 px-4">Role & Department</th>
-                          <th className="py-3 px-4 text-center">In Rotation Pool</th>
-                          <th className="py-3 px-4 text-center">Daily Cap (Leads)</th>
-                          <th className="py-3 px-4 text-center">Priority Weight</th>
-                          <th className="py-3 px-4 text-center">Assigned Today</th>
-                          <th className="py-3 px-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#E8E4DC]">
-                        {distAgents.map((agent) => (
-                          <tr key={agent.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-full bg-[#081428] text-[#C9A84C] font-bold flex items-center justify-center text-xs">
-                                  {agent.name?.charAt(0) || 'A'}
-                                </div>
-                                <div>
-                                  <div className="font-bold text-[#081428]">{agent.name}</div>
-                                  <div className="text-[11px] text-slate-400">{agent.email}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                                {agent.role || 'Sales Advisor'}
-                              </span>
-                              <div className="text-[10px] text-slate-400 mt-0.5">{agent.department || 'Sales'}</div>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <button
-                                onClick={() => handleToggleAgentPool(agent.id)}
-                                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
-                                  agent.in_distribution_pool
-                                    ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                }`}
-                              >
-                                {agent.in_distribution_pool ? '✓ In Pool' : '✕ Excluded'}
-                              </button>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <input
-                                type="number"
-                                min={1}
-                                value={agent.daily_lead_cap || 20}
-                                onChange={(e) => {
-                                  const val = Number(e.target.value);
-                                  setDistAgents(distAgents.map(a => a.id === agent.id ? { ...a, daily_lead_cap: val } : a));
-                                }}
-                                className="w-16 p-1 text-center bg-[#FAF8F5] border border-[#E8E4DC] rounded font-mono font-bold text-xs text-[#081428]"
-                              />
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <select
-                                value={agent.distribution_weight || 1}
-                                onChange={(e) => {
-                                  const val = Number(e.target.value);
-                                  setDistAgents(distAgents.map(a => a.id === agent.id ? { ...a, distribution_weight: val } : a));
-                                }}
-                                className="p-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded font-bold text-xs text-[#081428] cursor-pointer"
-                              >
-                                <option value={1}>1x Normal</option>
-                                <option value={2}>2x Priority</option>
-                                <option value={3}>3x High</option>
-                                <option value={5}>5x VIP Closer</option>
-                              </select>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
-                                {agent.today_assigned_count || 0} leads
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <button
-                                onClick={() => handleSaveAgentConfig(agent.id, {
-                                  in_distribution_pool: agent.in_distribution_pool,
-                                  daily_lead_cap: agent.daily_lead_cap,
-                                  distribution_weight: agent.distribution_weight,
-                                })}
-                                className="px-3 py-1 bg-white hover:bg-[#081428] text-[#081428] hover:text-[#C9A84C] border border-[#E8E4DC] rounded text-[11px] font-bold transition-colors cursor-pointer"
-                              >
-                                Save
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
 
                 {/* Recent Distribution Audit Logs */}
                 <div className="bg-white border border-[#E8E4DC] rounded-xl shadow-2xs overflow-hidden">

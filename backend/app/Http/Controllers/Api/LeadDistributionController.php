@@ -30,15 +30,16 @@ class LeadDistributionController extends Controller
             ->orderBy('name')
             ->get();
 
-        $unassignedLeads = Contact::where(function ($q) {
-            $q->whereDoesntHave('opportunities')
-              ->orWhereHas('opportunities', function ($oppQ) {
-                  $oppQ->whereNull('current_owner_name')
-                       ->orWhere('current_owner_name', '')
-                       ->orWhere('current_owner_name', 'Mako')
-                       ->orWhere('current_owner_name', 'Unassigned');
+        $fallback = $settings->fallback_user_name ?: 'Faraz Shafi';
+        $unassignedLeads = Contact::where(function ($q) use ($fallback) {
+            $q->whereNull('assigned_to')
+              ->orWhere('assigned_to', '')
+              ->orWhere('assigned_to', 'Unassigned')
+              ->orWhere(function ($fbQ) use ($fallback) {
+                  $fbQ->where('assigned_to', $fallback)
+                      ->whereDoesntHave('opportunities');
               });
-        })->count();
+        })->where('state', '!=', 'duplicate')->count();
 
         $unassignedOwners = OwnerRecord::where(function ($q) {
             $q->whereNull('assigned_to')
