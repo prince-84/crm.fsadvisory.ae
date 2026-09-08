@@ -386,6 +386,18 @@ class ContactController extends Controller
 
     public function store(Request $request)
     {
+        // Auto-heal empty or invalid email from external webhooks/ads so leads are never rejected
+        if (!$request->filled('email') || !filter_var($request->email, FILTER_VALIDATE_EMAIL)) {
+            $nameClean = preg_replace('/[^a-zA-Z0-9]/', '.', strtolower(trim($request->name ?? 'lead')));
+            $nameClean = trim($nameClean, '.');
+            if (empty($nameClean)) $nameClean = 'lead';
+            $phoneClean = preg_replace('/[^0-9]/', '', (string) ($request->phone ?? time()));
+            if (empty($phoneClean)) $phoneClean = (string) time();
+            $request->merge([
+                'email' => "{$nameClean}.{$phoneClean}@fsadvisory-lead.ae"
+            ]);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'phone' => 'required|string|max:50',

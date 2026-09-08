@@ -886,6 +886,10 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Automated Verification**:
     - Tested Next.js production build (`npm run build`) passing with zero errors across all 21 routes.
 
+- **90 — Inbound Webhook Email Auto-Healing in Contact Creation (`ContactController.php`)**:
+  - **Problem**: When external lead webhooks (such as n8n, Meta Lead Ads, or forms) submit contacts where `email` is missing, blank, or improperly mapped, strict validation `'email' => 'required|email'` caused a 422 error and dropped the inbound lead.
+  - **Solution**: Added proactive email auto-healing in `ContactController::store` prior to validation. If `email` is empty or invalid, the backend automatically generates a sanitized lead email (`name.phone@fsadvisory-lead.ae`), preserving the lead and ensuring zero dropped leads from external ad webhooks. Valid emails provided by the client are retained without alteration.
+
 ---
 
 ## ⚙️ Installation & Running Instructions
