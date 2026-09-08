@@ -14,6 +14,15 @@ class ContactController extends Controller
 {
     public function index(Request $request)
     {
+        // Auto-heal any active duplicate contacts whose counterparts were deleted
+        $orphanedDuplicates = Contact::where('state', 'duplicate')->get();
+        foreach ($orphanedDuplicates as $dup) {
+            static::syncDuplicateStatesForPhone($dup->phone);
+            if (!empty($dup->secondary_phone)) {
+                static::syncDuplicateStatesForPhone($dup->secondary_phone);
+            }
+        }
+
         $tab = $request->get('tab', 'all');
 
         if ($tab === 'deleted') {
@@ -586,7 +595,12 @@ class ContactController extends Controller
     public function destroy($id)
     {
         $contact = Contact::findOrFail($id);
+        $phone = $contact->phone;
+        $secondary = $contact->secondary_phone;
         $contact->delete();
+
+        if ($phone) static::syncDuplicateStatesForPhone($phone);
+        if ($secondary) static::syncDuplicateStatesForPhone($secondary);
 
         return response()->json(['message' => 'Contact moved to trash successfully.']);
     }
@@ -594,7 +608,12 @@ class ContactController extends Controller
     public function restore($id)
     {
         $contact = Contact::onlyTrashed()->findOrFail($id);
+        $phone = $contact->phone;
+        $secondary = $contact->secondary_phone;
         $contact->restore();
+
+        if ($phone) static::syncDuplicateStatesForPhone($phone);
+        if ($secondary) static::syncDuplicateStatesForPhone($secondary);
 
         return response()->json(['message' => 'Contact restored successfully.']);
     }
@@ -602,7 +621,12 @@ class ContactController extends Controller
     public function forceDelete($id)
     {
         $contact = Contact::onlyTrashed()->findOrFail($id);
+        $phone = $contact->phone;
+        $secondary = $contact->secondary_phone;
         $contact->forceDelete();
+
+        if ($phone) static::syncDuplicateStatesForPhone($phone);
+        if ($secondary) static::syncDuplicateStatesForPhone($secondary);
 
         return response()->json(['message' => 'Contact permanently deleted.']);
     }
@@ -611,7 +635,7 @@ class ContactController extends Controller
     {
         $request->validate([
             'contact_ids' => 'required|array',
-            'contact_ids.*' => 'integer|exists:contacts,id',
+            'contact_ids.*' => 'integer',
             'assigned_owner' => 'required|string|max:255',
         ]);
 
@@ -661,15 +685,140 @@ class ContactController extends Controller
     {
         $request->validate([
             'contact_ids' => 'required|array',
-            'contact_ids.*' => 'integer|exists:contacts,id',
+            'contact_ids.*' => 'integer',
         ]);
 
+        if ($request->boolean('permanent')) {
+            return $this->bulkForceDelete($request);
+        }
+
         $ids = $request->input('contact_ids', []);
+        $contacts = Contact::whereIn('id', $ids)->get();
+        $phones = [];
+        foreach ($contacts as $c) {
+            if ($c->phone) $phones[] = $c->phone;
+            if ($c->secondary_phone) $phones[] = $c->secondary_phone;
+        }
+
         Contact::whereIn('id', $ids)->delete();
+
+        foreach (array_unique($phones) as $p) {
+            static::syncDuplicateStatesForPhone($p);
+        }
 
         return response()->json([
             'success' => true,
             'message' => count($ids) . " leads moved to trash.",
         ]);
+    }
+
+    public function bulkRestore(Request $request)
+    {
+        $request->validate([
+            'contact_ids' => 'required|array',
+            'contact_ids.*' => 'integer',
+        ]);
+
+        $ids = $request->input('contact_ids', []);
+        $contacts = Contact::onlyTrashed()->whereIn('id', $ids)->get();
+        $phones = [];
+        foreach ($contacts as $c) {
+            if ($c->phone) $phones[] = $c->phone;
+            if ($c->secondary_phone) $phones[] = $c->secondary_phone;
+        }
+
+        Contact::onlyTrashed()->whereIn('id', $ids)->restore();
+
+        foreach (array_unique($phones) as $p) {
+            static::syncDuplicateStatesForPhone($p);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => count($ids) . " leads restored successfully.",
+        ]);
+    }
+
+    public function bulkForceDelete(Request $request)
+    {
+        $request->validate([
+            'contact_ids' => 'required|array',
+            'contact_ids.*' => 'integer',
+        ]);
+
+        $ids = $request->input('contact_ids', []);
+        $contacts = Contact::withTrashed()->whereIn('id', $ids)->get();
+        $phones = [];
+        foreach ($contacts as $c) {
+            if ($c->phone) $phones[] = $c->phone;
+            if ($c->secondary_phone) $phones[] = $c->secondary_phone;
+        }
+
+        Contact::withTrashed()->whereIn('id', $ids)->forceDelete();
+
+        foreach (array_unique($phones) as $p) {
+            static::syncDuplicateStatesForPhone($p);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => count($ids) . " leads permanently deleted.",
+        ]);
+    }
+
+    /**
+     * Synchronize duplicate status for contacts sharing a phone number.
+     * If 0 or 1 active contact exists, it cannot be duplicate and is restored to available/assigned.
+     * If multiple active contacts exist, the oldest is primary and subsequent ones are marked duplicate.
+     */
+    public static function syncDuplicateStatesForPhone(?string $phone)
+    {
+        if (empty($phone)) return;
+        $cleanPhone = preg_replace('/[^\d+]/', '', $phone);
+
+        $activeContacts = Contact::where(function($q) use ($phone, $cleanPhone) {
+            $q->where('phone', $phone)
+              ->orWhere('secondary_phone', $phone);
+            if (!empty($cleanPhone) && strlen($cleanPhone) >= 7) {
+                $q->orWhereRaw("REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', '') = ?", [$cleanPhone])
+                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(secondary_phone, ' ', ''), '-', ''), '(', '') = ?", [$cleanPhone]);
+            }
+        })
+        ->orderBy('id', 'asc')
+        ->get();
+
+        $count = $activeContacts->count();
+
+        if ($count <= 1) {
+            // Only 1 (or 0) active contact remains with this phone. It CANNOT be a duplicate.
+            foreach ($activeContacts as $c) {
+                if ($c->state === 'duplicate') {
+                    $newState = (!empty($c->assigned_to) && $c->assigned_to !== 'Unassigned') ? 'assigned' : 'available';
+                    $c->update(['state' => $newState]);
+
+                    Activity::create([
+                        'contact_id'  => $c->id,
+                        'user_name'   => 'Lead Engine',
+                        'type'        => 'note',
+                        'description' => "Duplicate status automatically cleared. Active counterpart was deleted; lead state restored to '{$newState}'.",
+                    ]);
+                }
+            }
+        } else {
+            // Multiple active contacts exist.
+            // Oldest active contact is primary (available / assigned)
+            $primary = $activeContacts->first();
+            if ($primary->state === 'duplicate') {
+                $primaryState = (!empty($primary->assigned_to) && $primary->assigned_to !== 'Unassigned') ? 'assigned' : 'available';
+                $primary->update(['state' => $primaryState]);
+            }
+
+            // All subsequent active contacts are marked duplicate
+            foreach ($activeContacts->slice(1) as $dup) {
+                if ($dup->state !== 'duplicate') {
+                    $dup->update(['state' => 'duplicate']);
+                }
+            }
+        }
     }
 }

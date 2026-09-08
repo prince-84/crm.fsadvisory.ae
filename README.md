@@ -838,6 +838,25 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       3. New Leads First Tab (`unassigned`): Duplicate lead present (PASS).
       4. New Leads Duplicate Tab (`duplicate`): Duplicate lead present (PASS).
     - Ran Next.js production build (`npm run build`) with zero errors across all 21 routes.
+- **87 — Duplicate Lead Auto-Healing & Permanent Multi-Delete / Restore in Deleted Tabs (`ContactController.php`, `routes/api.php`, `frontend/src/app/page.tsx`, `frontend/src/app/new-leads/page.tsx`)**:
+  - **Issue 1: Duplicate Status Auto-Healing on Delete / Query**:
+    - When one of the duplicate leads was deleted (either soft-deleted into trash or permanently purged), the remaining active lead previously remained stuck with `state = 'duplicate'` and continued displaying the `DUPLICATE` tag despite no other active duplicate existing in the system.
+    - Added `syncDuplicateStatesForPhone(?string $phone)` to `ContactController.php`:
+      - Evaluates all active (`whereNull('deleted_at')`) contacts sharing the phone or secondary phone.
+      - If only 1 active contact remains (or 0), any `duplicate` state is automatically cleared, restoring the lead to `available` (or `assigned` if assigned to an advisor).
+      - Added auto-healing triggers across `destroy()`, `forceDelete()`, `restore()`, `bulkDelete()`, `bulkForceDelete()`, `bulkRestore()`, and dynamic self-healing at the start of `index()`.
+  - **Issue 2: Multi-Checkbox Permanent Delete & Restore in Deleted Tabs**:
+    - Previously, selecting multiple leads in the Deleted tab and clicking Delete triggered `/contacts/bulk-delete` which only soft-deleted non-trashed leads and failed on already-trashed records.
+    - Added `POST /contacts/bulk-force-delete` and `POST /contacts/bulk-restore` endpoints in `routes/api.php` and `ContactController.php`.
+    - Updated the floating action toolbar on both Lead Pool (`/`) and New Leads (`/new-leads`) when in `activeTab === 'deleted'`:
+      - Displays **`Restore Selected`** (`handleExecuteBulkRestore`) with `<Undo2 />` icon.
+      - Displays **`Purge Permanently`** (`handleExecuteBulkPermanentDelete`) with `<UserX />` icon.
+      - Hides advisor assignment dropdowns and soft-delete buttons when browsing deleted records.
+    - Added full `Deleted` tab support to `new-leads/page.tsx` with row actions (`Restore` and `Purge`) and tab counter matching Lead Pool.
+  - **Automated Verification**:
+    - Tested auto-healing with `test_heal_53.php`: Verified Contact ID 53 (`Hamdan Al-Falasi123`) was automatically healed from `duplicate` to `available`.
+    - Tested bulk endpoints with `test_bulk_delete.php`: Verified 2 trashed contacts were permanently purged (`Contact::withTrashed()->count() === 0`).
+    - Tested Next.js production build (`npm run build`): Completed with exit code 0 across all 21 routes.
 
 ---
 

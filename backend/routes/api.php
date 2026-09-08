@@ -60,6 +60,8 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::post('/contacts', [ContactController::class, 'store']);
     Route::post('/contacts/bulk-assign', [ContactController::class, 'bulkAssign']);
     Route::post('/contacts/bulk-delete', [ContactController::class, 'bulkDelete']);
+    Route::post('/contacts/bulk-restore', [ContactController::class, 'bulkRestore']);
+    Route::post('/contacts/bulk-force-delete', [ContactController::class, 'bulkForceDelete']);
     Route::post('/contacts/import-preview', [ImportController::class, 'preview']);
     Route::post('/contacts/import-execute', [ImportController::class, 'execute']);
     Route::get('/contacts/{id}', [ContactController::class, 'show']);

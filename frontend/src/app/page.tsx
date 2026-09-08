@@ -834,6 +834,82 @@ export default function LeadPoolPage() {
     });
   };
 
+  const handleExecuteBulkRestore = async () => {
+    Swal.fire({
+      title: 'Restore Selected Leads?',
+      text: `Are you sure you want to restore ${selectedContactIds.length} selected leads back to active pool?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#059669',
+      cancelButtonColor: '#6E6E6E',
+      confirmButtonText: 'Yes, Restore Selected',
+      cancelButtonText: 'Cancel',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        setBulkLoading(true);
+        try {
+          const res = await fetchApi('/contacts/bulk-restore', {
+            method: 'POST',
+            body: JSON.stringify({ contact_ids: selectedContactIds }),
+          });
+
+          Swal.fire({
+            icon: 'success',
+            title: 'Leads Restored',
+            text: res.message || `${selectedContactIds.length} leads restored successfully.`,
+            timer: 1800,
+            showConfirmButton: false,
+          });
+
+          setSelectedContactIds([]);
+          loadData(currentPage);
+        } catch (err: any) {
+          Swal.fire('Error', err.message || 'Bulk restore failed.', 'error');
+        } finally {
+          setBulkLoading(false);
+        }
+      }
+    });
+  };
+
+  const handleExecuteBulkPermanentDelete = async () => {
+    Swal.fire({
+      title: 'Permanently Purge Selected Leads?',
+      text: `PERMANENT ACTION: Are you sure you want to permanently delete ${selectedContactIds.length} selected leads from database? This CANNOT be undone!`,
+      icon: 'error',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#6E6E6E',
+      confirmButtonText: 'Yes, Purge Permanently',
+      cancelButtonText: 'Cancel',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        setBulkLoading(true);
+        try {
+          const res = await fetchApi('/contacts/bulk-force-delete', {
+            method: 'POST',
+            body: JSON.stringify({ contact_ids: selectedContactIds }),
+          });
+
+          Swal.fire({
+            icon: 'success',
+            title: 'Leads Purged',
+            text: res.message || `${selectedContactIds.length} leads permanently deleted.`,
+            timer: 1800,
+            showConfirmButton: false,
+          });
+
+          setSelectedContactIds([]);
+          loadData(currentPage);
+        } catch (err: any) {
+          Swal.fire('Error', err.message || 'Permanent bulk deletion failed.', 'error');
+        } finally {
+          setBulkLoading(false);
+        }
+      }
+    });
+  };
+
   useEffect(() => {
     setCurrentPage(1);
     loadData(1, perPage, sortBy, sortOrder, selectedOwner);
@@ -1360,47 +1436,83 @@ export default function LeadPoolPage() {
                   <span>Leads Selected</span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <select
-                    value={bulkAssignOwner}
-                    onChange={(e) => setBulkAssignOwner(e.target.value)}
-                    className="bg-[#122444] border border-[#1f3864] text-white text-xs font-semibold rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#C8A147]"
-                  >
-                    <option value="">Select Advisor / Owner...</option>
-                    {activeAgents.map((ag) => (
-                      <option key={ag.id} value={ag.name}>
-                        {ag.name} ({ag.role || 'Agent'})
-                      </option>
-                    ))}
-                    <option value="Unassigned">Unassigned</option>
-                  </select>
+                {activeTab === 'deleted' ? (
+                  <div className="flex items-center gap-2">
+                    {mounted && hasPermission('leads.restore') && (
+                      <button
+                        onClick={handleExecuteBulkRestore}
+                        disabled={bulkLoading}
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                        title="Restore all selected leads back to active Lead Pool"
+                      >
+                        <Undo2 className="w-3.5 h-3.5" />
+                        <span>{bulkLoading ? 'Restoring...' : 'Restore Selected'}</span>
+                      </button>
+                    )}
 
-                  <button
-                    onClick={handleExecuteBulkAssign}
-                    disabled={!bulkAssignOwner || bulkLoading}
-                    className="px-3.5 py-1.5 bg-[#C8A147] hover:bg-[#b48e35] text-[#081428] font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span>{bulkLoading ? 'Assigning...' : 'Assign Selected'}</span>
-                  </button>
+                    {mounted && hasPermission('leads.restore') && (
+                      <button
+                        onClick={handleExecuteBulkPermanentDelete}
+                        disabled={bulkLoading}
+                        className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                        title="Permanently purge selected leads from database"
+                      >
+                        <UserX className="w-3.5 h-3.5" />
+                        <span>{bulkLoading ? 'Purging...' : 'Purge Permanently'}</span>
+                      </button>
+                    )}
 
-                  <button
-                    onClick={handleExecuteBulkDelete}
-                    disabled={bulkLoading}
-                    className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Trash</span>
-                  </button>
+                    <button
+                      onClick={() => setSelectedContactIds([])}
+                      className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                      title="Clear selection"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={bulkAssignOwner}
+                      onChange={(e) => setBulkAssignOwner(e.target.value)}
+                      className="bg-[#122444] border border-[#1f3864] text-white text-xs font-semibold rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#C8A147]"
+                    >
+                      <option value="">Select Advisor / Owner...</option>
+                      {activeAgents.map((ag) => (
+                        <option key={ag.id} value={ag.name}>
+                          {ag.name} ({ag.role || 'Agent'})
+                        </option>
+                      ))}
+                      <option value="Unassigned">Unassigned</option>
+                    </select>
 
-                  <button
-                    onClick={() => setSelectedContactIds([])}
-                    className="p-1.5 text-slate-400 hover:text-white transition-colors"
-                    title="Clear selection"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
+                    <button
+                      onClick={handleExecuteBulkAssign}
+                      disabled={!bulkAssignOwner || bulkLoading}
+                      className="px-3.5 py-1.5 bg-[#C8A147] hover:bg-[#b48e35] text-[#081428] font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>{bulkLoading ? 'Assigning...' : 'Assign Selected'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleExecuteBulkDelete}
+                      disabled={bulkLoading}
+                      className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Trash</span>
+                    </button>
+
+                    <button
+                      onClick={() => setSelectedContactIds([])}
+                      className="p-1.5 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                      title="Clear selection"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
