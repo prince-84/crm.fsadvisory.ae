@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import Swal from 'sweetalert2';
 import PhoneInput from '@/components/PhoneInput';
 import { API_BASE_URL } from '@/lib/api';
+import { isSuperUser } from '@/lib/permissions';
 import {
   Lock,
   Mail,
@@ -39,7 +40,7 @@ export default function LoginPage() {
       const userRaw = localStorage.getItem('crm_user');
       if (token && userRaw) {
         const u = JSON.parse(userRaw);
-        if (u?.role === 'Super Admin') {
+        if (isSuperUser(u)) {
           router.replace('/');
         } else {
           router.replace('/queue');
@@ -93,7 +94,7 @@ export default function LoginPage() {
         });
 
         setTimeout(() => {
-          if (data.user.role === 'Super Admin') {
+          if (isSuperUser(data.user)) {
             router.push('/');
           } else {
             router.push('/queue');
@@ -159,7 +160,7 @@ export default function LoginPage() {
         });
 
         setTimeout(() => {
-          if (data.user.role === 'Super Admin') {
+          if (isSuperUser(data.user)) {
             router.push('/');
           } else {
             router.push('/queue');

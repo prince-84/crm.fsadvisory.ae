@@ -5,7 +5,7 @@ import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import CreateOpportunityModal from '@/components/CreateOpportunityModal';
 import { fetchApi } from '@/lib/api';
-import { hasPermission } from '@/lib/permissions';
+import { hasPermission, isSuperUser } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 import { 
   Briefcase, 
@@ -125,7 +125,7 @@ export default function OpportunitiesPage() {
       let url = '/opportunities';
       let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
       if (targetOwner === 'auto') {
-        targetOwner = user?.role === 'Super Admin' ? 'all' : (user?.name || 'all');
+        targetOwner = isSuperUser(user) ? 'all' : (user?.name || 'all');
       }
 
       if (targetOwner && targetOwner !== 'all') {
@@ -551,11 +551,11 @@ export default function OpportunitiesPage() {
               <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
                 <User className="w-3.5 h-3.5 text-[#C8A147]" />
                 <select
-                  value={selectedOwner}
+                  value={selectedOwner === 'auto' ? (isSuperUser(currentUser) ? 'all' : (currentUser?.name || 'auto')) : selectedOwner}
                   onChange={(e) => setSelectedOwner(e.target.value)}
                   className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
                 >
-                  {currentUser?.role === 'Super Admin' ? (
+                  {isSuperUser(currentUser) ? (
                     <>
                       <option value="all">👥 All Deals (Entire Team)</option>
                       {currentUser?.name && (

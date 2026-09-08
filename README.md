@@ -941,6 +941,28 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     5. **Centered Floating Bottom Pill Toolbar**: Replaced the inline bulk notification bar with the fixed centered bottom floating toolbar (`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 ...`) supporting bulk advisor assignment, multi-lead permanent purge, bulk restore, and dismiss.
     6. **Pagination Controls**: Standardized the server-side database pagination footer bar to match Lead Pool typography, button icons (`<ChevronLeft />`, `<ChevronRight />`), and active page number badge styling.
 
+- **95 — Dynamic Super User Authority & Unified Lead Pool Pagination (`frontend/src/app/page.tsx`, `new-leads/page.tsx`, `queue/page.tsx`, `opportunities/page.tsx`, `login/page.tsx`, `Sidebar.tsx`)**:
+  - **Issue Diagnosis & Root Cause**:
+    - When an administrator granted Super Admin access to a user through the **User Management & Roles** (`/users`) permission matrix (`*` wildcard full root access), the user's role designation in the database remained unchanged (e.g. `'Telesales Agent'` or `'Property Consultant'`).
+    - Across frontend pages ([`frontend/src/app/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx), [`frontend/src/app/new-leads/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/new-leads/page.tsx), [`frontend/src/app/queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx), [`frontend/src/app/opportunities/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/opportunities/page.tsx)), the default data fetch scope was evaluated via a rigid string comparison: `targetOwner = user?.role === 'Super Admin' ? 'all' : (user?.name || 'all')`.
+    - Because `user?.role === 'Super Admin'` evaluated to `false`, the CRM treated the user as a regular agent and appended `&assigned_owner=User Name` to all API requests.
+    - Since that agent only had a few (or 0) leads assigned directly to them, the Laravel backend returned `last_page: 1, total: <= 20`, causing the Lead Pool to display only a single page of results (`Showing 1 to X of X results`) rather than the full master lead bank (175 leads across 9 pages).
+    - Furthermore, the owner filter dropdown defaulted to `🎯 My Assigned Leads` instead of team-wide viewing.
+  - **Centralized `isSuperUser()` Migration**:
+    - Replaced all raw `user?.role === 'Super Admin'` checks with the centralized security helper [`isSuperUser(user)`](file:///d:/FSadvisory-crm/frontend/src/lib/permissions.ts), which validates:
+      1. Wildcard permissions (`permissions.includes('*')`).
+      2. Executive and administrative role titles (`role.includes('admin')`, `role.includes('ceo')`, `role.includes('director')`, `role.includes('owner')`, `role.includes('executive')`).
+      3. Master designated root profiles (`faraz@fsadvisory.ae`).
+    - **[`frontend/src/app/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx) & [`frontend/src/app/new-leads/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/new-leads/page.tsx)**:
+      - `targetOwner` defaults to `'all'` for any super user, immediately loading all 175 leads across all 9 pages of server-side pagination.
+      - Owner filter dropdown defaults cleanly to `👥 All Assigned Leads (Entire Team)` while rendering the full agent selection list.
+    - **[`frontend/src/app/queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx) & [`frontend/src/app/opportunities/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/opportunities/page.tsx)**:
+      - Applied identical `isSuperUser()` checks to default to `'all'` queue items and pipeline opportunities with the complete agent dropdown menu.
+    - **[`frontend/src/app/login/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/login/page.tsx) & [`frontend/src/components/Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx)**:
+      - Authentication redirects route any super user directly to the primary Lead Pool dashboard (`/`), while sidebar RBAC checks leverage `isSuperUser(currentUser)` for full menu visibility.
+  - **Verification**:
+    - Full production Next.js build compiled cleanly with zero TypeScript errors (`next build` exit code 0 across all 21 routes).
+
 ---
 
 ## ⚙️ Installation & Running Instructions

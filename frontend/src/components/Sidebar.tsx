@@ -26,6 +26,7 @@ import {
   Flame 
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
+import { isSuperUser } from '@/lib/permissions';
 
 function SidebarInner() {
   const pathname = usePathname();
@@ -87,7 +88,7 @@ function SidebarInner() {
   const hasAccess = (permission?: string) => {
     if (!permission) return true;
     if (!currentUser) return true; // Initial load fallback
-    if (currentUser.role === 'Super Admin') return true;
+    if (isSuperUser(currentUser)) return true;
     const perms: string[] = currentUser.permissions || [];
     if (perms.includes('*')) return true;
     return perms.includes(permission);
