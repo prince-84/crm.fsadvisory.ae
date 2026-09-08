@@ -46,15 +46,8 @@ class LeadDistributionService
             return null;
         }
 
-        // 3. Fetch all active sales advisors (all active users participate automatically)
-        $candidates = User::where('is_active', true)
-            ->where('email', '!=', 'faraz@fsadvisory.ae')
-            ->where('name', '!=', 'Faraz Shafi')
-            ->get();
-
-        if ($candidates->isEmpty()) {
-            $candidates = User::where('is_active', true)->get();
-        }
+        // 3. Fetch all active sales advisors (all active users participate automatically in Round-Robin)
+        $candidates = User::where('is_active', true)->get();
 
         // Reset daily counts for users if their last assigned date was before today
         foreach ($candidates as $candidate) {

@@ -1038,15 +1038,17 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Owner Data Import & Store (`OwnerDataController.php`)**:
       - Added active user validation and case-insensitive placeholder handling to both `import` (batch CSV upload) and `store` (single record creation).
       - Records without an explicit active advisor automatically trigger `LeadDistributionService::autoAssignOwnerRecord($createdRecord)`.
-    - **Lead Distribution Engine Fallback Resilience (`LeadDistributionService.php`)**:
+    - **Lead Distribution Engine & Round-Robin Rotation Pool (`LeadDistributionService.php`)**:
+      - Removed hardcoded exclusion of Faraz Shafi from the candidate pool (`User::where('is_active', true)->get()`). Previously, Faraz Shafi was explicitly filtered out from `$candidates`, which caused 100% of imported leads to funnel exclusively to Babar Ali Khan.
+      - With all active users included in the candidate pool, cyclic Round-Robin now fairly alternates assignments across active sales advisors (e.g. Faraz Shafi -> Babar Ali Khan -> Faraz Shafi -> Babar Ali Khan).
       - Updated `autoAssignOwnerRecord` to assign to `$settings->fallback_user_name` (e.g. Faraz Shafi) if the active agent pool is exhausted or capped.
       - Updated `getNextAgent` capacity filtering to treat `$globalCap <= 0` as unlimited.
     - **Sample Template & CSV Column Mapping Synchronization**:
       - Updated `ImportLeadsModal.tsx` sample template rows to default to `'Unassigned'` instead of non-existent staff names.
       - Updated `owner-data/page.tsx` CSV parser (`handleFileUpload`) to detect and map assigned advisor columns (`assigned advisor`, `assigned to`, `advisor`, etc.) so custom CSV files with advisor columns are properly recognized.
   - **Verification**:
-    - Unit tests confirmed that Lead Pool imports with `Unassigned`, `unassigned` (lowercase), `None`, and non-existent advisor names (`Waqar Ahmed`) all auto-assign to active advisors (`Babar Ali Khan`).
-    - Unit tests confirmed that Owner Data CSV imports with no advisor or placeholder advisors all auto-assign to active advisors.
+    - Unit tests confirmed that Lead Pool imports with `Unassigned`, `unassigned` (lowercase), `None`, and non-existent advisor names (`Waqar Ahmed`) auto-assign and alternate across active advisors in Round-Robin order (`Faraz Shafi` -> `Babar Ali Khan` -> `Faraz Shafi` -> `Babar Ali Khan`).
+    - Unit tests confirmed that Owner Data CSV imports rotate fairly across active advisors in Round-Robin order.
     - Explicit active advisor assignments (`Faraz Shafi`) are preserved.
     - Disabling the scopes in Settings leaves unassigned records as unassigned as expected.
     - Full Next.js production build (`npm run build`) passed with 0 errors across all 21 routes.
