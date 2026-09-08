@@ -398,6 +398,14 @@ class ContactController extends Controller
             ]);
         }
 
+        // Auto-map campaign_url alias to landing_page_url
+        if ($request->filled('campaign_url') && !$request->filled('landing_page_url')) {
+            $request->merge(['landing_page_url' => $request->campaign_url]);
+        }
+        if ($request->filled('landing_page_url') && !$request->filled('campaign_url')) {
+            $request->merge(['campaign_url' => $request->landing_page_url]);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'phone' => 'required|string|max:50',
@@ -413,6 +421,7 @@ class ContactController extends Controller
             'utm_term' => 'nullable|string|max:255',
             'utm_content' => 'nullable|string|max:255',
             'landing_page_url' => 'nullable|string|max:2048',
+            'campaign_url' => 'nullable|string|max:2048',
             'state' => 'nullable|string|max:50',
             // Opportunity & Qualification fields (optional on create)
             'opportunity_type' => 'nullable|string|max:50',
@@ -471,7 +480,7 @@ class ContactController extends Controller
             'utm_campaign' => $validated['utm_campaign'] ?? null,
             'utm_term' => $validated['utm_term'] ?? null,
             'utm_content' => $validated['utm_content'] ?? null,
-            'landing_page_url' => $validated['landing_page_url'] ?? null,
+            'landing_page_url' => $validated['landing_page_url'] ?? ($validated['campaign_url'] ?? null),
             'is_imported' => false,
             'state' => $validated['state'],
         ];
@@ -596,6 +605,14 @@ class ContactController extends Controller
     {
         $contact = Contact::findOrFail($id);
 
+        // Auto-map campaign_url alias to landing_page_url
+        if ($request->filled('campaign_url') && !$request->filled('landing_page_url')) {
+            $request->merge(['landing_page_url' => $request->campaign_url]);
+        }
+        if ($request->filled('landing_page_url') && !$request->filled('campaign_url')) {
+            $request->merge(['campaign_url' => $request->landing_page_url]);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'phone' => 'required|string|max:50',
@@ -612,7 +629,15 @@ class ContactController extends Controller
             'utm_term' => 'nullable|string|max:255',
             'utm_content' => 'nullable|string|max:255',
             'landing_page_url' => 'nullable|string|max:2048',
+            'campaign_url' => 'nullable|string|max:2048',
         ]);
+
+        if (isset($validated['campaign_url'])) {
+            if (!isset($validated['landing_page_url'])) {
+                $validated['landing_page_url'] = $validated['campaign_url'];
+            }
+            unset($validated['campaign_url']);
+        }
 
         if (!empty($validated['name'])) {
             $words = explode(' ', $validated['name']);

@@ -377,7 +377,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
         setUtmCampaign(contactData.utm_campaign || '');
         setUtmTerm(contactData.utm_term || '');
         setUtmContent(contactData.utm_content || '');
-        setLandingPageUrl(contactData.landing_page_url || '');
+        setLandingPageUrl(contactData.campaign_url || contactData.landing_page_url || '');
 
         // 4. Source & Sub-Source Parsing
         let parsedSource = '';
@@ -717,6 +717,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
           utm_term: utmTerm || null,
           utm_content: utmContent || null,
           landing_page_url: landingPageUrl || null,
+          campaign_url: landingPageUrl || null,
         }),
       });
 

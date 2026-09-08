@@ -210,15 +210,15 @@ export default function ContactDrawer({
                       <span className="font-semibold text-[#081428]">{contact.utm_content}</span>
                     </div>
                   )}
-                  {contact.landing_page_url && (
+                  {(contact.landing_page_url || contact.campaign_url) && (
                     <div className="bg-white p-2.5 rounded border border-[#E8E4DC] col-span-2 space-y-1">
                       <span className="text-[10px] text-slate-400 block uppercase font-medium flex items-center justify-between">
                         <span className="flex items-center gap-1">
                           <Link2 className="w-3 h-3 text-[#C8A147]" />
-                          <span>Referral / Landing Page URL</span>
+                          <span>Campaign / Landing Page URL</span>
                         </span>
                         <a
-                          href={contact.landing_page_url}
+                          href={contact.campaign_url || contact.landing_page_url}
                           target="_blank"
                           rel="noreferrer"
                           className="text-[#C8A147] hover:underline flex items-center gap-0.5 lowercase text-[10px]"
@@ -228,12 +228,12 @@ export default function ContactDrawer({
                         </a>
                       </span>
                       <a
-                        href={contact.landing_page_url}
+                        href={contact.campaign_url || contact.landing_page_url}
                         target="_blank"
                         rel="noreferrer"
                         className="text-xs text-blue-600 hover:text-blue-800 font-mono break-all line-clamp-2 block underline underline-offset-2"
                       >
-                        {contact.landing_page_url}
+                        {contact.campaign_url || contact.landing_page_url}
                       </a>
                     </div>
                   )}

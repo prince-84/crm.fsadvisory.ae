@@ -909,6 +909,17 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - `GET /api/contacts/{id}` returns complete nested qualification specs (`developer = 'Emaar'`, `project = 'Park Horizon'`, `community = 'Dubai Hills Estate'`).
     - Next.js production build (`npm run build`) completed successfully with zero TypeScript or Turbopack errors across all 21 routes.
 
+- **92 — Campaign URL / Landing Page URL Dual-Key Ingestion & Table Display Integration (`Contact.php`, `ContactController.php`, `frontend/src/app/page.tsx`, `frontend/src/app/new-leads/page.tsx`, `ContactDrawer.tsx`, `leads/[id]/edit/page.tsx`)**:
+  - **Requirement**: Support passing campaign URLs from Postman, n8n, and webhooks using either `campaign_url` or `landing_page_url` interchangeably, and display clickable URLs in table views, profile drawer, and edit forms.
+  - **Backend Solution**:
+    - **Dual-Key Normalization**: `ContactController::store` and `update` automatically detect if `campaign_url` is provided and seamlessly aliases it to `landing_page_url` (and vice-versa).
+    - **Model Append & Accessor**: Added `$appends = ['campaign_url']` and `getCampaignUrlAttribute()` on `Contact` model so every API query returns both `landing_page_url` and `campaign_url`.
+  - **Frontend Solution**:
+    - **Lead Pool Table (`page.tsx`)**: Added `utm_campaign` column to `ALL_COLUMNS`, `DEFAULT_COLUMN_VISIBILITY`, and `DEFAULT_COLUMN_ORDER` displaying the campaign badge and clickable external campaign link.
+    - **New Leads Table (`new-leads/page.tsx`)**: Upgraded `utm_campaign` cell rendering to display clickable link for `campaign_url || landing_page_url`.
+    - **Slide-Over Drawer (`ContactDrawer.tsx`)**: Updated URL card to evaluate `contact.campaign_url || contact.landing_page_url`.
+    - **Edit Page (`leads/[id]/edit/page.tsx`)**: Seamlessly binds both keys and sends both on update.
+
 ---
 
 ## ⚙️ Installation & Running Instructions

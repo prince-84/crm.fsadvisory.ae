@@ -116,6 +116,7 @@ export default function LeadPoolPage() {
     nationality: true,
     created_at: true,
     sub_source: false,
+    utm_campaign: true,
     opportunity_type: false,
     developer: false,
     community: false,
@@ -153,6 +154,7 @@ export default function LeadPoolPage() {
     'email',
     'nationality',
     'sub_source',
+    'utm_campaign',
     'opportunity_type',
     'developer',
     'community',
@@ -274,6 +276,7 @@ export default function LeadPoolPage() {
     { key: 'nationality', label: 'Nationality', category: 'Client Details' },
     { key: 'created_at', label: 'Created Date', category: 'Client Details' },
     { key: 'sub_source', label: 'Sub-Source Campaign', category: 'Source Details' },
+    { key: 'utm_campaign', label: 'UTM Campaign / URL', category: 'Source Details' },
     { key: 'opportunity_type', label: 'Opportunity Type', category: 'Opportunity Specs' },
     { key: 'developer', label: 'Developer', category: 'Opportunity Specs' },
     { key: 'community', label: 'Community', category: 'Opportunity Specs' },
@@ -441,6 +444,35 @@ export default function LeadPoolPage() {
 
       case 'sub_source':
         return <td key={colKey} className="p-3 text-slate-600">{ct.source?.match(/\((.*?)\)/)?.[1] || '—'}</td>;
+
+      case 'utm_campaign': {
+        const campaign = ct.utm_campaign || ct.utm_source;
+        const campaignUrl = ct.campaign_url || ct.landing_page_url;
+        return (
+          <td key={colKey} className="p-3 text-xs">
+            <div className="flex flex-col gap-0.5 max-w-[200px]">
+              {campaign ? (
+                <span className="font-mono text-[11px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 truncate inline-block" title={campaignUrl || campaign}>
+                  {campaign}
+                </span>
+              ) : null}
+              {campaignUrl ? (
+                <a
+                  href={campaignUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-blue-600 hover:underline truncate block"
+                  title={campaignUrl}
+                >
+                  {campaignUrl}
+                </a>
+              ) : !campaign ? (
+                <span className="text-slate-400 text-xs">—</span>
+              ) : null}
+            </div>
+          </td>
+        );
+      }
 
       case 'state':
         return (

@@ -18,6 +18,15 @@ class Contact extends Model
         'is_imported' => 'boolean',
     ];
 
+    protected $appends = [
+        'campaign_url',
+    ];
+
+    public function getCampaignUrlAttribute()
+    {
+        return $this->landing_page_url;
+    }
+
     public function opportunities()
     {
         return $this->hasMany(Opportunity::class);

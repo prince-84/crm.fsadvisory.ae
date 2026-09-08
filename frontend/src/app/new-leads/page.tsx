@@ -901,19 +901,29 @@ export default function NewLeadsPage() {
 
       case 'utm_campaign': {
         const campaign = ct.utm_campaign || ct.utm_source;
+        const campaignUrl = ct.campaign_url || ct.landing_page_url;
         return (
-          <td key={colKey} className="p-3 text-xs max-w-[180px] truncate text-slate-600">
-            {campaign ? (
-              <span className="font-mono text-[11px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100" title={ct.landing_page_url || campaign}>
-                {campaign}
-              </span>
-            ) : ct.landing_page_url ? (
-              <span className="text-[10px] text-slate-500 truncate" title={ct.landing_page_url}>
-                {ct.landing_page_url}
-              </span>
-            ) : (
-              '—'
-            )}
+          <td key={colKey} className="p-3 text-xs">
+            <div className="flex flex-col gap-0.5 max-w-[180px]">
+              {campaign ? (
+                <span className="font-mono text-[11px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 truncate inline-block" title={campaignUrl || campaign}>
+                  {campaign}
+                </span>
+              ) : null}
+              {campaignUrl ? (
+                <a
+                  href={campaignUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-blue-600 hover:underline truncate block"
+                  title={campaignUrl}
+                >
+                  {campaignUrl}
+                </a>
+              ) : !campaign ? (
+                <span className="text-slate-400 text-xs">—</span>
+              ) : null}
+            </div>
           </td>
         );
       }
