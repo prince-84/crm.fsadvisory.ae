@@ -998,6 +998,7 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       3. `Owner Data & Resale Inquiries` (`apply_to_owner_data`): Property title deed records.
   - **Verification**:
     - Automated unit test confirmed: with `apply_to_lead_pool = false`, contact landed with `assigned_to = NULL` (unassigned); with `apply_to_lead_pool = true`, contact immediately auto-assigned to active advisor in rotation.
+    - **Removed Default 20 Cap Fallbacks**: Completely eliminated hardcoded default `20` fallback from `frontend/src/app/settings/page.tsx` state and save payload, `LeadDistributionSetting::current()`, and `LeadDistributionService::getNextAgent()`. The daily cap now cleanly accepts user input with `e.g. 50` placeholder and enforces only user-defined caps.
     - Full Next.js production build (`npm run build`) passed with exit code 0 across all 21 routes.
 
 ---
