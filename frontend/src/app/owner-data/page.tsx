@@ -912,6 +912,7 @@ export default function OwnerDataPage() {
         idxSecondary = (idxPrimary === 7) ? 8 : 7;
       }
       const idxEmail = findColIdx(['email', 'mail'], 9);
+      const idxAssigned = findColIdx(['assigned advisor', 'assigned to', 'assigned_to', 'advisor', 'sales advisor', 'agent'], -1);
 
       // Parse CSV Rows
       const recordsToImport: any[] = [];
@@ -939,6 +940,7 @@ export default function OwnerDataPage() {
             mobile_number: cols[idxPrimary] || null,
             phone_number: cols[idxSecondary] || null,
             email: cols[idxEmail] || null,
+            assigned_to: idxAssigned !== -1 && cols[idxAssigned] ? cols[idxAssigned] : null,
           });
         }
       }

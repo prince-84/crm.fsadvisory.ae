@@ -13,6 +13,7 @@ use App\Models\Developer;
 use App\Models\Community;
 use App\Models\Project;
 use App\Models\PropertyType;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -642,6 +643,7 @@ class ImportController extends Controller
             $fallbackComms = Community::where('is_active', true)->pluck('name')->toArray();
             $fallbackProjs = Project::where('is_active', true)->pluck('name')->toArray();
             $fallbackProps = PropertyType::where('is_active', true)->pluck('name')->toArray();
+            $activeUsers = User::where('is_active', true)->get();
 
             foreach ($records as $row) {
                 $isDuplicate = !empty($row['is_duplicate']);
@@ -776,13 +778,23 @@ class ImportController extends Controller
 
                 $contact = Contact::create($contactData);
 
-                // Lead Assignment: Assign to specific advisor if provided, otherwise auto-assign via Round-Robin
+                // Lead Assignment: Assign to specific active advisor if provided, otherwise auto-assign via Round-Robin
                 // If the lead was marked as duplicate, preserve its 'duplicate' state and do not auto-assign to advisor pool
                 if ($contactState !== 'duplicate') {
-                    $assignedOwner = !empty($row['assigned_owner']) && $row['assigned_owner'] !== 'Unassigned' ? trim($row['assigned_owner']) : null;
-                    if (!empty($assignedOwner) && $assignedOwner !== 'auto') {
+                    $rawOwner = !empty($row['assigned_owner']) ? trim((string)$row['assigned_owner']) : '';
+                    $unassignedPlaceholders = ['unassigned', 'auto', 'none', '-', '--', 'n/a', 'na', 'not assigned', 'not_assigned', 'null', ''];
+                    $isPlaceholder = in_array(mb_strtolower($rawOwner, 'UTF-8'), $unassignedPlaceholders, true);
+
+                    $matchedActiveUser = null;
+                    if (!$isPlaceholder && !empty($rawOwner)) {
+                        $matchedActiveUser = $activeUsers->first(function ($u) use ($rawOwner) {
+                            return strcasecmp($u->name, $rawOwner) === 0 || strcasecmp($u->email, $rawOwner) === 0;
+                        });
+                    }
+
+                    if ($matchedActiveUser) {
                         $contact->update([
-                            'assigned_to' => $assignedOwner,
+                            'assigned_to' => $matchedActiveUser->name,
                             'assigned_at' => now(),
                             'state'       => 'assigned',
                         ]);

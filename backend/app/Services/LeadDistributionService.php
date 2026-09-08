@@ -67,7 +67,7 @@ class LeadDistributionService
         // Filter out agents who have reached the global daily lead capacity (if configured)
         $globalCap = !empty($settings->max_daily_leads_per_agent) ? (int) $settings->max_daily_leads_per_agent : null;
         $available = $candidates->filter(function ($agent) use ($globalCap) {
-            if ($globalCap === null) {
+            if ($globalCap === null || $globalCap <= 0) {
                 return true;
             }
             return $agent->today_assigned_count < $globalCap;
@@ -190,6 +190,11 @@ class LeadDistributionService
 
         $agent = static::getNextAgent('owner_data');
         if (!$agent) {
+            if (!empty($settings->fallback_user_name)) {
+                $ownerRecord->update([
+                    'assigned_to' => $settings->fallback_user_name,
+                ]);
+            }
             return null;
         }
 

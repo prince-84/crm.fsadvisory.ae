@@ -72,13 +72,13 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
         'Rashid Al Mansoori', '+971 50 123 4567', '+971 55 987 6543', 'rashid@example.com', 'Emirati', '2026-08-20 14:30:00',
         'Meta Ads', 'Facebook Lead Form', 'Buyer', 'Emaar', 'Dubai Marina', 'Marina Gate',
         'Tower 1 - 1204', '2BR', '2500000', '3500000', 'Cash', 'High Floor Sea View Unit',
-        'Waqar Ahmed', 'Call back client for viewing', '2026-08-24 10:00:00'
+        'Unassigned', 'Call back client for viewing', '2026-08-24 10:00:00'
       ],
       [
         'Sarah Jenkins', '+971 52 444 8899', '', 'sarah.j@example.com', 'British', '2026-08-21 11:15:00',
         'Website', 'Direct Contact Us Form', 'Buyer', 'DAMAC', 'Downtown Dubai', 'Burj Crown',
         'Suite 802', '1BR', '1500000', '2000000', 'Finance', 'Full Burj Khalifa View',
-        'Hassan Qasimi', 'Send brochure & price list', '2026-08-23 18:00:00'
+        'Unassigned', 'Send brochure & price list', '2026-08-23 18:00:00'
       ],
       [
         'Tariq Mahmood', '+971 54 777 2211', '+971 50 777 2211', 'tariq@example.com', 'Pakistani', '2026-08-22 09:00:00',

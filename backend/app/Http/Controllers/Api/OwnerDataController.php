@@ -7,6 +7,7 @@ use App\Models\OwnerRecord;
 use App\Models\Community;
 use App\Models\Project;
 use App\Models\PropertyType;
+use App\Models\User;
 use App\Services\LeadDistributionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -292,13 +293,19 @@ class OwnerDataController extends Controller
         }
 
         $data = $validator->validated();
-        $isExplicitUnassigned = isset($data['assigned_to']) && $data['assigned_to'] === 'Unassigned';
+        $rawAssignedTo = !empty($data['assigned_to']) ? trim((string)$data['assigned_to']) : '';
+        $unassignedPlaceholders = ['unassigned', 'auto', 'none', '-', '--', 'n/a', 'na', 'not assigned', 'not_assigned', 'null', ''];
+        $isPlaceholder = in_array(mb_strtolower($rawAssignedTo, 'UTF-8'), $unassignedPlaceholders, true);
+        $isExplicitUnassigned = ($rawAssignedTo === 'Unassigned');
 
-        if (array_key_exists('assigned_to', $data)) {
-            if ($data['assigned_to'] === '' || $data['assigned_to'] === 'Unassigned') {
-                $data['assigned_to'] = null;
-            }
+        $matchedActiveUser = null;
+        if (!$isPlaceholder && !empty($rawAssignedTo)) {
+            $matchedActiveUser = User::where('is_active', true)->get()->first(function ($u) use ($rawAssignedTo) {
+                return strcasecmp($u->name, $rawAssignedTo) === 0 || strcasecmp($u->email, $rawAssignedTo) === 0;
+            });
         }
+
+        $data['assigned_to'] = $matchedActiveUser ? $matchedActiveUser->name : null;
 
         $record = OwnerRecord::create($data);
 
@@ -655,6 +662,7 @@ class OwnerDataController extends Controller
             $fallbackComms = Community::where('is_active', true)->pluck('name')->toArray();
             $fallbackProjs = Project::where('is_active', true)->pluck('name')->toArray();
             $fallbackProps = PropertyType::where('is_active', true)->pluck('name')->toArray();
+            $activeUsers = User::where('is_active', true)->get();
 
             foreach ($rows as $row) {
                 if (empty($row['owner_name'])) continue;
@@ -722,7 +730,18 @@ class OwnerDataController extends Controller
                     }
                 }
 
-                $assignedTo = !empty($row['assigned_to']) && $row['assigned_to'] !== 'Unassigned' && $row['assigned_to'] !== 'auto' ? trim($row['assigned_to']) : null;
+                $rawAssignedTo = !empty($row['assigned_to']) ? trim((string)$row['assigned_to']) : '';
+                $unassignedPlaceholders = ['unassigned', 'auto', 'none', '-', '--', 'n/a', 'na', 'not assigned', 'not_assigned', 'null', ''];
+                $isPlaceholder = in_array(mb_strtolower($rawAssignedTo, 'UTF-8'), $unassignedPlaceholders, true);
+
+                $matchedActiveUser = null;
+                if (!$isPlaceholder && !empty($rawAssignedTo)) {
+                    $matchedActiveUser = $activeUsers->first(function ($u) use ($rawAssignedTo) {
+                        return strcasecmp($u->name, $rawAssignedTo) === 0 || strcasecmp($u->email, $rawAssignedTo) === 0;
+                    });
+                }
+
+                $assignedTo = $matchedActiveUser ? $matchedActiveUser->name : null;
 
                 $createdRecord = OwnerRecord::create([
                     'property_name'   => $propName,
@@ -740,7 +759,7 @@ class OwnerDataController extends Controller
                     'assigned_to'     => $assignedTo,
                 ]);
 
-                // Auto-assign to sales advisors via Round-Robin if not explicitly assigned in CSV
+                // Auto-assign to sales advisors via Round-Robin if not explicitly assigned to a valid active advisor
                 if (empty($assignedTo)) {
                     LeadDistributionService::autoAssignOwnerRecord($createdRecord);
                 }

@@ -1023,6 +1023,34 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Verification**:
     - Ran full Next.js production build (`npm run build`) passing with exit code 0 across all 21 routes.
 
+- **99 — Dynamic Auto-Assignment for Lead Pool & Owner Data Imports (`backend/app/Http/Controllers/Api/ImportController.php`, `backend/app/Http/Controllers/Api/OwnerDataController.php`, `backend/app/Services/LeadDistributionService.php`, `frontend/src/components/ImportLeadsModal.tsx`, `frontend/src/app/owner-data/page.tsx`)**:
+  - **User Requirement**:
+    - When "Lead Pool File Imports" (`apply_to_lead_import`) and "Owner Data & Resale Inquiries" (`apply_to_owner_data`) are checked/enabled in CRM Settings (`/settings`), imported data in Lead Pool and Owner Data was failing to auto-assign and landing as "Unassigned". Ensure that whenever these settings are enabled, records without a valid active advisor are automatically distributed across active sales advisors via Round-Robin.
+  - **Root Cause Analysis**:
+    - `ImportController.php` previously used a strict case-sensitive check `$row['assigned_owner'] !== 'Unassigned'`. Files containing `'unassigned'` (lowercase), `'None'`, `'-'`, `'N/A'`, or sample template names like `'Waqar Ahmed'` / `'Hassan Qasimi'` (or legacy staff from external CRM exports) bypassed `autoAssignContact` and saved literal strings as the owner.
+    - `OwnerDataController.php` suffered from the identical case-sensitive bug in both `import` and `store`, saving `'unassigned'` or non-active names without triggering `autoAssignOwnerRecord`.
+    - `autoAssignOwnerRecord` in `LeadDistributionService` lacked fallback assignment to `$settings->fallback_user_name` if agent rotation returned null, leaving records abandoned as unassigned.
+  - **Changes Implemented**:
+    - **Lead Pool File Imports (`ImportController.php`)**:
+      - Added active user lookup (`User::where('is_active', true)->get()`).
+      - Normalized assigned owner strings and implemented case-insensitive placeholder detection (`unassigned`, `auto`, `none`, `-`, `--`, `n/a`, `na`, `not assigned`, `null`, empty string).
+      - If the file specifies an explicit active advisor, that active user is assigned; otherwise, if the owner is empty, placeholder, or not an active user, `LeadDistributionService::autoAssignContact($contact, 'lead_import')` is executed to distribute the lead via Round-Robin.
+    - **Owner Data Import & Store (`OwnerDataController.php`)**:
+      - Added active user validation and case-insensitive placeholder handling to both `import` (batch CSV upload) and `store` (single record creation).
+      - Records without an explicit active advisor automatically trigger `LeadDistributionService::autoAssignOwnerRecord($createdRecord)`.
+    - **Lead Distribution Engine Fallback Resilience (`LeadDistributionService.php`)**:
+      - Updated `autoAssignOwnerRecord` to assign to `$settings->fallback_user_name` (e.g. Faraz Shafi) if the active agent pool is exhausted or capped.
+      - Updated `getNextAgent` capacity filtering to treat `$globalCap <= 0` as unlimited.
+    - **Sample Template & CSV Column Mapping Synchronization**:
+      - Updated `ImportLeadsModal.tsx` sample template rows to default to `'Unassigned'` instead of non-existent staff names.
+      - Updated `owner-data/page.tsx` CSV parser (`handleFileUpload`) to detect and map assigned advisor columns (`assigned advisor`, `assigned to`, `advisor`, etc.) so custom CSV files with advisor columns are properly recognized.
+  - **Verification**:
+    - Unit tests confirmed that Lead Pool imports with `Unassigned`, `unassigned` (lowercase), `None`, and non-existent advisor names (`Waqar Ahmed`) all auto-assign to active advisors (`Babar Ali Khan`).
+    - Unit tests confirmed that Owner Data CSV imports with no advisor or placeholder advisors all auto-assign to active advisors.
+    - Explicit active advisor assignments (`Faraz Shafi`) are preserved.
+    - Disabling the scopes in Settings leaves unassigned records as unassigned as expected.
+    - Full Next.js production build (`npm run build`) passed with 0 errors across all 21 routes.
+
 ---
 
 ## ⚙️ Installation & Running Instructions
