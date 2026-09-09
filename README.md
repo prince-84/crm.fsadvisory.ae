@@ -1105,6 +1105,7 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Added sorting support for `call_outcome` in both `sortedOpps` and `sortedOwners`.
     - Added luxury badges (`renderCallOutcomeBadge`) for all call outcome statuses (`Interested`, `Callback Requested`, `Follow-up Required`, `No Answer`, `Not Interested`, `Wrong Number`, and `—` fallback).
     - Updated `QueueController.php` to eager-load latest call activities and return `call_outcome` for opportunities, assigned contacts, and owner records.
+    - Resolved runtime model attribute assignment order by executing `$opp->save()` before setting `$opp->call_outcome`, preventing MySQL 1054 Unknown Column error on `opportunities` table and ensuring smooth queue payload delivery.
   - **Verification**:
     - PHP syntax verified with zero errors (`php -l`).
     - TypeScript compilation verified clean (`npx tsc --noEmit` exit code 0).

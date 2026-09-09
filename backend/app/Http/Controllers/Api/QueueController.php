@@ -138,9 +138,9 @@ class QueueController extends Controller
         $now = Carbon::now();
         foreach ($opportunities as $opp) {
             $latestCall = $opp->activities->first() ?? $opp->contact?->activities?->first();
-            $opp->call_outcome = $latestCall?->call_outcome ?? null;
+            $callOutcome = $latestCall?->call_outcome ?? null;
 
-            $isTerminal = $opp->call_outcome && (str_contains($opp->call_outcome, 'Not Interested') || str_contains($opp->call_outcome, 'Wrong Number'));
+            $isTerminal = $callOutcome && (str_contains($callOutcome, 'Not Interested') || str_contains($callOutcome, 'Wrong Number'));
 
             if ($isTerminal) {
                 $opp->sla_status = 'on_track';
@@ -158,6 +158,7 @@ class QueueController extends Controller
                 }
             }
             $opp->save();
+            $opp->call_outcome = $callOutcome;
             $opp->has_opportunity = true;
         }
 
