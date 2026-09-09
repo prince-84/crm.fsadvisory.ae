@@ -1090,6 +1090,25 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Verification**:
     - Full TypeScript compilation verified clean (`npx tsc --noEmit` exit code 0).
 
+- **103 — Quick Call Modal Terminal Outcome Behavior & My Queue Call Outcome Column Integration (`QueueController.php`, `ActivityController.php`, `frontend/src/app/queue/page.tsx`)**:
+  - **Dynamic Follow-up & SLA Schedule Hiding in Quick Call Modal**:
+    - In the "Log Call Outcome" SweetAlert2 modal in My Queue (`/queue`), added dynamic event listener toggling the "Next Follow-up & SLA Schedule" container (`#swal-next-schedule-container`).
+    - When selecting terminal outcomes (**"Not Interested"** or **"Wrong Number"**), the Next Follow-up dropdown is automatically hidden.
+    - On form submission with terminal outcomes, `next_action_due_at` is set to `null` and `next_action` records `Closed: ${outcome}`.
+    - Updated `ActivityController.php` to prevent falling back to 24-hour due date when outcome is terminal or due date is omitted, ensuring that leads with terminal calls are not marked as overdue or SLA breached.
+    - Updated `QueueController.php` so opportunities and virtual queue items with terminal outcomes retain an `on_track` SLA status and are not flagged as orphaned.
+  - **"Call Outcome" Column by Default in My Queue**:
+    - Added `call_outcome` column enabled by default (`true`) across both **Regular Leads (Lead Pool)** and **Owner Leads (Owner Data)** tables.
+    - Included `call_outcome` in `DEFAULT_REGULAR_COLUMNS`, `DEFAULT_REGULAR_COLUMN_ORDER`, `REGULAR_COLUMNS`, `DEFAULT_OWNER_COLUMNS`, `DEFAULT_OWNER_COLUMN_ORDER`, and `OWNER_COLUMNS`.
+    - Integrated with the **Columns** toggle dropdown for full user customization and reset support.
+    - Added automatic migration logic in `localStorage` loading so existing users immediately see the new column without clearing browser cache.
+    - Added sorting support for `call_outcome` in both `sortedOpps` and `sortedOwners`.
+    - Added luxury badges (`renderCallOutcomeBadge`) for all call outcome statuses (`Interested`, `Callback Requested`, `Follow-up Required`, `No Answer`, `Not Interested`, `Wrong Number`, and `—` fallback).
+    - Updated `QueueController.php` to eager-load latest call activities and return `call_outcome` for opportunities, assigned contacts, and owner records.
+  - **Verification**:
+    - PHP syntax verified with zero errors (`php -l`).
+    - TypeScript compilation verified clean (`npx tsc --noEmit` exit code 0).
+
 ---
 
 ## ⚙️ Installation & Running Instructions

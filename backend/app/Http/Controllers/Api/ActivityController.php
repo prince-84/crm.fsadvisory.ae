@@ -63,21 +63,28 @@ class ActivityController extends Controller
         if (!empty($validated['opportunity_id']) && !empty($validated['next_action'])) {
             $opp = Opportunity::find($validated['opportunity_id']);
             if ($opp) {
-                $dueAt = !empty($validated['next_action_due_at']) 
-                    ? Carbon::parse($validated['next_action_due_at']) 
-                    : Carbon::now()->addHours(24);
+                $outcome = $validated['call_outcome'] ?? '';
+                $isTerminal = str_contains($outcome, 'Not Interested') || str_contains($outcome, 'Wrong Number');
 
-                $opp->next_action = $validated['next_action'];
-                $opp->next_action_due_at = $dueAt;
-                $opp->is_orphaned = false;
-                
-                // SLA check
-                if ($dueAt->isPast()) {
-                    $opp->sla_status = 'overdue';
-                } elseif ($dueAt->diffInMinutes(Carbon::now()) <= 30) {
-                    $opp->sla_status = 'due_soon';
-                } else {
+                if ($isTerminal || empty($validated['next_action_due_at'])) {
+                    $opp->next_action = $validated['next_action'];
+                    $opp->next_action_due_at = null;
                     $opp->sla_status = 'on_track';
+                    $opp->is_orphaned = false;
+                } else {
+                    $dueAt = Carbon::parse($validated['next_action_due_at']);
+                    $opp->next_action = $validated['next_action'];
+                    $opp->next_action_due_at = $dueAt;
+                    $opp->is_orphaned = false;
+                    
+                    // SLA check
+                    if ($dueAt->isPast()) {
+                        $opp->sla_status = 'overdue';
+                    } elseif ($dueAt->diffInMinutes(Carbon::now()) <= 30) {
+                        $opp->sla_status = 'due_soon';
+                    } else {
+                        $opp->sla_status = 'on_track';
+                    }
                 }
 
                 $opp->save();

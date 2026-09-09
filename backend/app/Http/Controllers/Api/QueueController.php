@@ -66,17 +66,26 @@ class QueueController extends Controller
                 ->merge($ownerRecords->pluck('phone_number')->filter())
                 ->unique();
 
-            $linkedContacts = Contact::whereIn('phone', $phoneList)->with(['opportunities' => function ($q) {
-                $q->whereNotIn('stage', ['closed_won', 'closed_lost'])->latest();
-            }])->get()->keyBy('phone');
+            $linkedContacts = Contact::whereIn('phone', $phoneList)->with([
+                'opportunities' => function ($q) {
+                    $q->whereNotIn('stage', ['closed_won', 'closed_lost'])
+                      ->with(['activities' => fn($qa) => $qa->where('type', 'call')->latest()])
+                      ->latest();
+                },
+                'activities' => function ($q) {
+                    $q->where('type', 'call')->latest();
+                }
+            ])->get()->keyBy('phone');
 
             $enrichedOwners = $ownerRecords->map(function ($record) use ($linkedContacts) {
                 $contact = $linkedContacts->get($record->mobile_number) ?? $linkedContacts->get($record->phone_number);
                 $opp = $contact && $contact->opportunities->count() > 0 ? $contact->opportunities->first() : null;
+                $latestCall = $opp?->activities?->first() ?? $contact?->activities?->first();
 
                 $record->active_opportunity = $opp;
                 $record->contact_id = $contact ? $contact->id : null;
                 $record->name = $record->owner_name;
+                $record->call_outcome = $latestCall?->call_outcome ?? null;
                 return $record;
             });
 
@@ -108,7 +117,12 @@ class QueueController extends Controller
         }
 
         // Regular Leads: Active Opportunities + Assigned Contacts (Awaiting qualification call)
-        $oppQuery = Opportunity::with(['contact', 'buyerQualification', 'sellerQualification'])
+        $oppQuery = Opportunity::with([
+            'contact.activities' => fn($q) => $q->where('type', 'call')->latest(),
+            'buyerQualification',
+            'sellerQualification',
+            'activities' => fn($q) => $q->where('type', 'call')->latest(),
+        ])
             ->whereNotIn('stage', ['closed_won', 'closed_lost'])
             ->whereNotNull('current_owner_name')
             ->where('current_owner_name', '!=', '')
@@ -123,7 +137,15 @@ class QueueController extends Controller
         // Dynamically update SLA status based on current time
         $now = Carbon::now();
         foreach ($opportunities as $opp) {
-            if (!$opp->next_action_due_at || !$opp->next_action) {
+            $latestCall = $opp->activities->first() ?? $opp->contact?->activities?->first();
+            $opp->call_outcome = $latestCall?->call_outcome ?? null;
+
+            $isTerminal = $opp->call_outcome && (str_contains($opp->call_outcome, 'Not Interested') || str_contains($opp->call_outcome, 'Wrong Number'));
+
+            if ($isTerminal) {
+                $opp->sla_status = 'on_track';
+                $opp->is_orphaned = false;
+            } else if (!$opp->next_action_due_at || !$opp->next_action) {
                 $opp->is_orphaned = true;
             } else {
                 $dueAt = Carbon::parse($opp->next_action_due_at);
@@ -160,17 +182,29 @@ class QueueController extends Controller
             
             $nextAction = 'Contact new lead — confirm requirement details';
             $dueAt = $assignedAt->copy()->addHours(2);
+            $slaStatus = 'on_track';
 
             if ($latestCall && $latestCall->call_outcome) {
-                $nextAction = "Follow-up: {$latestCall->call_outcome}";
-                $dueAt = Carbon::parse($latestCall->created_at)->addHours(24);
-            }
-
-            $slaStatus = 'on_track';
-            if ($dueAt->isPast()) {
-                $slaStatus = 'overdue';
-            } elseif ($dueAt->diffInMinutes($now) <= 30) {
-                $slaStatus = 'due_soon';
+                $isTerminal = str_contains($latestCall->call_outcome, 'Not Interested') || str_contains($latestCall->call_outcome, 'Wrong Number');
+                if ($isTerminal) {
+                    $nextAction = "Closed: {$latestCall->call_outcome}";
+                    $dueAt = null;
+                    $slaStatus = 'on_track';
+                } else {
+                    $nextAction = "Follow-up: {$latestCall->call_outcome}";
+                    $dueAt = Carbon::parse($latestCall->created_at)->addHours(24);
+                    if ($dueAt->isPast()) {
+                        $slaStatus = 'overdue';
+                    } elseif ($dueAt->diffInMinutes($now) <= 30) {
+                        $slaStatus = 'due_soon';
+                    }
+                }
+            } else {
+                if ($dueAt->isPast()) {
+                    $slaStatus = 'overdue';
+                } elseif ($dueAt->diffInMinutes($now) <= 30) {
+                    $slaStatus = 'due_soon';
+                }
             }
 
             return (object) [
@@ -183,8 +217,9 @@ class QueueController extends Controller
                 'temperature' => 'warm',
                 'stage' => 'unqualified',
                 'sla_status' => $slaStatus,
+                'call_outcome' => $latestCall?->call_outcome ?? null,
                 'next_action' => $nextAction,
-                'next_action_due_at' => $dueAt->toIso8601String(),
+                'next_action_due_at' => $dueAt ? $dueAt->toIso8601String() : null,
                 'budget_min' => null,
                 'budget_max' => null,
                 'buyer_qualification' => null,

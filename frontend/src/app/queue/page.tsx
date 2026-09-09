@@ -195,6 +195,7 @@ function MyQueueContent() {
     type_temp: true,
     budget_community: true,
     stage: true,
+    call_outcome: true,
     sla: true,
     next_action: true,
     owner: true,
@@ -209,6 +210,7 @@ function MyQueueContent() {
     'type_temp',
     'budget_community',
     'stage',
+    'call_outcome',
     'sla',
     'next_action',
     'owner',
@@ -223,6 +225,7 @@ function MyQueueContent() {
     { key: 'type_temp', label: 'Type Temp' },
     { key: 'budget_community', label: 'Budget Community' },
     { key: 'stage', label: 'Stage' },
+    { key: 'call_outcome', label: 'Call Outcome' },
     { key: 'sla', label: 'Sla' },
     { key: 'next_action', label: 'Next Action' },
     { key: 'owner', label: 'Assigned Advisor' },
@@ -237,6 +240,7 @@ function MyQueueContent() {
     unit_specs: true,
     created_at: true,
     deal_status: true,
+    call_outcome: true,
     assigned_to: true,
     actions: true,
   };
@@ -248,6 +252,7 @@ function MyQueueContent() {
     'unit_specs',
     'created_at',
     'deal_status',
+    'call_outcome',
     'assigned_to',
     'actions',
   ];
@@ -259,6 +264,7 @@ function MyQueueContent() {
     { key: 'unit_specs', label: 'Unit Specs' },
     { key: 'created_at', label: 'Created Date' },
     { key: 'deal_status', label: 'Deal Status' },
+    { key: 'call_outcome', label: 'Call Outcome' },
     { key: 'assigned_to', label: 'Assigned Advisor' },
     { key: 'actions', label: 'Actions' },
   ];
@@ -398,6 +404,7 @@ function MyQueueContent() {
             if (k in parsed) clean[k] = !!parsed[k];
           });
           clean.created_at = true; // Always visible by default
+          clean.call_outcome = parsed.call_outcome !== undefined ? !!parsed.call_outcome : true;
           setRegularColumnVisibility(clean);
         } catch (e) {
           console.error('Error loading saved regular columns:', e);
@@ -418,6 +425,14 @@ function MyQueueContent() {
                 sanitized.splice(3, 0, 'created_at');
               }
             }
+            if (!sanitized.includes('call_outcome')) {
+              const stageIdx = sanitized.indexOf('stage');
+              if (stageIdx !== -1) {
+                sanitized.splice(stageIdx + 1, 0, 'call_outcome');
+              } else {
+                sanitized.splice(7, 0, 'call_outcome');
+              }
+            }
             const missing = DEFAULT_REGULAR_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
             setRegularColumnOrder([...sanitized, ...missing, 'actions']);
           }
@@ -435,6 +450,7 @@ function MyQueueContent() {
             if (k in parsed) clean[k] = !!parsed[k];
           });
           clean.created_at = true; // Always visible by default
+          clean.call_outcome = parsed.call_outcome !== undefined ? !!parsed.call_outcome : true;
           setOwnerColumnVisibility(clean);
         } catch (e) {
           console.error('Error loading saved owner columns:', e);
@@ -453,6 +469,14 @@ function MyQueueContent() {
                 sanitized.splice(unitIdx + 1, 0, 'created_at');
               } else {
                 sanitized.splice(4, 0, 'created_at');
+              }
+            }
+            if (!sanitized.includes('call_outcome')) {
+              const dealIdx = sanitized.indexOf('deal_status');
+              if (dealIdx !== -1) {
+                sanitized.splice(dealIdx + 1, 0, 'call_outcome');
+              } else {
+                sanitized.splice(6, 0, 'call_outcome');
               }
             }
             const missing = DEFAULT_OWNER_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
@@ -586,7 +610,7 @@ function MyQueueContent() {
               <option value="Wrong Number">Wrong Number / Invalid Contact Info</option>
             </select>
           </div>
-          <div>
+          <div id="swal-next-schedule-container">
             <label class="block text-[#081428] font-bold mb-1">Next Follow-up & SLA Schedule</label>
             <select id="swal-next-schedule" class="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none">
               <option value="24h">📅 Tomorrow at Same Time (24h) — [On Track 🟢]</option>
@@ -608,6 +632,19 @@ function MyQueueContent() {
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#16A34A',
       cancelButtonColor: '#6E6E6E',
+      didOpen: (popup) => {
+        const outcomeSelect = popup.querySelector('#swal-call-outcome') as HTMLSelectElement | null;
+        const scheduleContainer = popup.querySelector('#swal-next-schedule-container') as HTMLElement | null;
+        if (outcomeSelect && scheduleContainer) {
+          const toggleSchedule = () => {
+            const val = outcomeSelect.value || '';
+            const isTerminal = val.includes('Not Interested') || val.includes('Wrong Number');
+            scheduleContainer.style.display = isTerminal ? 'none' : 'block';
+          };
+          outcomeSelect.addEventListener('change', toggleSchedule);
+          toggleSchedule();
+        }
+      },
       preConfirm: () => {
         const outcome = (document.getElementById('swal-call-outcome') as HTMLSelectElement)?.value;
         const schedule = (document.getElementById('swal-next-schedule') as HTMLSelectElement)?.value;
@@ -616,16 +653,20 @@ function MyQueueContent() {
           Swal.showValidationMessage('Please enter call notes / summary before saving.');
           return false;
         }
-        return { outcome, schedule, notes };
+        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number');
+        return { outcome, schedule: isTerminal ? null : schedule, notes, isTerminal };
       }
     });
 
     if (formValues) {
-      let dueAt = new Date(Date.now() + 24 * 3600 * 1000);
-      if (formValues.schedule === '15m') dueAt = new Date(Date.now() + 15 * 60 * 1000);
-      else if (formValues.schedule === '2h') dueAt = new Date(Date.now() + 2 * 3600 * 1000);
-      else if (formValues.schedule === '48h') dueAt = new Date(Date.now() + 48 * 3600 * 1000);
-      else if (formValues.schedule === 'now') dueAt = new Date(Date.now() - 5 * 60 * 1000);
+      let dueAt: Date | null = null;
+      if (!formValues.isTerminal && formValues.schedule) {
+        dueAt = new Date(Date.now() + 24 * 3600 * 1000);
+        if (formValues.schedule === '15m') dueAt = new Date(Date.now() + 15 * 60 * 1000);
+        else if (formValues.schedule === '2h') dueAt = new Date(Date.now() + 2 * 3600 * 1000);
+        else if (formValues.schedule === '48h') dueAt = new Date(Date.now() + 48 * 3600 * 1000);
+        else if (formValues.schedule === 'now') dueAt = new Date(Date.now() - 5 * 60 * 1000);
+      }
 
       try {
         await fetchApi('/activities', {
@@ -637,8 +678,8 @@ function MyQueueContent() {
             call_outcome: formValues.outcome,
             description: `Quick Call: ${formValues.outcome} — ${formValues.notes}`,
             user_name: currentUser?.name || 'Agent',
-            next_action: `Follow-up: ${formValues.outcome}`,
-            next_action_due_at: dueAt.toISOString(),
+            next_action: formValues.isTerminal ? `Closed: ${formValues.outcome}` : `Follow-up: ${formValues.outcome}`,
+            next_action_due_at: dueAt ? dueAt.toISOString() : null,
           }),
         });
 
@@ -708,6 +749,7 @@ function MyQueueContent() {
     });
 
     if (formValues) {
+      const isTerminal = formValues.outcome?.includes('Not Interested') || formValues.outcome?.includes('Wrong Number');
       try {
         await fetchApi('/activities', {
           method: 'POST',
@@ -721,6 +763,8 @@ function MyQueueContent() {
             call_outcome: formValues.outcome,
             description: `Owner Call (${record.building_name || record.area || 'Property'}): ${formValues.outcome} — ${formValues.notes}`,
             user_name: currentUser?.name || 'Agent',
+            next_action: isTerminal ? `Closed: ${formValues.outcome}` : `Follow-up: ${formValues.outcome}`,
+            next_action_due_at: isTerminal ? null : new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
           }),
         });
 
@@ -1115,6 +1159,9 @@ function MyQueueContent() {
       } else if (sortBy === 'owner') {
         valA = a.current_owner_name || '';
         valB = b.current_owner_name || '';
+      } else if (sortBy === 'call_outcome') {
+        valA = a.call_outcome || '';
+        valB = b.call_outcome || '';
       } else if (sortBy === 'created_at') {
         valA = a.created_at || a.contact?.created_at || '';
         valB = b.created_at || b.contact?.created_at || '';
@@ -1230,6 +1277,9 @@ function MyQueueContent() {
       } else if (sortBy === 'assigned_to') {
         valA = a.assigned_to || '';
         valB = b.assigned_to || '';
+      } else if (sortBy === 'call_outcome') {
+        valA = a.call_outcome || '';
+        valB = b.call_outcome || '';
       } else if (sortBy === 'created_at') {
         valA = a.created_at || '';
         valB = b.created_at || '';
@@ -1354,6 +1404,60 @@ function MyQueueContent() {
           )}
         </div>
       </th>
+    );
+  };
+
+  const renderCallOutcomeBadge = (outcome?: string | null) => {
+    if (!outcome) {
+      return <span className="text-slate-400 font-mono text-[11px]">—</span>;
+    }
+    const o = outcome.trim();
+    if (o.includes('Interested') || o.includes('Viewing') || o.includes('List') || o.includes('Valuation')) {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 whitespace-nowrap">
+          {o}
+        </span>
+      );
+    }
+    if (o.includes('Callback')) {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap">
+          {o}
+        </span>
+      );
+    }
+    if (o.includes('Follow-up')) {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-300 whitespace-nowrap">
+          {o}
+        </span>
+      );
+    }
+    if (o.includes('No Answer') || o.includes('Voicemail')) {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-300 whitespace-nowrap">
+          {o}
+        </span>
+      );
+    }
+    if (o.includes('Not Interested') || o.includes('Rented')) {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-300 whitespace-nowrap">
+          {o}
+        </span>
+      );
+    }
+    if (o.includes('Wrong Number') || o.includes('Invalid')) {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-rose-100 text-rose-800 border border-rose-300 whitespace-nowrap">
+          {o}
+        </span>
+      );
+    }
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700 whitespace-nowrap">
+        {o}
+      </span>
     );
   };
 
@@ -1489,6 +1593,13 @@ function MyQueueContent() {
                 No Deal Created
               </span>
             )}
+          </td>
+        );
+
+      case 'call_outcome':
+        return (
+          <td key={colKey} className="p-3 whitespace-nowrap">
+            {renderCallOutcomeBadge(opp.call_outcome)}
           </td>
         );
 
@@ -1743,6 +1854,13 @@ function MyQueueContent() {
                 No Deal Created
               </span>
             )}
+          </td>
+        );
+
+      case 'call_outcome':
+        return (
+          <td key={colKey} className="p-3 whitespace-nowrap">
+            {renderCallOutcomeBadge(record.call_outcome)}
           </td>
         );
 
