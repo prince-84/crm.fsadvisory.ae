@@ -22,16 +22,12 @@ import {
   Briefcase, 
   ChevronRight, 
   ChevronLeft, 
-  RefreshCw, 
+  RefreshCw,
   X, 
-  CheckCircle2, 
   Sparkles, 
   Radio, 
   Flame,
   FileAudio,
-  Settings,
-  HelpCircle,
-  Copy,
   ExternalLink,
   Upload,
   Trash2
@@ -67,9 +63,6 @@ export default function CallRecordingsPage() {
     webhook_url: `${API_BASE_URL}/3cx/call-event`,
   });
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [selectedExtToSync, setSelectedExtToSync] = useState('1030');
-  const [isSetupModalOpen, setIsSetupModalOpen] = useState(false);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,38 +125,6 @@ export default function CallRecordingsPage() {
     loadRecordings(1, perPage);
   }, [selectedDirection, selectedAgent, selectedDuration, searchQuery]);
 
-  const [importingCsv, setImportingCsv] = useState(false);
-  const csvInputRef = useRef<HTMLInputElement | null>(null);
-
-  const handleImportCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('csv_file', file);
-
-    setImportingCsv(true);
-    try {
-      const data = await fetchApi('/3cx/import-csv', {
-        method: 'POST',
-        body: formData,
-      });
-
-      Swal.fire({
-        icon: 'success',
-        title: '3CX Call Logs Imported!',
-        text: `Successfully imported ${data.imported_count || 0} calls from 3CX into CRM.`,
-        confirmButtonColor: '#081428',
-      });
-      loadRecordings();
-    } catch (err: any) {
-      Swal.fire('Import Error', err.message || 'Failed to import 3CX CSV.', 'error');
-    } finally {
-      setImportingCsv(false);
-      if (csvInputRef.current) csvInputRef.current.value = '';
-    }
-  };
-
   const handleAttachAudio = async (recId: number, file: File) => {
     const formData = new FormData();
     formData.append('audio_file', file);
@@ -182,27 +143,6 @@ export default function CallRecordingsPage() {
       loadRecordings();
     } catch (err: any) {
       Swal.fire('Upload Error', err.message || 'Failed to upload audio file', 'error');
-    }
-  };
-
-  const handleSync3cx = async () => {
-    setSyncing(true);
-    try {
-      const res = await fetchApi('/recordings/sync-3cx', {
-        method: 'POST',
-        body: JSON.stringify({ extension: selectedExtToSync }),
-      });
-      Swal.fire({
-        icon: 'success',
-        title: '3CX Call Synchronized!',
-        text: res.message || 'Latest call recording ingested from 3CX Gateway.',
-        confirmButtonColor: '#081428',
-      });
-      setSyncing(false);
-      loadRecordings();
-    } catch (err: any) {
-      Swal.fire('Sync Error', err.message || 'Failed to sync with 3CX server.', 'error');
-      setSyncing(false);
     }
   };
 
@@ -366,18 +306,6 @@ export default function CallRecordingsPage() {
     loadRecordings(1, newLimit);
   };
 
-  const handleCopyWebhook = () => {
-    const url = `${API_BASE_URL}/3cx/call-event`;
-    navigator.clipboard.writeText(url);
-    Swal.fire({
-      icon: 'success',
-      title: 'Copied to Clipboard!',
-      text: '3CX Webhook Ingestion URL copied.',
-      timer: 1500,
-      showConfirmButton: false,
-    });
-  };
-
   const handleClearAllRecordings = async () => {
     const result = await Swal.fire({
       title: 'Clear All Call Recordings?',
@@ -470,35 +398,6 @@ export default function CallRecordingsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              {/* Hidden CSV File Input */}
-              <input
-                type="file"
-                ref={csvInputRef}
-                onChange={handleImportCsv}
-                accept=".csv,text/csv"
-                className="hidden"
-              />
-
-              {/* Import 3CX CSV Button */}
-              <button
-                onClick={() => csvInputRef.current?.click()}
-                disabled={importingCsv}
-                className="px-3 py-2 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold text-xs rounded-md shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer border border-[#C8A147]/40"
-                title="Export Call Reports CSV from 3CX and upload here to import all call history"
-              >
-                <Upload className={`w-3.5 h-3.5 text-[#C8A147] ${importingCsv ? 'animate-bounce' : ''}`} />
-                <span>{importingCsv ? 'Importing CSV...' : '📥 Import 3CX Call Reports (CSV)'}</span>
-              </button>
-
-              {/* PBX Setup Modal Button */}
-              <button
-                onClick={() => setIsSetupModalOpen(true)}
-                className="px-3 py-2 bg-white border border-[#E8E4DC] hover:bg-slate-50 text-[#081428] font-bold text-xs rounded-md shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <Settings className="w-3.5 h-3.5 text-[#C8A147]" />
-                <span>3CX Webhook Setup</span>
-              </button>
-
               {/* Clear All Recordings Button */}
               <button
                 onClick={handleClearAllRecordings}
@@ -508,30 +407,6 @@ export default function CallRecordingsPage() {
                 <Trash2 className="w-3.5 h-3.5 text-red-500" />
                 <span>Clear All Recordings</span>
               </button>
-
-              {/* Extension Select & Ingest Button */}
-              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] p-1 rounded-md">
-                <select
-                  value={selectedExtToSync}
-                  onChange={(e) => setSelectedExtToSync(e.target.value)}
-                  className="bg-transparent text-xs font-bold text-[#081428] focus:outline-none p-1 cursor-pointer"
-                >
-                  <option value="1030">Ext 1030 (Mako)</option>
-                  <option value="1031">Ext 1031 (Shafi)</option>
-                  <option value="1033">Ext 1033 (Hiba)</option>
-                  <option value="1034">Ext 1034 (Rayyan)</option>
-                  <option value="1035">Ext 1035 (FA Admin)</option>
-                </select>
-
-                <button
-                  onClick={handleSync3cx}
-                  disabled={syncing}
-                  className="px-3 py-1.5 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold text-xs rounded shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-[#C8A147] ${syncing ? 'animate-spin' : ''}`} />
-                  <span>{syncing ? 'Ingesting...' : 'Sync Call'}</span>
-                </button>
-              </div>
             </div>
           </div>
 
@@ -1039,96 +914,6 @@ export default function CallRecordingsPage() {
         </div>
       );
     })()}
-
-      {/* 3CX WEBHOOK SETUP INSTRUCTION MODAL */}
-      {isSetupModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#081428]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E8E4DC] rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
-            <div className="bg-[#081428] p-4 text-white flex items-center justify-between border-b border-[#152744]">
-              <div className="flex items-center gap-2">
-                <Radio className="w-5 h-5 text-[#C8A147]" />
-                <span className="font-heading font-bold text-sm">3CX Server Integration & Webhook Guide</span>
-              </div>
-              <button
-                onClick={() => setIsSetupModalOpen(false)}
-                className="text-slate-400 hover:text-white transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4 text-xs text-[#1A1A1A] max-h-[520px] overflow-y-auto">
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-start gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold text-emerald-900">5 Active 3CX Extensions Mapped</div>
-                  <div className="text-[11px] text-emerald-800 mt-0.5">
-                    Ext 1030 (Mako), Ext 1031 (Shafi Core), Ext 1033 (Hiba Alam), Ext 1034 (Rayyan), Ext 1035 (FA Advisory 3).
-                  </div>
-                </div>
-              </div>
-
-              {/* Webhook Endpoint */}
-              <div className="space-y-1.5">
-                <label className="block font-bold text-[#081428]">3CX Webhook / CDR Ingestion Endpoint</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={`${API_BASE_URL}/3cx/call-event`}
-                    className="flex-1 p-2 bg-slate-100 border border-slate-300 rounded font-mono text-[11px] text-[#081428] select-all"
-                  />
-                  <button
-                    onClick={handleCopyWebhook}
-                    className="px-3 py-2 bg-[#081428] text-[#C8A147] font-bold rounded flex items-center gap-1 cursor-pointer"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy URL</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Step by Step instructions */}
-              <div className="space-y-2 border-t border-[#E8E4DC] pt-3">
-                <div className="font-bold text-[#081428]">How to configure in 3CX Management Console:</div>
-                <ol className="list-decimal pl-4 space-y-1.5 text-[11px] text-slate-700 leading-relaxed">
-                  <li>Open your 3CX Console (<code>https://3cx.fsadvisory.ae</code>) &rarr; <strong>Settings</strong> &rarr; <strong>CRM Integration</strong>.</li>
-                  <li>Select <strong>Server Side</strong> &rarr; <strong>Webhook / REST API</strong>.</li>
-                  <li>Paste the Webhook URL above into the <strong>Call Report URL</strong> field.</li>
-                  <li>Enable <strong>Post Call Recordings & Call Duration</strong> for extensions <code>1030, 1031, 1033, 1034, 1035</code>.</li>
-                  <li>Click <strong>Save</strong>. All calls made by the 5 users will stream into this CRM automatically!</li>
-                </ol>
-              </div>
-
-              {/* JSON Payload Spec */}
-              <div className="space-y-1.5 border-t border-[#E8E4DC] pt-3">
-                <div className="font-bold text-[#081428]">Sample JSON Payload sent by 3CX:</div>
-                <pre className="p-3 bg-slate-900 text-emerald-400 rounded text-[10px] font-mono overflow-x-auto">
-{`{
-  "CallId": "3CX-REC-20260829-9182",
-  "AgentExtension": "1033",
-  "CallerNumber": "+97143001033",
-  "DestinationNumber": "+971501234567",
-  "Direction": "outbound",
-  "CallDuration": 245,
-  "RecordingUrl": "https://3cx.fsadvisory.ae/recordings/rec-1033.wav",
-  "CallNotes": "Client interested in Palm Jumeirah 2BR"
-}`}
-                </pre>
-              </div>
-
-              <div className="flex items-center justify-end pt-3 border-t border-[#E8E4DC]">
-                <button
-                  onClick={() => setIsSetupModalOpen(false)}
-                  className="px-4 py-2 bg-[#081428] text-white font-bold rounded hover:bg-[#122444] transition-colors"
-                >
-                  Close Guide
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

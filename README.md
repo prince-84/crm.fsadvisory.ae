@@ -1079,6 +1079,17 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Truncated 1,762 historical dummy/test call records locally; verified `CallRecording::count() === 0`.
     - Tested PHP syntax cleanliness (`php -l`) with zero errors.
 
+- **102 — Call Recordings Header Simplification & Simulation Controls Removal (`frontend/src/app/recordings/page.tsx`)**:
+  - **Permanently Removed Simulation & Setup Controls**:
+    - Removed **Import 3CX Call Reports (CSV)** button, hidden file input, and file ingestion handler.
+    - Removed **3CX Webhook Setup** button and the entire instructions popup modal guide.
+    - Removed the **Extension Selector Dropdown** and **[ Sync Call ]** simulation button, preventing accidental creation of dummy test calls and keeping the repository strictly populated by authentic 3CX phone recordings.
+  - **Streamlined Luxury Header Layout**:
+    - Retained exclusively the high-contrast **"Clear All Recordings"** button in the header actions bar for clean, clutter-free workspace presentation.
+    - Cleaned up unused component state (`isSetupModalOpen`, `syncing`, `selectedExtToSync`, `importingCsv`, `csvInputRef`), unused handlers, and obsolete imports.
+  - **Verification**:
+    - Full TypeScript compilation verified clean (`npx tsc --noEmit` exit code 0).
+
 ---
 
 ## ⚙️ Installation & Running Instructions
