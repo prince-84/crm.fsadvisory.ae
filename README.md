@@ -1053,6 +1053,32 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Disabling the scopes in Settings leaves unassigned records as unassigned as expected.
     - Full Next.js production build (`npm run build`) passed with 0 errors across all 21 routes.
 
+- **100 — Production Schema Synchronization: Lead Import & Distribution Columns Migration (`2026_09_09_002000_sync_lead_import_and_distribution_settings.php`)**:
+  - **Issue Addressed**:
+    - When migrations #45 (`is_imported` on `contacts`) and #46 (`apply_to_lead_import` on `lead_distribution_settings`) were already recorded or skipped in production database environments, columns were missing from live tables, leading to missing attributes in distribution payloads and disabling import auto-assignment.
+  - **Consolidated Migration Implementation**:
+    - Created idempotent migration [`2026_09_09_002000_sync_lead_import_and_distribution_settings.php`](file:///d:/FSadvisory-crm/backend/database/migrations/2026_09_09_002000_sync_lead_import_and_distribution_settings.php).
+    - **`contacts` table**: Safely checks `!Schema::hasColumn('contacts', 'is_imported')` and adds `is_imported` (boolean, default `false`, indexed) after `source`.
+    - **`lead_distribution_settings` table**: Safely checks `!Schema::hasColumn('lead_distribution_settings', 'apply_to_lead_import')` and adds `apply_to_lead_import` (boolean, default `true`) after `apply_to_lead_pool`.
+    - **Distribution Activation**: Automatically executes an update on row 1 of `lead_distribution_settings` to ensure `is_enabled = true`, `apply_to_lead_pool = true`, and `apply_to_lead_import = true`, immediately activating auto-distribution across Lead Pool and import channels on execution.
+  - **Verification**:
+    - Ran `php artisan migrate` locally: executed successfully in 155ms. Verified with `php artisan migrate:status`.
+
+- **101 — 3CX Phone System Remote FTP Archiving & Permanent Call Recordings Purge Suite (`CallRecordingController.php`, `routes/api.php`, `frontend/src/app/recordings/page.tsx`)**:
+  - **3CX v20 Remote FTP Storage Integration**:
+    - Configured 3CX PBX remote storage archiving to transfer call recordings directly via FTP (`recording@api.fsadvisory.ae`) to VPS Laravel public storage (`/storage/app/public/recordings`).
+    - Verified bidirectional audio delivery where uploaded `.wav` audio files become immediately accessible over HTTPS (`https://api.fsadvisory.ae/storage/recordings/[filename].wav`) without browser FTP limitations.
+  - **Permanent Call Recordings Purge Architecture (`clearAll`)**:
+    - Implemented `clearAll(Request $request)` in [`CallRecordingController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/CallRecordingController.php) registered at `DELETE|POST /api/recordings/clear-all` in [`routes/api.php`](file:///d:/FSadvisory-crm/backend/routes/api.php).
+    - Truncates all historical records from `call_recordings` table while strictly adhering to domain rules (100% of Master Contacts and Opportunities remain permanently intact).
+    - Cleans up physical audio files from `storage/app/public/recordings/` to free VPS disk space.
+  - **Frontend UI & Confirmation Modal Integration**:
+    - Added high-contrast **"Clear All Recordings"** button with `<Trash2 />` icon in the primary action bar of [`frontend/src/app/recordings/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/recordings/page.tsx).
+    - Integrated SweetAlert2 confirmation dialog warning the user and confirming permanent deletion before triggering the API and refreshing the table view to a clean 0-record baseline.
+  - **Verification**:
+    - Truncated 1,762 historical dummy/test call records locally; verified `CallRecording::count() === 0`.
+    - Tested PHP syntax cleanliness (`php -l`) with zero errors.
+
 ---
 
 ## ⚙️ Installation & Running Instructions

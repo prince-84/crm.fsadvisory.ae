@@ -33,7 +33,8 @@ import {
   HelpCircle,
   Copy,
   ExternalLink,
-  Upload
+  Upload,
+  Trash2
 } from 'lucide-react';
 import Link from 'next/link';
 import Swal from 'sweetalert2';
@@ -377,6 +378,46 @@ export default function CallRecordingsPage() {
     });
   };
 
+  const handleClearAllRecordings = async () => {
+    const result = await Swal.fire({
+      title: 'Clear All Call Recordings?',
+      text: 'This will permanently delete all call recordings and uploaded audio files so fresh calls start with a clean slate. Master Contacts and Opportunities will NOT be affected.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#DC2626',
+      cancelButtonColor: '#081428',
+      confirmButtonText: 'Yes, Delete All',
+      cancelButtonText: 'Cancel'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetchApi('/recordings/clear-all', {
+        method: 'POST',
+      });
+
+      if (res && res.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Cleaned Up!',
+          text: res.message || 'All old call recordings have been permanently deleted.',
+          timer: 2000,
+          showConfirmButton: false,
+        });
+        loadRecordings(1, perPage);
+      } else {
+        throw new Error(res?.message || 'Failed to clear recordings');
+      }
+    } catch (err: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Clear Failed',
+        text: err.message || 'An error occurred while deleting recordings.',
+      });
+    }
+  };
+
   const isFilterActive = searchQuery !== '' || selectedDirection !== 'all' || selectedAgent !== 'all' || selectedDuration !== 'all';
 
   const getPageNumbers = () => {
@@ -456,6 +497,16 @@ export default function CallRecordingsPage() {
               >
                 <Settings className="w-3.5 h-3.5 text-[#C8A147]" />
                 <span>3CX Webhook Setup</span>
+              </button>
+
+              {/* Clear All Recordings Button */}
+              <button
+                onClick={handleClearAllRecordings}
+                className="px-3 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-600 hover:text-red-700 font-bold text-xs rounded-md shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Permanently delete all old call records and audio files"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                <span>Clear All Recordings</span>
               </button>
 
               {/* Extension Select & Ingest Button */}

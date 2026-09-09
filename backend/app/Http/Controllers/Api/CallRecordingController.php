@@ -751,4 +751,33 @@ class CallRecordingController extends Controller
             ]);
         }
     }
+
+    /**
+     * Permanently delete all call recordings and physical storage audio files
+     */
+    public function clearAll(Request $request)
+    {
+        $count = CallRecording::count();
+        CallRecording::truncate();
+
+        // Optionally clear physical audio files from storage/app/public/recordings
+        $deletedFiles = 0;
+        try {
+            $files = \Illuminate\Support\Facades\Storage::disk('public')->files('recordings');
+            foreach ($files as $file) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($file);
+                $deletedFiles++;
+            }
+        } catch (\Exception $e) {
+            \Log::warning('Could not clear physical recording files: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Successfully cleared {$count} old call recordings and {$deletedFiles} audio files.",
+            'deleted_count' => $count,
+            'deleted_files' => $deletedFiles,
+        ], 200);
+    }
 }
+

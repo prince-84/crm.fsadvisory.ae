@@ -98,6 +98,8 @@ Route::middleware(['crm.auth'])->group(function () {
 
     // Call Recordings
     Route::get('/recordings', [CallRecordingController::class, 'index']);
+    Route::delete('/recordings/clear-all', [CallRecordingController::class, 'clearAll']);
+    Route::post('/recordings/clear-all', [CallRecordingController::class, 'clearAll']);
     Route::post('/recordings/sync-3cx', [CallRecordingController::class, 'sync3cx']);
     Route::post('/recordings/{id}/attach-audio', [CallRecordingController::class, 'attachAudio']);
     Route::post('/3cx/import-csv', [CallRecordingController::class, 'import3cxCsv']);
