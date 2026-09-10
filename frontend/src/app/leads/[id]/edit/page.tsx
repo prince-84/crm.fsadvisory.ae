@@ -391,6 +391,9 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
             parsedSource = contactData.source.trim();
           }
         }
+        if (!parsedSubSource) {
+          parsedSubSource = (contactData.sub_source || contactData.utm_source || '').trim();
+        }
         setSource(parsedSource);
         setSubSource(parsedSubSource);
 
@@ -710,6 +713,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
           nationality: nationality || null,
           emirates_id: emiratesId || null,
           source: source ? (subSource ? `${source} (${subSource})` : source) : null,
+          sub_source: subSource || null,
           assigned_owner: assignedOwner || null,
           utm_source: utmSource || null,
           utm_medium: utmMedium || null,

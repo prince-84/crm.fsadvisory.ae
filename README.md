@@ -1210,8 +1210,9 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Enabled explicit support for `sub_source` in `POST /api/contacts` (`store`) and `PUT /api/contacts/{id}` (`update`).
     - When external webhooks (e.g. n8n, Meta Ads, Zapier, or landing page webhooks) pass `"sub_source": "..."` alongside `"source": "..."`, the controller automatically merges them into the standard CRM format: `Source (Sub-Source)` (e.g., `Meta Ads (Instagram Feed)`).
     - If `utm_source` is omitted in the payload, `sub_source` automatically backfills `utm_source` for marketing attribution.
-  - **Dynamic Model Accessor (`Contact.php`)**:
+  - **Dynamic Model Accessor & Edit Form Pre-Selection (`Contact.php`, `leads/[id]/edit/page.tsx`)**:
     - Added appended `sub_source` attribute to `Contact` model (`getSubSourceAttribute`) to parse and return the sub-source across all API payloads.
+    - Updated Edit Lead Page (`leads/[id]/edit/page.tsx`) data loader: enhanced sub-source parser with fallback to `contactData.sub_source` and `contactData.utm_source`, guaranteeing that existing and incoming leads have their Sub-Source automatically selected in the dropdown.
     - Seamlessly populates the **Sub-Source Campaign** table column across Lead Pool and New Leads desks with zero database schema migrations required.
   - **Verification**:
     - PHP syntax verified with 0 errors (`php -l`).
