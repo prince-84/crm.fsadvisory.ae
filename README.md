@@ -1110,6 +1110,24 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - PHP syntax verified with zero errors (`php -l`).
     - TypeScript compilation verified clean (`npx tsc --noEmit` exit code 0).
 
+- **104 — Default Chronological Date-Time Descending Sorting in My Queue (`QueueController.php`, `frontend/src/app/queue/page.tsx`)**:
+  - **Requirement & Objective**:
+    - In My Queue (`/queue`), newly arrived and assigned leads must appear at the very top by default based on chronological Date & Time (`created_at` descending), matching advisor expectations for immediately attending to fresh incoming leads.
+  - **Backend Query Ordering (`QueueController.php`)**:
+    - Appended `->latest('created_at')` to the primary opportunity query (`$oppQuery`).
+    - Enhanced `$all = $enrichedOwners` collection sorting to sort descending by Unix timestamp (`Carbon::parse($record->created_at)->timestamp`).
+    - Enhanced `$allItems = $opportunities->concat($virtualItems)` to sort descending by Unix timestamp (`Carbon::parse($item->created_at ?? $item->contact?->created_at)->timestamp`), ensuring all combined items are ordered latest-first before slicing into SLA sub-tabs.
+  - **Frontend Sorting & Reset Engine (`frontend/src/app/queue/page.tsx`)**:
+    - Changed default state `sortBy` to `'created_at'` and `sortOrder` to `'desc'`.
+    - Upgraded client-side sorting comparator in `sortedOpps` (Regular Leads) to compare numeric timestamps via `new Date(a.created_at || a.contact?.created_at || 0).getTime()`, eliminating string comparison quirks across ISO formats and timezone offsets.
+    - Upgraded client-side sorting comparator in `sortedOwners` (Owner Leads) to compare numeric timestamps via `new Date(a.created_at || 0).getTime()`.
+    - Updated `handleSwitchChannel` (switching between Regular Leads and Owner Leads) to retain `'created_at'` in descending order (`'desc'`).
+    - Updated `handleResetFilters` to reset sorting back to `'created_at'` descending (`'desc'`).
+    - Updated `handleSort` so that selecting `created_at` column defaults to descending order (`'desc'`).
+  - **Verification**:
+    - PHP syntax checked cleanly with zero errors (`php -l`).
+    - Full TypeScript typecheck passed with 0 errors (`npx tsc --noEmit` exit code 0).
+
 ---
 
 ## ⚙️ Installation & Running Instructions

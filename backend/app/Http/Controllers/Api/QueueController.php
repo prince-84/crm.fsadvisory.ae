@@ -89,7 +89,9 @@ class QueueController extends Controller
                 return $record;
             });
 
-            $all = $enrichedOwners->values();
+            $all = $enrichedOwners->sortByDesc(function ($record) {
+                return $record->created_at ? Carbon::parse($record->created_at)->timestamp : 0;
+            })->values();
             $recent = $enrichedOwners->where('created_at', '>=', Carbon::now()->subDays(7))->values();
             $withOpportunity = $enrichedOwners->whereNotNull('active_opportunity')->values();
             $withoutOpportunity = $enrichedOwners->whereNull('active_opportunity')->values();
@@ -126,7 +128,8 @@ class QueueController extends Controller
             ->whereNotIn('stage', ['closed_won', 'closed_lost'])
             ->whereNotNull('current_owner_name')
             ->where('current_owner_name', '!=', '')
-            ->where('current_owner_name', '!=', 'Unassigned');
+            ->where('current_owner_name', '!=', 'Unassigned')
+            ->latest('created_at');
 
         if ($owner && $owner !== 'all') {
             $oppQuery->where('current_owner_name', $owner);
@@ -230,7 +233,12 @@ class QueueController extends Controller
             ];
         });
 
-        $allItems = $opportunities->concat($virtualItems);
+        $allItems = $opportunities->concat($virtualItems)
+            ->sortByDesc(function ($item) {
+                $date = $item->created_at ?? $item->contact?->created_at ?? null;
+                return $date ? Carbon::parse($date)->timestamp : 0;
+            })
+            ->values();
 
         $overdue = $allItems->where('sla_status', 'overdue')->values();
         $dueNow = $allItems->where('sla_status', 'due_soon')->values();

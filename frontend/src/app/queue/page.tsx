@@ -150,8 +150,8 @@ function MyQueueContent() {
   }, [queueData.all]);
 
   // Sorting
-  const [sortBy, setSortBy] = useState('next_action_due_at');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -550,7 +550,7 @@ function MyQueueContent() {
     setSelectedOppIds([]);
     setSelectedOwnerIds([]);
     setSearchQuery('');
-    setSortBy(newChannel === 'regular' ? 'next_action_due_at' : 'created_at');
+    setSortBy('created_at');
     setSortOrder('desc');
   };
 
@@ -1128,6 +1128,12 @@ function MyQueueContent() {
     if (queueChannel !== 'regular') return [];
     const list = [...filteredOpps];
     list.sort((a, b) => {
+      if (sortBy === 'created_at') {
+        const timeA = new Date(a.created_at || a.contact?.created_at || 0).getTime();
+        const timeB = new Date(b.created_at || b.contact?.created_at || 0).getTime();
+        return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+      }
+
       let valA: any = a[sortBy] ?? '';
       let valB: any = b[sortBy] ?? '';
 
@@ -1162,9 +1168,6 @@ function MyQueueContent() {
       } else if (sortBy === 'call_outcome') {
         valA = a.call_outcome || '';
         valB = b.call_outcome || '';
-      } else if (sortBy === 'created_at') {
-        valA = a.created_at || a.contact?.created_at || '';
-        valB = b.created_at || b.contact?.created_at || '';
       }
 
       if (typeof valA === 'string' && typeof valB === 'string') {
@@ -1256,6 +1259,12 @@ function MyQueueContent() {
     if (queueChannel !== 'owner') return [];
     const list = [...filteredOwners];
     list.sort((a, b) => {
+      if (sortBy === 'created_at') {
+        const timeA = new Date(a.created_at || 0).getTime();
+        const timeB = new Date(b.created_at || 0).getTime();
+        return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+      }
+
       let valA: any = a[sortBy] ?? '';
       let valB: any = b[sortBy] ?? '';
 
@@ -1280,9 +1289,6 @@ function MyQueueContent() {
       } else if (sortBy === 'call_outcome') {
         valA = a.call_outcome || '';
         valB = b.call_outcome || '';
-      } else if (sortBy === 'created_at') {
-        valA = a.created_at || '';
-        valB = b.created_at || '';
       }
 
       if (typeof valA === 'string' && typeof valB === 'string') {
@@ -1313,7 +1319,7 @@ function MyQueueContent() {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
       setSortBy(colKey);
-      setSortOrder('asc');
+      setSortOrder(colKey === 'created_at' ? 'desc' : 'asc');
     }
   };
 
@@ -1945,6 +1951,8 @@ function MyQueueContent() {
     }
     setActiveTab('all');
     setCurrentPage(1);
+    setSortBy('created_at');
+    setSortOrder('desc');
   };
 
   const isFilterActive = queueChannel === 'regular'
