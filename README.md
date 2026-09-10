@@ -1183,6 +1183,21 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - PHP syntax verified with 0 errors (`php -l`).
     - Full TypeScript type-safety verified with 0 compilation errors (`npx tsc --noEmit` exit code 0).
 
+- **107 — My Queue "Total Contacted" KPI Card Balancing & Dual-Metric Productivity Subtitle (`QueueController.php`, `frontend/src/app/queue/page.tsx`)**:
+  - **Metric Balancing & Mathematical Parity**:
+    - Resolved user confusion where queue tables displayed 9 contacted leads, but the 3rd card only showed 5 because it was strictly filtering by `isToday()`.
+    - Upgraded Card 3 across both Regular Leads and Owner Leads channels from "Contacted Today" to **`✅ Total Contacted`**, ensuring complete mathematical balance: `New Assigned + Total Contacted = All Active Leads` (e.g. 12 New + 9 Contacted = 21 Total).
+    - Preserved daily productivity metrics by embedding today's call counter in the card's subtitle: **`{X} Calls Logged Today`** (e.g. `5 Calls Logged Today`).
+  - **Backend API Integration (`QueueController.php`)**:
+    - Added `$contactedLeads` / `$contactedOwnerLeads` collections (filtering leads with `!empty($item->call_outcome)`) to the JSON responses for both `regular` and `owner` channels.
+    - Added `contacted` count alongside `contacted_today` in the `counts` payload.
+  - **Frontend Tab & Sub-Tab Filtering (`frontend/src/app/queue/page.tsx`)**:
+    - Added `activeTab === 'contacted'` filter logic to `tabFilteredOpps` and `tabFilteredOwners`, displaying all called leads when clicking the Total Contacted card or sub-tab.
+    - Updated sub-tab label from `Contacted Today ✅` to `Contacted Leads ✅`.
+  - **Verification**:
+    - PHP syntax verified with 0 errors (`php -l`).
+    - Full TypeScript type-safety verified with 0 compilation errors (`npx tsc --noEmit` exit code 0).
+
 ---
 
 ## ⚙️ Installation & Running Instructions

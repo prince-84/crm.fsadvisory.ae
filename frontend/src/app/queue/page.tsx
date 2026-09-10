@@ -1065,6 +1065,7 @@ function MyQueueContent() {
   const tabFilteredOpps = useMemo(() => {
     if (queueChannel !== 'regular') return [];
     if (activeTab === 'new') return allRawOpps.filter((opp: any) => !opp.call_outcome);
+    if (activeTab === 'contacted') return allRawOpps.filter((opp: any) => !!opp.call_outcome);
     if (activeTab === 'contacted_today') return allRawOpps.filter((opp: any) => opp.contacted_today);
     if (activeTab === 'overdue') return queueData.overdue || [];
     if (activeTab === 'due_now') return queueData.due_now || [];
@@ -1234,6 +1235,7 @@ function MyQueueContent() {
     if (queueChannel !== 'owner') return [];
     const all = queueData.all || [];
     if (activeTab === 'new') return all.filter((rec: any) => !rec.call_outcome);
+    if (activeTab === 'contacted') return all.filter((rec: any) => !!rec.call_outcome);
     if (activeTab === 'contacted_today') return all.filter((rec: any) => rec.contacted_today);
     if (activeTab === 'recent') return queueData.recent || [];
     if (activeTab === 'with_opportunity') return queueData.with_opportunity || [];
@@ -2199,7 +2201,7 @@ function MyQueueContent() {
               {[
                 { id: 'all', label: 'All Active Leads', value: queueData.counts?.all ?? allRawOpps.length, sub: 'Total Queue Count', subColor: 'text-[#081428]', icon: ListOrdered, iconBg: 'bg-[#081428] text-[#C8A147]' },
                 { id: 'new', label: '🟢 New Assigned', value: queueData.counts?.new_leads ?? allRawOpps.filter((o: any) => !o.call_outcome).length, sub: 'Never Called / Fresh', subColor: 'text-emerald-700', icon: Sparkles, iconBg: 'bg-emerald-100 text-emerald-800' },
-                { id: 'contacted_today', label: '✅ Contacted Today', value: queueData.counts?.contacted_today ?? allRawOpps.filter((o: any) => o.contacted_today).length, sub: 'Calls Logged Today', subColor: 'text-blue-700', icon: CheckCircle2, iconBg: 'bg-blue-100 text-blue-700' },
+                { id: 'contacted', label: '✅ Total Contacted', value: queueData.counts?.contacted ?? allRawOpps.filter((o: any) => !!o.call_outcome).length, sub: `${queueData.counts?.contacted_today ?? allRawOpps.filter((o: any) => o.contacted_today).length} Calls Logged Today`, subColor: 'text-blue-700', icon: CheckCircle2, iconBg: 'bg-blue-100 text-blue-700' },
                 { id: 'overdue', label: '🚨 Overdue SLA', value: queueData.counts?.overdue ?? 0, sub: 'Immediate attention', subColor: 'text-red-700', icon: AlertCircle, iconBg: 'bg-red-100 text-red-700' },
               ].map((card) => {
                 const Icon = card.icon;
@@ -2235,7 +2237,7 @@ function MyQueueContent() {
               {[
                 { id: 'all', label: 'All Owner Leads', value: queueData.counts?.all ?? 0, sub: 'Assigned Owner Records', subColor: 'text-[#081428]', icon: Building2, iconBg: 'bg-[#081428] text-[#C8A147]' },
                 { id: 'new', label: '🟢 New Assigned', value: queueData.counts?.new_leads ?? (queueData.all || []).filter((r: any) => !r.call_outcome).length, sub: 'Untouched Owner Records', subColor: 'text-emerald-700', icon: Sparkles, iconBg: 'bg-emerald-100 text-emerald-800' },
-                { id: 'contacted_today', label: '✅ Contacted Today', value: queueData.counts?.contacted_today ?? (queueData.all || []).filter((r: any) => r.contacted_today).length, sub: 'Calls Logged Today', subColor: 'text-blue-700', icon: CheckCircle2, iconBg: 'bg-blue-100 text-blue-700' },
+                { id: 'contacted', label: '✅ Total Contacted', value: queueData.counts?.contacted ?? (queueData.all || []).filter((r: any) => !!r.call_outcome).length, sub: `${queueData.counts?.contacted_today ?? (queueData.all || []).filter((r: any) => r.contacted_today).length} Calls Logged Today`, subColor: 'text-blue-700', icon: CheckCircle2, iconBg: 'bg-blue-100 text-blue-700' },
                 { id: 'without_opportunity', label: 'Ready to Call (No Opp)', value: queueData.counts?.without_opportunity ?? 0, sub: 'Awaiting Opportunity Deal', subColor: 'text-purple-700', icon: Briefcase, iconBg: 'bg-purple-100 text-purple-700' },
               ].map((card) => {
                 const Icon = card.icon;
@@ -2274,9 +2276,9 @@ function MyQueueContent() {
               [
                 { id: 'all', label: 'All Queue Leads' },
                 { id: 'new', label: '🟢 New / Uncontacted' },
+                { id: 'contacted', label: 'Contacted Leads ✅' },
                 { id: 'overdue', label: 'Overdue / Breached 🚨' },
                 { id: 'due_now', label: 'Due Soon (< 30 Mins) ⏰' },
-                { id: 'contacted_today', label: 'Contacted Today ✅' },
                 { id: 'hot', label: 'Hot Leads 🔥' },
               ].map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -2301,9 +2303,9 @@ function MyQueueContent() {
               [
                 { id: 'all', label: 'All Owner Leads' },
                 { id: 'new', label: '🟢 New / Uncontacted' },
+                { id: 'contacted', label: 'Contacted Leads ✅' },
                 { id: 'without_opportunity', label: 'Calling Queue (No Deal Yet) 📞' },
                 { id: 'with_opportunity', label: 'With Active Deal 💼' },
-                { id: 'contacted_today', label: 'Contacted Today ✅' },
                 { id: 'recent', label: 'Recent (Last 7 Days) ⚡' },
               ].map((tab) => {
                 const isActive = activeTab === tab.id;
