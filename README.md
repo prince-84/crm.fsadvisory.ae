@@ -1151,9 +1151,34 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Backend Calculation & Response Enrichment (`QueueController.php`)**:
     - Eagerly evaluates `is_new` and `contacted_today` for all opportunities, virtual items, and owner records.
     - Returns partitioned collections (`new_leads`, `pending`, `contacted_today`) and aggregated counts in the JSON payload for both `regular` and `owner` channels.
+- **106 — Queue Layout Refinement: Agent Selector Relocation Above Cards, Stage & Call Outcome Filters, and Removal of Redundant "Pending" Feature (`QueueController.php`, `frontend/src/app/queue/page.tsx`)**:
+  - **Removal of Redundant "Pending" Concept**:
+    - Addressed user feedback regarding redundancy: uncontacted leads are by definition "New", rendering the separate "Pending" count redundant and confusing for daily calling workflows.
+    - **Backend (`QueueController.php`)**:
+      - Removed `$pendingCalls` and `$pendingOwnerCalls` collections and counts from both `regular` and `owner` JSON responses.
+    - **Frontend (`frontend/src/app/queue/page.tsx`)**:
+      - Removed the "Pending to Call" KPI stat card across both Regular Leads and Owner Leads channels, establishing a clean, balanced 4-card metric grid:
+        1. **Total Active Leads** (or **Total Owner Properties**)
+        2. **🟢 New Assigned** (Fresh uncontacted leads awaiting first call)
+        3. **✅ Contacted Today** (Leads reached and logged today)
+        4. **🚨 Overdue SLA** (or **Due Today**)
+      - Removed the redundant "⏳ Pending to Call" sub-tab from both channels.
+      - Restored clean `—` fallback in `renderCallOutcomeBadge` when no call outcome is recorded.
+  - **Agent / Scope Selector Relocation Above KPI Cards**:
+    - Moved the Super Admin advisor scope dropdown (`All Assigned Leads`, `My Leads`, specific advisors) from the table control bar to the top row above KPI cards, positioned right alongside the `Regular Leads (Lead Pool)` and `Owner Leads (Owner Data)` channel switcher buttons.
+    - Strictly enforced role gating: remains completely hidden for standard sales agents (keeping their view locked to their assigned leads) and visible exclusively for Super Admins (`isSuperUser`).
+  - **Stage & Call Outcome Filter Dropdowns in Table Control Bar**:
+    - Populated the table control bar with two new database-aligned filter dropdowns:
+      1. **Stage Filter**:
+         - Dynamically covers *All Stages*, *No Deal Created* (for contacts assigned without an active deal), and canonical pipeline stages (*New*, *Contacted*, *Qualified*, *Option Sent*, *Follow up*, *Meeting*, *Future Prospectus*, *Closed Won*, *Closed Lost*).
+         - Evaluates `opp.has_opportunity ? opp.stage : 'no_deal'`.
+      2. **Call Outcome Filter**:
+         - Dynamically covers *All Outcomes*, *New / Uncontacted* (for leads with no logged outcome), and all CRM call outcomes (*Interested*, *Callback Requested*, *Follow-up Required*, *No Answer*, *Not Interested*, *Wrong Number*).
+    - Integrated multi-variable client-side filtering into `filteredOpps` and `filteredOwners`.
+    - Integrated with `handleResetFilters` and channel switching to reset both dropdowns back to `'all'`.
   - **Verification**:
-    - PHP syntax verified with zero errors (`php -l`).
-    - Full TypeScript typecheck verified clean (`npx tsc --noEmit` exit code 0).
+    - PHP syntax verified with 0 errors (`php -l`).
+    - Full TypeScript type-safety verified with 0 compilation errors (`npx tsc --noEmit` exit code 0).
 
 ---
 

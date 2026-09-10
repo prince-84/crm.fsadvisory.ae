@@ -98,7 +98,6 @@ class QueueController extends Controller
             $withOpportunity = $enrichedOwners->whereNotNull('active_opportunity')->values();
             $withoutOpportunity = $enrichedOwners->whereNull('active_opportunity')->values();
             $newOwnerLeads = $enrichedOwners->filter(fn($r) => empty($r->call_outcome))->values();
-            $pendingOwnerCalls = $enrichedOwners->filter(fn($r) => empty($r->call_outcome) || ($r->active_opportunity && in_array($r->active_opportunity->sla_status, ['overdue', 'due_soon'])))->values();
             $contactedTodayOwner = $enrichedOwners->filter(fn($r) => !empty($r->contacted_today))->values();
 
             $canonicalStages = $this->getPipelineStages();
@@ -107,7 +106,6 @@ class QueueController extends Controller
                 'channel' => 'owner',
                 'all' => $all,
                 'new_leads' => $newOwnerLeads,
-                'pending' => $pendingOwnerCalls,
                 'contacted_today' => $contactedTodayOwner,
                 'recent' => $recent,
                 'with_opportunity' => $withOpportunity,
@@ -115,7 +113,6 @@ class QueueController extends Controller
                 'counts' => [
                     'all' => $all->count(),
                     'new_leads' => $newOwnerLeads->count(),
-                    'pending' => $pendingOwnerCalls->count(),
                     'contacted_today' => $contactedTodayOwner->count(),
                     'recent' => $recent->count(),
                     'with_opportunity' => $withOpportunity->count(),
@@ -256,7 +253,6 @@ class QueueController extends Controller
             ->values();
 
         $newLeads = $allItems->filter(fn($item) => empty($item->call_outcome))->values();
-        $pendingCalls = $allItems->filter(fn($item) => empty($item->call_outcome) || in_array($item->sla_status, ['overdue', 'due_soon']))->values();
         $contactedTodayList = $allItems->filter(fn($item) => !empty($item->contacted_today))->values();
 
         $overdue = $allItems->where('sla_status', 'overdue')->values();
@@ -276,7 +272,6 @@ class QueueController extends Controller
             'channel' => 'regular',
             'all' => $allItems->values(),
             'new_leads' => $newLeads,
-            'pending' => $pendingCalls,
             'contacted_today' => $contactedTodayList,
             'by_stage' => $byStage,
             'overdue' => $overdue,
@@ -286,7 +281,6 @@ class QueueController extends Controller
             'counts' => [
                 'all' => $allItems->count(),
                 'new_leads' => $newLeads->count(),
-                'pending' => $pendingCalls->count(),
                 'contacted_today' => $contactedTodayList->count(),
                 'overdue' => $overdue->count(),
                 'due_now' => $dueNow->count(),

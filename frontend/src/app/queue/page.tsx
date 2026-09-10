@@ -86,7 +86,6 @@ function MyQueueContent() {
   const [queueData, setQueueData] = useState<any>({ 
     all: [], 
     new_leads: [],
-    pending: [],
     contacted_today: [],
     overdue: [], 
     due_now: [], 
@@ -108,8 +107,10 @@ function MyQueueContent() {
     }
   }, [urlTab]);
 
-  // Search state
+  // Search & Filters state
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStage, setSelectedStage] = useState<string>('all');
+  const [selectedCallOutcome, setSelectedCallOutcome] = useState<string>('all');
 
   // Regular Leads: Date Range & Advanced Filters (matching Lead Pool)
   const [regDateRange, setRegDateRange] = useState<DateRangeValue>({ from: '', to: '', preset: 'all' });
@@ -166,13 +167,14 @@ function MyQueueContent() {
   const [bulkStage, setBulkStage] = useState<string>('');
   const [bulkLoading, setBulkLoading] = useState<boolean>(false);
   const [availableStages, setAvailableStages] = useState<Array<{ key: string; label: string }>>([
+    { key: 'new', label: 'New' },
     { key: 'contacted', label: '1. Contacted' },
     { key: 'qualified', label: '2. Qualified / Lead Qualification' },
     { key: 'option_sent', label: '3. Option Sent' },
     { key: 'follow_up', label: '4. Follow up' },
     { key: 'meeting', label: '5. Meeting / Viewing Scheduled' },
     { key: 'future_prospectus', label: '6. Future Prospectus' },
-    { key: 'closed', label: '7. Closed Won 🏆' },
+    { key: 'closed_won', label: '7. Closed Won 🏆' },
     { key: 'closed_lost', label: 'Closed Lost' },
   ]);
 
@@ -503,7 +505,11 @@ function MyQueueContent() {
     fetchApi('/opportunities/stages')
       .then((res) => {
         if (res.stages && Array.isArray(res.stages)) {
-          setAvailableStages(res.stages);
+          const list = [...res.stages];
+          if (!list.some((s) => s.key === 'new')) {
+            list.unshift({ key: 'new', label: 'New' });
+          }
+          setAvailableStages(list);
         }
       })
       .catch(console.error);
@@ -534,7 +540,11 @@ function MyQueueContent() {
       const data = await fetchApi(url);
       setQueueData(data);
       if (data.stages && Array.isArray(data.stages)) {
-        setAvailableStages(data.stages);
+        const list = [...data.stages];
+        if (!list.some((s) => s.key === 'new')) {
+          list.unshift({ key: 'new', label: 'New' });
+        }
+        setAvailableStages(list);
       }
       setLoading(false);
     } catch (err) {
@@ -555,6 +565,8 @@ function MyQueueContent() {
     setSelectedOppIds([]);
     setSelectedOwnerIds([]);
     setSearchQuery('');
+    setSelectedStage('all');
+    setSelectedCallOutcome('all');
     setSortBy('created_at');
     setSortOrder('desc');
   };
@@ -1053,7 +1065,6 @@ function MyQueueContent() {
   const tabFilteredOpps = useMemo(() => {
     if (queueChannel !== 'regular') return [];
     if (activeTab === 'new') return allRawOpps.filter((opp: any) => !opp.call_outcome);
-    if (activeTab === 'pending') return allRawOpps.filter((opp: any) => !opp.call_outcome || opp.sla_status === 'overdue' || opp.sla_status === 'due_soon');
     if (activeTab === 'contacted_today') return allRawOpps.filter((opp: any) => opp.contacted_today);
     if (activeTab === 'overdue') return queueData.overdue || [];
     if (activeTab === 'due_now') return queueData.due_now || [];
@@ -1128,9 +1139,31 @@ function MyQueueContent() {
         return false;
       }
 
+      // Stage Filter (database pipeline stage or no deal created)
+      if (selectedStage !== 'all') {
+        if (selectedStage === 'no_deal') {
+          if (opp.has_opportunity) return false;
+        } else {
+          if (!opp.has_opportunity || (opp.stage || 'new').toLowerCase() !== selectedStage.toLowerCase()) {
+            return false;
+          }
+        }
+      }
+
+      // Call Outcome Filter (database call outcome)
+      if (selectedCallOutcome !== 'all') {
+        if (selectedCallOutcome === 'uncontacted') {
+          if (opp.call_outcome) return false;
+        } else {
+          if (!opp.call_outcome || (opp.call_outcome || '').toLowerCase() !== selectedCallOutcome.toLowerCase()) {
+            return false;
+          }
+        }
+      }
+
       return true;
     });
-  }, [tabFilteredOpps, searchQuery, regDateRange, advancedFilters, queueChannel]);
+  }, [tabFilteredOpps, searchQuery, regDateRange, advancedFilters, selectedStage, selectedCallOutcome, queueChannel]);
 
   const sortedOpps = useMemo(() => {
     if (queueChannel !== 'regular') return [];
@@ -1201,7 +1234,6 @@ function MyQueueContent() {
     if (queueChannel !== 'owner') return [];
     const all = queueData.all || [];
     if (activeTab === 'new') return all.filter((rec: any) => !rec.call_outcome);
-    if (activeTab === 'pending') return all.filter((rec: any) => !rec.call_outcome || (rec.active_opportunity && (rec.active_opportunity.sla_status === 'overdue' || rec.active_opportunity.sla_status === 'due_soon')));
     if (activeTab === 'contacted_today') return all.filter((rec: any) => rec.contacted_today);
     if (activeTab === 'recent') return queueData.recent || [];
     if (activeTab === 'with_opportunity') return queueData.with_opportunity || [];
@@ -1263,9 +1295,31 @@ function MyQueueContent() {
         }
       }
 
+      // Stage Filter (database active opportunity stage or no deal created)
+      if (selectedStage !== 'all') {
+        if (selectedStage === 'no_deal') {
+          if (rec.active_opportunity) return false;
+        } else {
+          if (!rec.active_opportunity || (rec.active_opportunity.stage || 'new').toLowerCase() !== selectedStage.toLowerCase()) {
+            return false;
+          }
+        }
+      }
+
+      // Call Outcome Filter (database call outcome)
+      if (selectedCallOutcome !== 'all') {
+        if (selectedCallOutcome === 'uncontacted') {
+          if (rec.call_outcome) return false;
+        } else {
+          if (!rec.call_outcome || (rec.call_outcome || '').toLowerCase() !== selectedCallOutcome.toLowerCase()) {
+            return false;
+          }
+        }
+      }
+
       return true;
     });
-  }, [tabFilteredOwners, searchQuery, ownerDateRange, selectedOwnerAreas, selectedOwnerPropertyTypes, selectedOwnerBedrooms, queueChannel]);
+  }, [tabFilteredOwners, searchQuery, ownerDateRange, selectedOwnerAreas, selectedOwnerPropertyTypes, selectedOwnerBedrooms, selectedStage, selectedCallOutcome, queueChannel]);
 
   const sortedOwners = useMemo(() => {
     if (queueChannel !== 'owner') return [];
@@ -1427,12 +1481,7 @@ function MyQueueContent() {
 
   const renderCallOutcomeBadge = (outcome?: string | null) => {
     if (!outcome) {
-      return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap inline-flex items-center gap-1">
-          <Clock className="w-2.5 h-2.5 text-amber-600" />
-          Pending Call
-        </span>
-      );
+      return <span className="text-slate-400 font-mono text-[11px]">—</span>;
     }
     const o = outcome.trim();
     if (o.includes('Interested') || o.includes('Viewing') || o.includes('List') || o.includes('Valuation')) {
@@ -1983,6 +2032,8 @@ function MyQueueContent() {
 
   const handleResetFilters = () => {
     setSearchQuery('');
+    setSelectedStage('all');
+    setSelectedCallOutcome('all');
     if (queueChannel === 'regular') {
       setRegDateRange({ from: '', to: '', preset: 'all' });
       setAdvancedFilters(INITIAL_ADVANCED_FILTERS);
@@ -2004,8 +2055,8 @@ function MyQueueContent() {
   };
 
   const isFilterActive = queueChannel === 'regular'
-    ? (searchQuery !== '' || regDateRange.preset !== 'all' || activeAdvancedCount > 0 || activeTab !== 'all')
-    : (searchQuery !== '' || ownerDateRange.preset !== 'all' || selectedOwnerAreas.length > 0 || selectedOwnerPropertyTypes.length > 0 || selectedOwnerBedrooms.length > 0 || activeTab !== 'all');
+    ? (searchQuery !== '' || regDateRange.preset !== 'all' || activeAdvancedCount > 0 || activeTab !== 'all' || selectedStage !== 'all' || selectedCallOutcome !== 'all' || (isSuperUser(currentUser) && selectedOwner !== 'all'))
+    : (searchQuery !== '' || ownerDateRange.preset !== 'all' || selectedOwnerAreas.length > 0 || selectedOwnerPropertyTypes.length > 0 || selectedOwnerBedrooms.length > 0 || activeTab !== 'all' || selectedStage !== 'all' || selectedCallOutcome !== 'all' || (isSuperUser(currentUser) && selectedOwner !== 'all'));
 
   const isAllPageSelected = queueChannel === 'regular'
     ? (paginatedOpps.length > 0 && paginatedOpps.every((o: any) => selectedOppIds.includes(o.id)))
@@ -2075,7 +2126,7 @@ function MyQueueContent() {
             </div>
           </div>
 
-          {/* DUAL PRIMARY TABS: REGULAR LEADS vs OWNER LEADS */}
+          {/* DUAL PRIMARY TABS: REGULAR LEADS vs OWNER LEADS & SUPER ADMIN AGENT SELECTOR (ABOVE CARDS) */}
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2 bg-[#F0EDE8] p-1.5 rounded-xl border border-[#E8E4DC] shadow-inner">
               <button
@@ -2116,15 +2167,38 @@ function MyQueueContent() {
                 </span>
               </button>
             </div>
+
+            {/* Agent / Scope Selector - ONLY visible for Super Admin above the cards! */}
+            {isSuperUser(currentUser) && (
+              <div className="flex items-center gap-2 bg-white border border-[#E8E4DC] rounded-xl px-3 py-2 shadow-2xs">
+                <UserCheck className="w-4 h-4 text-[#C8A147]" />
+                <span className="text-xs font-bold text-[#6E6E6E]">Team View:</span>
+                <select
+                  value={selectedOwner === 'auto' ? 'all' : selectedOwner}
+                  onChange={(e) => {
+                    setSelectedOwner(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1 text-xs text-[#081428] font-bold focus:outline-none focus:ring-1 focus:ring-[#C8A147] cursor-pointer"
+                >
+                  <option value="all">👥 All Assigned Leads (Entire Team)</option>
+                  {currentUser?.name && (
+                    <option value={currentUser.name}>⭐ My Leads ({currentUser.name})</option>
+                  )}
+                  {teamAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
+                    <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* KPI SLA Stat Summary Cards */}
           {queueChannel === 'regular' ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 { id: 'all', label: 'All Active Leads', value: queueData.counts?.all ?? allRawOpps.length, sub: 'Total Queue Count', subColor: 'text-[#081428]', icon: ListOrdered, iconBg: 'bg-[#081428] text-[#C8A147]' },
                 { id: 'new', label: '🟢 New Assigned', value: queueData.counts?.new_leads ?? allRawOpps.filter((o: any) => !o.call_outcome).length, sub: 'Never Called / Fresh', subColor: 'text-emerald-700', icon: Sparkles, iconBg: 'bg-emerald-100 text-emerald-800' },
-                { id: 'pending', label: '⏳ Pending to Call', value: queueData.counts?.pending ?? allRawOpps.filter((o: any) => !o.call_outcome || o.sla_status === 'overdue' || o.sla_status === 'due_soon').length, sub: 'Calls Remaining Today', subColor: 'text-amber-800', icon: PhoneCall, iconBg: 'bg-amber-100 text-amber-800' },
                 { id: 'contacted_today', label: '✅ Contacted Today', value: queueData.counts?.contacted_today ?? allRawOpps.filter((o: any) => o.contacted_today).length, sub: 'Calls Logged Today', subColor: 'text-blue-700', icon: CheckCircle2, iconBg: 'bg-blue-100 text-blue-700' },
                 { id: 'overdue', label: '🚨 Overdue SLA', value: queueData.counts?.overdue ?? 0, sub: 'Immediate attention', subColor: 'text-red-700', icon: AlertCircle, iconBg: 'bg-red-100 text-red-700' },
               ].map((card) => {
@@ -2157,11 +2231,10 @@ function MyQueueContent() {
               })}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 { id: 'all', label: 'All Owner Leads', value: queueData.counts?.all ?? 0, sub: 'Assigned Owner Records', subColor: 'text-[#081428]', icon: Building2, iconBg: 'bg-[#081428] text-[#C8A147]' },
                 { id: 'new', label: '🟢 New Assigned', value: queueData.counts?.new_leads ?? (queueData.all || []).filter((r: any) => !r.call_outcome).length, sub: 'Untouched Owner Records', subColor: 'text-emerald-700', icon: Sparkles, iconBg: 'bg-emerald-100 text-emerald-800' },
-                { id: 'pending', label: '⏳ Pending to Call', value: queueData.counts?.pending ?? (queueData.all || []).filter((r: any) => !r.call_outcome || (r.active_opportunity && (r.active_opportunity.sla_status === 'overdue' || r.active_opportunity.sla_status === 'due_soon'))).length, sub: 'Calls Remaining Today', subColor: 'text-amber-800', icon: PhoneCall, iconBg: 'bg-amber-100 text-amber-800' },
                 { id: 'contacted_today', label: '✅ Contacted Today', value: queueData.counts?.contacted_today ?? (queueData.all || []).filter((r: any) => r.contacted_today).length, sub: 'Calls Logged Today', subColor: 'text-blue-700', icon: CheckCircle2, iconBg: 'bg-blue-100 text-blue-700' },
                 { id: 'without_opportunity', label: 'Ready to Call (No Opp)', value: queueData.counts?.without_opportunity ?? 0, sub: 'Awaiting Opportunity Deal', subColor: 'text-purple-700', icon: Briefcase, iconBg: 'bg-purple-100 text-purple-700' },
               ].map((card) => {
@@ -2201,7 +2274,6 @@ function MyQueueContent() {
               [
                 { id: 'all', label: 'All Queue Leads' },
                 { id: 'new', label: '🟢 New / Uncontacted' },
-                { id: 'pending', label: '⏳ Pending to Call' },
                 { id: 'overdue', label: 'Overdue / Breached 🚨' },
                 { id: 'due_now', label: 'Due Soon (< 30 Mins) ⏰' },
                 { id: 'contacted_today', label: 'Contacted Today ✅' },
@@ -2229,7 +2301,6 @@ function MyQueueContent() {
               [
                 { id: 'all', label: 'All Owner Leads' },
                 { id: 'new', label: '🟢 New / Uncontacted' },
-                { id: 'pending', label: '⏳ Pending to Call' },
                 { id: 'without_opportunity', label: 'Calling Queue (No Deal Yet) 📞' },
                 { id: 'with_opportunity', label: 'With Active Deal 💼' },
                 { id: 'contacted_today', label: 'Contacted Today ✅' },
@@ -2356,28 +2427,48 @@ function MyQueueContent() {
                 </>
               )}
 
-              {/* Agent / Scope Selector - ONLY visible for Super Admin */}
-              {isSuperUser(currentUser) && (
-                <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
-                  <UserCheck className="w-3.5 h-3.5 text-[#C8A147]" />
-                  <select
-                    value={selectedOwner === 'auto' ? 'all' : selectedOwner}
-                    onChange={(e) => {
-                      setSelectedOwner(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
-                  >
-                    <option value="all">👥 All Assigned Leads (Entire Team)</option>
-                    {currentUser?.name && (
-                      <option value={currentUser.name}>⭐ My Leads ({currentUser.name})</option>
-                    )}
-                    {teamAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
-                      <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Stage Filter Dropdown (from database stages) */}
+              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0 focus-within:border-[#C8A147]">
+                <Briefcase className="w-3.5 h-3.5 text-[#C8A147]" />
+                <select
+                  value={selectedStage}
+                  onChange={(e) => {
+                    setSelectedStage(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
+                >
+                  <option value="all">📊 All Stages</option>
+                  <option value="no_deal">⚠️ No Deal Created</option>
+                  {availableStages.map((st) => (
+                    <option key={st.key} value={st.key}>
+                      {st.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Call Outcome Filter Dropdown (from database call outcomes) */}
+              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0 focus-within:border-[#C8A147]">
+                <PhoneCall className="w-3.5 h-3.5 text-[#C8A147]" />
+                <select
+                  value={selectedCallOutcome}
+                  onChange={(e) => {
+                    setSelectedCallOutcome(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
+                >
+                  <option value="all">📞 All Call Outcomes</option>
+                  <option value="uncontacted">🟢 New / Uncontacted (No Call Yet)</option>
+                  <option value="Interested - Schedule Viewing">Interested — Schedule Viewing</option>
+                  <option value="Callback Requested">Callback Requested</option>
+                  <option value="Follow-up Required">Follow-up Required</option>
+                  <option value="No Answer / Left Voicemail">No Answer / Left Voicemail</option>
+                  <option value="Not Interested">Not Interested</option>
+                  <option value="Wrong Number">Wrong Number</option>
+                </select>
+              </div>
 
               {/* Reset Button (Always visible like Lead Pool / Owner Data) */}
               <button
