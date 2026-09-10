@@ -86,6 +86,8 @@ class QueueController extends Controller
                 $record->contact_id = $contact ? $contact->id : null;
                 $record->name = $record->owner_name;
                 $record->call_outcome = $latestCall?->call_outcome ?? null;
+                $record->is_new = empty($record->call_outcome);
+                $record->contacted_today = (bool)($latestCall && $latestCall->created_at && Carbon::parse($latestCall->created_at)->isToday());
                 return $record;
             });
 
@@ -95,17 +97,26 @@ class QueueController extends Controller
             $recent = $enrichedOwners->where('created_at', '>=', Carbon::now()->subDays(7))->values();
             $withOpportunity = $enrichedOwners->whereNotNull('active_opportunity')->values();
             $withoutOpportunity = $enrichedOwners->whereNull('active_opportunity')->values();
+            $newOwnerLeads = $enrichedOwners->filter(fn($r) => empty($r->call_outcome))->values();
+            $pendingOwnerCalls = $enrichedOwners->filter(fn($r) => empty($r->call_outcome) || ($r->active_opportunity && in_array($r->active_opportunity->sla_status, ['overdue', 'due_soon'])))->values();
+            $contactedTodayOwner = $enrichedOwners->filter(fn($r) => !empty($r->contacted_today))->values();
 
             $canonicalStages = $this->getPipelineStages();
 
             return response()->json([
                 'channel' => 'owner',
                 'all' => $all,
+                'new_leads' => $newOwnerLeads,
+                'pending' => $pendingOwnerCalls,
+                'contacted_today' => $contactedTodayOwner,
                 'recent' => $recent,
                 'with_opportunity' => $withOpportunity,
                 'without_opportunity' => $withoutOpportunity,
                 'counts' => [
                     'all' => $all->count(),
+                    'new_leads' => $newOwnerLeads->count(),
+                    'pending' => $pendingOwnerCalls->count(),
+                    'contacted_today' => $contactedTodayOwner->count(),
                     'recent' => $recent->count(),
                     'with_opportunity' => $withOpportunity->count(),
                     'without_opportunity' => $withoutOpportunity->count(),
@@ -163,6 +174,8 @@ class QueueController extends Controller
             $opp->save();
             $opp->call_outcome = $callOutcome;
             $opp->has_opportunity = true;
+            $opp->is_new = empty($callOutcome);
+            $opp->contacted_today = (bool)($latestCall && $latestCall->created_at && Carbon::parse($latestCall->created_at)->isToday());
         }
 
         // Query assigned contacts that do NOT have an active opportunity yet
@@ -222,6 +235,8 @@ class QueueController extends Controller
                 'stage' => 'unqualified',
                 'sla_status' => $slaStatus,
                 'call_outcome' => $latestCall?->call_outcome ?? null,
+                'is_new' => empty($latestCall?->call_outcome),
+                'contacted_today' => (bool)($latestCall && $latestCall->created_at && Carbon::parse($latestCall->created_at)->isToday()),
                 'next_action' => $nextAction,
                 'next_action_due_at' => $dueAt ? $dueAt->toIso8601String() : null,
                 'budget_min' => null,
@@ -240,6 +255,10 @@ class QueueController extends Controller
             })
             ->values();
 
+        $newLeads = $allItems->filter(fn($item) => empty($item->call_outcome))->values();
+        $pendingCalls = $allItems->filter(fn($item) => empty($item->call_outcome) || in_array($item->sla_status, ['overdue', 'due_soon']))->values();
+        $contactedTodayList = $allItems->filter(fn($item) => !empty($item->contacted_today))->values();
+
         $overdue = $allItems->where('sla_status', 'overdue')->values();
         $dueNow = $allItems->where('sla_status', 'due_soon')->values();
         $hotLeads = $allItems->where('temperature', 'hot')->whereNotIn('sla_status', ['overdue'])->values();
@@ -256,6 +275,9 @@ class QueueController extends Controller
         return response()->json([
             'channel' => 'regular',
             'all' => $allItems->values(),
+            'new_leads' => $newLeads,
+            'pending' => $pendingCalls,
+            'contacted_today' => $contactedTodayList,
             'by_stage' => $byStage,
             'overdue' => $overdue,
             'due_now' => $dueNow,
@@ -263,6 +285,9 @@ class QueueController extends Controller
             'upcoming' => $upcoming,
             'counts' => [
                 'all' => $allItems->count(),
+                'new_leads' => $newLeads->count(),
+                'pending' => $pendingCalls->count(),
+                'contacted_today' => $contactedTodayList->count(),
                 'overdue' => $overdue->count(),
                 'due_now' => $dueNow->count(),
                 'hot_leads' => $hotLeads->count(),

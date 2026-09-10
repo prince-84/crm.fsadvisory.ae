@@ -1128,6 +1128,33 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - PHP syntax checked cleanly with zero errors (`php -l`).
     - Full TypeScript typecheck passed with 0 errors (`npx tsc --noEmit` exit code 0).
 
+- **105 — Role-Based Advisor Scoping, Visual "NEW" Lead Badges, and Actionable Calling Metric Cards in My Queue (`QueueController.php`, `frontend/src/app/queue/page.tsx`)**:
+  - **Role-Based Advisor Scoping (Super Admin vs Sales Agent)**:
+    - Restricted the **"All Assigned Leads (Entire Team)"** advisor scope dropdown exclusively to Super Admin (`isSuperUser(currentUser)`).
+    - For normal Sales Agents / Telesales Advisors, the dropdown is completely hidden, automatically and strictly locking their queue view to their own assigned leads (`currentUser.name`).
+    - Hardened `loadQueue` so that non-super users cannot query or inspect other team members' leads.
+  - **Visual "NEW" Lead Badges & Outcome Indicators**:
+    - Added an eye-catching pulsing green **`🟢 NEW`** badge next to the client name on all uncontacted / fresh leads (`!opp.call_outcome`).
+    - For already called leads, display a subtle **`Contacted`** pill.
+    - Upgraded empty Call Outcome cells from a confusing hyphen (`—`) to a soft amber **`Pending Call`** badge with a clock icon.
+    - Synchronized identical visual indicators across both **Regular Leads (Lead Pool)** and **Owner Leads (Owner Data)**.
+  - **Actionable Calling Metrics & "Kitni Reh Gayen" KPI Cards**:
+    - Expanded KPI Stat summary cards into a balanced 5-metric grid:
+      1. **Total Active Leads**: Total active assigned leads in the queue.
+      2. **🟢 New Assigned**: Fresh, untouched leads that have never been called.
+      3. **⏳ Pending to Call**: Total calls remaining today (Uncontacted + Overdue + Due Soon), giving advisors an immediate daily target counter.
+      4. **✅ Contacted Today**: Total leads called today with logged activity.
+      5. **🚨 Overdue SLA**: High-priority breached callbacks.
+  - **Quick Sub-Tab Filters**:
+    - Added 1-click sub-tabs: `🟢 New / Uncontacted`, `⏳ Pending to Call`, and `Contacted Today ✅`.
+    - Instant client-side filtering via `tabFilteredOpps` and `tabFilteredOwners`.
+  - **Backend Calculation & Response Enrichment (`QueueController.php`)**:
+    - Eagerly evaluates `is_new` and `contacted_today` for all opportunities, virtual items, and owner records.
+    - Returns partitioned collections (`new_leads`, `pending`, `contacted_today`) and aggregated counts in the JSON payload for both `regular` and `owner` channels.
+  - **Verification**:
+    - PHP syntax verified with zero errors (`php -l`).
+    - Full TypeScript typecheck verified clean (`npx tsc --noEmit` exit code 0).
+
 ---
 
 ## ⚙️ Installation & Running Instructions

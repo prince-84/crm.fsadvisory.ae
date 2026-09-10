@@ -85,6 +85,9 @@ function MyQueueContent() {
 
   const [queueData, setQueueData] = useState<any>({ 
     all: [], 
+    new_leads: [],
+    pending: [],
+    contacted_today: [],
     overdue: [], 
     due_now: [], 
     hot_leads: [], 
@@ -518,8 +521,10 @@ function MyQueueContent() {
       const activeChannel = channelOverride !== undefined ? channelOverride : queueChannel;
       let url = `/queue?channel=${activeChannel}`;
       let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
-      if (targetOwner === 'auto') {
-        targetOwner = isSuperUser(user) ? 'all' : (user?.name || 'all');
+      if (!isSuperUser(user)) {
+        targetOwner = user?.name || 'auto';
+      } else if (targetOwner === 'auto') {
+        targetOwner = 'all';
       }
 
       if (targetOwner && targetOwner !== 'all') {
@@ -1047,6 +1052,9 @@ function MyQueueContent() {
 
   const tabFilteredOpps = useMemo(() => {
     if (queueChannel !== 'regular') return [];
+    if (activeTab === 'new') return allRawOpps.filter((opp: any) => !opp.call_outcome);
+    if (activeTab === 'pending') return allRawOpps.filter((opp: any) => !opp.call_outcome || opp.sla_status === 'overdue' || opp.sla_status === 'due_soon');
+    if (activeTab === 'contacted_today') return allRawOpps.filter((opp: any) => opp.contacted_today);
     if (activeTab === 'overdue') return queueData.overdue || [];
     if (activeTab === 'due_now') return queueData.due_now || [];
     if (activeTab === 'hot') return queueData.hot_leads || [];
@@ -1191,10 +1199,14 @@ function MyQueueContent() {
   // ---------------- OWNER LEADS LOGIC ----------------
   const tabFilteredOwners: any[] = useMemo(() => {
     if (queueChannel !== 'owner') return [];
+    const all = queueData.all || [];
+    if (activeTab === 'new') return all.filter((rec: any) => !rec.call_outcome);
+    if (activeTab === 'pending') return all.filter((rec: any) => !rec.call_outcome || (rec.active_opportunity && (rec.active_opportunity.sla_status === 'overdue' || rec.active_opportunity.sla_status === 'due_soon')));
+    if (activeTab === 'contacted_today') return all.filter((rec: any) => rec.contacted_today);
     if (activeTab === 'recent') return queueData.recent || [];
     if (activeTab === 'with_opportunity') return queueData.with_opportunity || [];
     if (activeTab === 'without_opportunity') return queueData.without_opportunity || [];
-    return queueData.all || [];
+    return all;
   }, [activeTab, queueData, queueChannel]);
 
   const filteredOwners = useMemo(() => {
@@ -1415,7 +1427,12 @@ function MyQueueContent() {
 
   const renderCallOutcomeBadge = (outcome?: string | null) => {
     if (!outcome) {
-      return <span className="text-slate-400 font-mono text-[11px]">—</span>;
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap inline-flex items-center gap-1">
+          <Clock className="w-2.5 h-2.5 text-amber-600" />
+          Pending Call
+        </span>
+      );
     }
     const o = outcome.trim();
     if (o.includes('Interested') || o.includes('Viewing') || o.includes('List') || o.includes('Valuation')) {
@@ -1472,6 +1489,7 @@ function MyQueueContent() {
 
     switch (colKey) {
       case 'client':
+        const isNewLead = !opp.call_outcome;
         return (
           <td key={colKey} className="p-3">
             <div className="flex items-center gap-2">
@@ -1479,22 +1497,34 @@ function MyQueueContent() {
                 {contact.name ? contact.name.substring(0, 2).toUpperCase() : 'LE'}
               </div>
               <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const hasValidDeal = opp.has_opportunity && Number(opp.id) > 0;
-                    setSelectedContactForModal({
-                      ...contact,
-                      active_opportunity: hasValidDeal ? opp : null,
-                      opportunities: hasValidDeal ? [opp] : [],
-                    });
-                    setIsContactModalOpen(true);
-                  }}
-                  className="font-bold text-[#081428] hover:text-[#C8A147] transition-colors text-left cursor-pointer"
-                  title="Click to view full lead profile popup"
-                >
-                  {contact.name || `Lead #${contact.id || opp.contact_id || Math.abs(opp.id)}`}
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const hasValidDeal = opp.has_opportunity && Number(opp.id) > 0;
+                      setSelectedContactForModal({
+                        ...contact,
+                        active_opportunity: hasValidDeal ? opp : null,
+                        opportunities: hasValidDeal ? [opp] : [],
+                      });
+                      setIsContactModalOpen(true);
+                    }}
+                    className="font-bold text-[#081428] hover:text-[#C8A147] transition-colors text-left cursor-pointer"
+                    title="Click to view full lead profile popup"
+                  >
+                    {contact.name || `Lead #${contact.id || opp.contact_id || Math.abs(opp.id)}`}
+                  </button>
+                  {isNewLead ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      NEW
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium text-slate-500 bg-slate-100">
+                      Contacted
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </td>
@@ -1732,6 +1762,7 @@ function MyQueueContent() {
         const initials = (record.owner_name || record.name)
           ? (record.owner_name || record.name).trim().substring(0, 2).toUpperCase()
           : 'OW';
+        const isNewOwner = !record.call_outcome;
 
         return (
           <td key={colKey} className="p-3">
@@ -1740,17 +1771,29 @@ function MyQueueContent() {
                 {initials}
               </div>
               <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedOwnerForModal(record);
-                    setIsOwnerModalOpen(true);
-                  }}
-                  className="font-bold text-[#081428] hover:text-[#C8A147] transition-colors text-left cursor-pointer"
-                  title="Click to view complete owner and property profile popup"
-                >
-                  {displayName}
-                </button>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedOwnerForModal(record);
+                      setIsOwnerModalOpen(true);
+                    }}
+                    className="font-bold text-[#081428] hover:text-[#C8A147] transition-colors text-left cursor-pointer"
+                    title="Click to view complete owner and property profile popup"
+                  >
+                    {displayName}
+                  </button>
+                  {isNewOwner ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      NEW
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium text-slate-500 bg-slate-100">
+                      Contacted
+                    </span>
+                  )}
+                </div>
                 <div className="text-[10px] text-[#6E6E6E]">
                   ID: #{record.id} · Added {record.created_at ? new Date(record.created_at).toLocaleDateString() : '—'}
                 </div>
@@ -1949,6 +1992,11 @@ function MyQueueContent() {
       setSelectedOwnerPropertyTypes([]);
       setSelectedOwnerBedrooms([]);
     }
+    if (isSuperUser(currentUser)) {
+      setSelectedOwner('all');
+    } else {
+      setSelectedOwner(currentUser?.name || 'auto');
+    }
     setActiveTab('all');
     setCurrentPage(1);
     setSortBy('created_at');
@@ -2072,12 +2120,13 @@ function MyQueueContent() {
 
           {/* KPI SLA Stat Summary Cards */}
           {queueChannel === 'regular' ? (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {[
                 { id: 'all', label: 'All Active Leads', value: queueData.counts?.all ?? allRawOpps.length, sub: 'Total Queue Count', subColor: 'text-[#081428]', icon: ListOrdered, iconBg: 'bg-[#081428] text-[#C8A147]' },
-                { id: 'overdue', label: 'Overdue SLA', value: queueData.counts?.overdue ?? 0, sub: 'Immediate attention', subColor: 'text-red-700', icon: AlertCircle, iconBg: 'bg-red-100 text-red-700' },
-                { id: 'due_now', label: 'Due Soon', value: queueData.counts?.due_now ?? 0, sub: 'Within 30 mins', subColor: 'text-amber-800', icon: Clock, iconBg: 'bg-amber-100 text-amber-800' },
-                { id: 'hot', label: 'Hot Leads', value: queueData.counts?.hot_leads ?? 0, sub: 'Priority clients', subColor: 'text-orange-700', icon: Flame, iconBg: 'bg-orange-100 text-orange-700' },
+                { id: 'new', label: '🟢 New Assigned', value: queueData.counts?.new_leads ?? allRawOpps.filter((o: any) => !o.call_outcome).length, sub: 'Never Called / Fresh', subColor: 'text-emerald-700', icon: Sparkles, iconBg: 'bg-emerald-100 text-emerald-800' },
+                { id: 'pending', label: '⏳ Pending to Call', value: queueData.counts?.pending ?? allRawOpps.filter((o: any) => !o.call_outcome || o.sla_status === 'overdue' || o.sla_status === 'due_soon').length, sub: 'Calls Remaining Today', subColor: 'text-amber-800', icon: PhoneCall, iconBg: 'bg-amber-100 text-amber-800' },
+                { id: 'contacted_today', label: '✅ Contacted Today', value: queueData.counts?.contacted_today ?? allRawOpps.filter((o: any) => o.contacted_today).length, sub: 'Calls Logged Today', subColor: 'text-blue-700', icon: CheckCircle2, iconBg: 'bg-blue-100 text-blue-700' },
+                { id: 'overdue', label: '🚨 Overdue SLA', value: queueData.counts?.overdue ?? 0, sub: 'Immediate attention', subColor: 'text-red-700', icon: AlertCircle, iconBg: 'bg-red-100 text-red-700' },
               ].map((card) => {
                 const Icon = card.icon;
                 const isCardActive = activeTab === card.id;
@@ -2108,12 +2157,13 @@ function MyQueueContent() {
               })}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {[
                 { id: 'all', label: 'All Owner Leads', value: queueData.counts?.all ?? 0, sub: 'Assigned Owner Records', subColor: 'text-[#081428]', icon: Building2, iconBg: 'bg-[#081428] text-[#C8A147]' },
-                { id: 'without_opportunity', label: 'Ready to Call (No Opp)', value: queueData.counts?.without_opportunity ?? 0, sub: 'Awaiting Opportunity Creation', subColor: 'text-amber-800', icon: PhoneCall, iconBg: 'bg-amber-100 text-amber-800' },
-                { id: 'with_opportunity', label: 'With Active Deal', value: queueData.counts?.with_opportunity ?? 0, sub: 'Opportunity in Pipeline', subColor: 'text-emerald-700', icon: Briefcase, iconBg: 'bg-emerald-100 text-emerald-800' },
-                { id: 'recent', label: 'Recent (7 Days)', value: queueData.counts?.recent ?? 0, sub: 'Newly Assigned Records', subColor: 'text-blue-700', icon: Zap, iconBg: 'bg-blue-100 text-blue-700' },
+                { id: 'new', label: '🟢 New Assigned', value: queueData.counts?.new_leads ?? (queueData.all || []).filter((r: any) => !r.call_outcome).length, sub: 'Untouched Owner Records', subColor: 'text-emerald-700', icon: Sparkles, iconBg: 'bg-emerald-100 text-emerald-800' },
+                { id: 'pending', label: '⏳ Pending to Call', value: queueData.counts?.pending ?? (queueData.all || []).filter((r: any) => !r.call_outcome || (r.active_opportunity && (r.active_opportunity.sla_status === 'overdue' || r.active_opportunity.sla_status === 'due_soon'))).length, sub: 'Calls Remaining Today', subColor: 'text-amber-800', icon: PhoneCall, iconBg: 'bg-amber-100 text-amber-800' },
+                { id: 'contacted_today', label: '✅ Contacted Today', value: queueData.counts?.contacted_today ?? (queueData.all || []).filter((r: any) => r.contacted_today).length, sub: 'Calls Logged Today', subColor: 'text-blue-700', icon: CheckCircle2, iconBg: 'bg-blue-100 text-blue-700' },
+                { id: 'without_opportunity', label: 'Ready to Call (No Opp)', value: queueData.counts?.without_opportunity ?? 0, sub: 'Awaiting Opportunity Deal', subColor: 'text-purple-700', icon: Briefcase, iconBg: 'bg-purple-100 text-purple-700' },
               ].map((card) => {
                 const Icon = card.icon;
                 const isCardActive = activeTab === card.id;
@@ -2150,8 +2200,11 @@ function MyQueueContent() {
             {queueChannel === 'regular' ? (
               [
                 { id: 'all', label: 'All Queue Leads' },
+                { id: 'new', label: '🟢 New / Uncontacted' },
+                { id: 'pending', label: '⏳ Pending to Call' },
                 { id: 'overdue', label: 'Overdue / Breached 🚨' },
-                { id: 'due_now', label: 'Due Soon (< 30 Mins) ⏳' },
+                { id: 'due_now', label: 'Due Soon (< 30 Mins) ⏰' },
+                { id: 'contacted_today', label: 'Contacted Today ✅' },
                 { id: 'hot', label: 'Hot Leads 🔥' },
               ].map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -2162,7 +2215,7 @@ function MyQueueContent() {
                       setActiveTab(tab.id as any);
                       setCurrentPage(1);
                     }}
-                    className={`px-4 py-3 text-xs font-bold transition-all flex items-center gap-2 border-b-2 cursor-pointer ${
+                    className={`px-4 py-3 text-xs font-bold transition-all flex items-center gap-2 border-b-2 whitespace-nowrap cursor-pointer ${
                       isActive
                         ? 'border-[#C8A147] text-[#081428]'
                         : 'border-transparent text-[#6E6E6E] hover:text-[#081428] hover:border-slate-300'
@@ -2175,8 +2228,11 @@ function MyQueueContent() {
             ) : (
               [
                 { id: 'all', label: 'All Owner Leads' },
+                { id: 'new', label: '🟢 New / Uncontacted' },
+                { id: 'pending', label: '⏳ Pending to Call' },
                 { id: 'without_opportunity', label: 'Calling Queue (No Deal Yet) 📞' },
                 { id: 'with_opportunity', label: 'With Active Deal 💼' },
+                { id: 'contacted_today', label: 'Contacted Today ✅' },
                 { id: 'recent', label: 'Recent (Last 7 Days) ⚡' },
               ].map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -2187,7 +2243,7 @@ function MyQueueContent() {
                       setActiveTab(tab.id as any);
                       setCurrentPage(1);
                     }}
-                    className={`px-4 py-3 text-xs font-bold transition-all flex items-center gap-2 border-b-2 cursor-pointer ${
+                    className={`px-4 py-3 text-xs font-bold transition-all flex items-center gap-2 border-b-2 whitespace-nowrap cursor-pointer ${
                       isActive
                         ? 'border-[#C8A147] text-[#081428]'
                         : 'border-transparent text-[#6E6E6E] hover:text-[#081428] hover:border-slate-300'
@@ -2300,35 +2356,28 @@ function MyQueueContent() {
                 </>
               )}
 
-              {/* Agent / Scope Selector (Unified for both Regular & Owner Leads) */}
-              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
-                <UserCheck className="w-3.5 h-3.5 text-[#C8A147]" />
-                <select
-                  value={selectedOwner === 'auto' ? (isSuperUser(currentUser) ? 'all' : (currentUser?.name || 'auto')) : selectedOwner}
-                  onChange={(e) => {
-                    setSelectedOwner(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
-                >
-                  {isSuperUser(currentUser) ? (
-                    <>
-                      <option value="all">👥 All Assigned Leads (Entire Team)</option>
-                      {currentUser?.name && (
-                        <option value={currentUser.name}>⭐ My Leads ({currentUser.name})</option>
-                      )}
-                      {teamAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
-                        <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <option value={currentUser?.name || 'auto'}>🎯 My Assigned Leads ({currentUser?.name || 'Assigned to Me'})</option>
-                      <option value="all">👥 View Entire Lead Pool</option>
-                    </>
-                  )}
-                </select>
-              </div>
+              {/* Agent / Scope Selector - ONLY visible for Super Admin */}
+              {isSuperUser(currentUser) && (
+                <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
+                  <UserCheck className="w-3.5 h-3.5 text-[#C8A147]" />
+                  <select
+                    value={selectedOwner === 'auto' ? 'all' : selectedOwner}
+                    onChange={(e) => {
+                      setSelectedOwner(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">👥 All Assigned Leads (Entire Team)</option>
+                    {currentUser?.name && (
+                      <option value={currentUser.name}>⭐ My Leads ({currentUser.name})</option>
+                    )}
+                    {teamAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
+                      <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Reset Button (Always visible like Lead Pool / Owner Data) */}
               <button
