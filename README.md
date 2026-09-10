@@ -1205,6 +1205,18 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Verification**:
     - Full TypeScript type-safety verified with 0 compilation errors (`npx tsc --noEmit` exit code 0).
 
+- **109 — External Webhook & Inbound API Sub-Source Ingestion (`ContactController.php`, `Contact.php`)**:
+  - **Automated Sub-Source Ingestion for n8n & External Webhooks**:
+    - Enabled explicit support for `sub_source` in `POST /api/contacts` (`store`) and `PUT /api/contacts/{id}` (`update`).
+    - When external webhooks (e.g. n8n, Meta Ads, Zapier, or landing page webhooks) pass `"sub_source": "..."` alongside `"source": "..."`, the controller automatically merges them into the standard CRM format: `Source (Sub-Source)` (e.g., `Meta Ads (Instagram Feed)`).
+    - If `utm_source` is omitted in the payload, `sub_source` automatically backfills `utm_source` for marketing attribution.
+  - **Dynamic Model Accessor (`Contact.php`)**:
+    - Added appended `sub_source` attribute to `Contact` model (`getSubSourceAttribute`) to parse and return the sub-source across all API payloads.
+    - Seamlessly populates the **Sub-Source Campaign** table column across Lead Pool and New Leads desks with zero database schema migrations required.
+  - **Verification**:
+    - PHP syntax verified with 0 errors (`php -l`).
+    - Artisan tinker unit verified: `Contact(['source' => 'Meta Ads (Instagram Feed)'])->sub_source === 'Instagram Feed'`.
+
 ---
 
 ## ⚙️ Installation & Running Instructions

@@ -21,11 +21,20 @@ class Contact extends Model
     protected $appends = [
         'campaign_url',
         'inquiry_specs',
+        'sub_source',
     ];
 
     public function getCampaignUrlAttribute()
     {
         return $this->landing_page_url;
+    }
+
+    public function getSubSourceAttribute()
+    {
+        if (preg_match('/\((.*?)\)/', $this->source ?? '', $matches)) {
+            return trim($matches[1]);
+        }
+        return $this->utm_source ?? null;
     }
 
     public function getInquirySpecsAttribute()

@@ -414,6 +414,7 @@ class ContactController extends Controller
             'nationality' => 'nullable|string|max:100',
             'emirates_id' => 'nullable|string|max:100',
             'source' => 'nullable|string|max:100',
+            'sub_source' => 'nullable|string|max:100',
             'initials' => 'nullable|string|max:10',
             'utm_source' => 'nullable|string|max:255',
             'utm_medium' => 'nullable|string|max:255',
@@ -449,7 +450,14 @@ class ContactController extends Controller
             $validated['initials'] = substr($initials, 0, 2);
         }
 
-        $validated['source'] = $validated['source'] ?? 'Database';
+        $rawSource = $validated['source'] ?? 'Database';
+        if ($request->filled('sub_source')) {
+            $subSource = trim($request->input('sub_source'));
+            if (!empty($subSource) && !str_contains($rawSource, '(')) {
+                $rawSource = "{$rawSource} ({$subSource})";
+            }
+        }
+        $validated['source'] = $rawSource;
 
         // Check if phone or secondary phone already exists in DB
         $existingContact = Contact::where('phone', $validated['phone'])
@@ -475,7 +483,7 @@ class ContactController extends Controller
             'emirates_id' => $validated['emirates_id'] ?? null,
             'source' => $validated['source'],
             'initials' => $validated['initials'],
-            'utm_source' => $validated['utm_source'] ?? null,
+            'utm_source' => $validated['utm_source'] ?? ($request->input('sub_source') ?: null),
             'utm_medium' => $validated['utm_medium'] ?? null,
             'utm_campaign' => $validated['utm_campaign'] ?? null,
             'utm_term' => $validated['utm_term'] ?? null,
@@ -589,6 +597,7 @@ class ContactController extends Controller
             'nationality' => 'nullable|string|max:100',
             'emirates_id' => 'nullable|string|max:100',
             'source' => 'nullable|string|max:100',
+            'sub_source' => 'nullable|string|max:100',
             'assigned_to' => 'nullable|string|max:100',
             'assigned_owner' => 'nullable|string|max:100',
             'utm_source' => 'nullable|string|max:255',
@@ -614,6 +623,14 @@ class ContactController extends Controller
                 $initials .= strtoupper(substr($w, 0, 1));
             }
             $validated['initials'] = substr($initials, 0, 2);
+        }
+
+        if ($request->filled('sub_source')) {
+            $subSource = trim($request->input('sub_source'));
+            $rawSource = $request->input('source', $contact->source ?? 'Database');
+            if (!empty($subSource) && !str_contains($rawSource, '(')) {
+                $validated['source'] = "{$rawSource} ({$subSource})";
+            }
         }
 
         $newOwner = $request->input('assigned_owner') ?? $request->input('assigned_to');
