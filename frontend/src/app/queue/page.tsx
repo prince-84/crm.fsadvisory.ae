@@ -22,7 +22,6 @@ import {
   ChevronLeft,
   ListOrdered, 
   Calendar, 
-  Globe, 
   Zap, 
   Search, 
   Filter, 
@@ -99,7 +98,6 @@ function MyQueueContent() {
   });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>((urlTab as any) || 'all');
-  const [ingesting, setIngesting] = useState(false);
 
   useEffect(() => {
     if (urlTab) {
@@ -578,34 +576,6 @@ function MyQueueContent() {
     setTimeout(() => setCopiedPhoneId(null), 1500);
   };
 
-  const handleSimulatePortalLead = async () => {
-    setIngesting(true);
-    try {
-      const res = await fetchApi('/portals/ingest', {
-        method: 'POST',
-        body: JSON.stringify({
-          portal_name: 'property_finder',
-          client_name: 'Zayed Al Nahyan',
-          client_phone: '+971 50 777 8899',
-          client_email: 'zayed.n@example.com',
-          community: 'Palm Jumeirah',
-          budget: 5500000,
-        }),
-      });
-
-      Swal.fire({
-        icon: 'success',
-        title: 'Portal Lead Ingested!',
-        text: res.message || 'New Property Finder lead added to queue.',
-        confirmButtonColor: '#081428',
-      });
-      setIngesting(false);
-      loadQueue();
-    } catch (err: any) {
-      Swal.fire('Ingestion Error', err.message || 'Portal lead ingestion failed.', 'error');
-      setIngesting(false);
-    }
-  };
 
   // Quick call for Regular Leads
   const handleQuickCall = async (oppId: number, contactId: number, contactName: string = 'Client') => {
@@ -2114,17 +2084,6 @@ function MyQueueContent() {
                 <span>Opportunities Pipeline</span>
                 <ChevronRight className="w-3 h-3 text-slate-400" />
               </Link>
-
-              {queueChannel === 'regular' && (
-                <button
-                  onClick={handleSimulatePortalLead}
-                  disabled={ingesting}
-                  className="px-3.5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold text-xs rounded-md shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Globe className="w-3.5 h-3.5 text-[#C8A147]" />
-                  <span>{ingesting ? 'Ingesting...' : 'Simulate Portal Lead'}</span>
-                </button>
-              )}
             </div>
           </div>
 

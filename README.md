@@ -1198,6 +1198,13 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - PHP syntax verified with 0 errors (`php -l`).
     - Full TypeScript type-safety verified with 0 compilation errors (`npx tsc --noEmit` exit code 0).
 
+- **108 — Production Cleanliness: Removal of "Simulate Portal Lead" Button (`frontend/src/app/queue/page.tsx`)**:
+  - **Cleanup of Dev Simulation Control**:
+    - Removed the development simulation button **`[ 🌐 Simulate Portal Lead ]`** from the My Queue header bar adjacent to `Opportunities Pipeline >`.
+    - Cleaned up unused `handleSimulatePortalLead` ingestion handler, `ingesting` state, and unused `Globe` icon import from [`queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx), keeping the production telesales desk clean and strictly driven by live real estate portal integrations.
+  - **Verification**:
+    - Full TypeScript type-safety verified with 0 compilation errors (`npx tsc --noEmit` exit code 0).
+
 ---
 
 ## ⚙️ Installation & Running Instructions
