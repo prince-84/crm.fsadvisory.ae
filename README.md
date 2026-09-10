@@ -1175,7 +1175,10 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       2. **Call Outcome Filter**:
          - Dynamically covers *All Outcomes*, *New / Uncontacted* (for leads with no logged outcome), and all CRM call outcomes (*Interested*, *Callback Requested*, *Follow-up Required*, *No Answer*, *Not Interested*, *Wrong Number*).
     - Integrated multi-variable client-side filtering into `filteredOpps` and `filteredOwners`.
-    - Integrated with `handleResetFilters` and channel switching to reset both dropdowns back to `'all'`.
+  - **Single-Line Filter Bar Layout Optimization**:
+    - Eliminated `flex-wrap` wrapping from the control bar container (`p-2.5`, `flex-nowrap`, `min-w-0`), preventing elements from breaking onto multiple rows.
+    - Optimized input and select widths: Search input (`w-40 sm:w-44 lg:w-48 xl:w-56 shrink-0`), Stage select (`max-w-[120px] xl:max-w-[140px] truncate`), and Call Outcome select (`max-w-[130px] xl:max-w-[160px] truncate`).
+    - Aligned all control elements (Search, Date Picker, Advanced Filters, Stage, Call Outcome, Reset, Columns Toggle, and Showing Counter) cleanly into **one single unified horizontal row**.
   - **Verification**:
     - PHP syntax verified with 0 errors (`php -l`).
     - Full TypeScript type-safety verified with 0 compilation errors (`npx tsc --noEmit` exit code 0).

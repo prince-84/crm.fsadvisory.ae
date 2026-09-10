@@ -2327,15 +2327,15 @@ function MyQueueContent() {
             )}
           </div>
 
-          {/* Control Bar: Filters & Columns */}
-          <div className="p-3 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 flex-wrap flex-1">
+          {/* Control Bar: Filters & Columns (One Single Line) */}
+          <div className="p-2.5 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 flex-nowrap min-w-0 flex-1">
               {/* Search */}
-              <div className="flex items-center gap-2 w-64 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 focus-within:border-[#C8A147] focus-within:bg-white transition-colors shrink-0">
+              <div className="flex items-center gap-2 w-40 sm:w-44 lg:w-48 xl:w-56 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2 py-1.5 focus-within:border-[#C8A147] focus-within:bg-white transition-colors shrink-0">
                 <Search className="w-3.5 h-3.5 text-[#6E6E6E] shrink-0" />
                 <input
                   type="text"
-                  placeholder={queueChannel === 'regular' ? "Search client name, phone, action..." : "Search owner, mobile, building, area..."}
+                  placeholder={queueChannel === 'regular' ? "Search client, phone, action..." : "Search owner, building, area..."}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-transparent border-none focus:outline-none text-xs text-[#1A1A1A] placeholder-[#6E6E6E]"
@@ -2362,7 +2362,7 @@ function MyQueueContent() {
                   <button
                     type="button"
                     onClick={() => setIsAdvancedFilterOpen(true)}
-                    className={`p-1.5 px-3 rounded border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    className={`p-1.5 px-2.5 rounded border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
                       activeAdvancedCount > 0
                         ? 'bg-[#081428] text-[#C8A147] border-[#C8A147] shadow-xs'
                         : 'bg-[#FAF8F5] border-[#E8E4DC] text-[#081428] hover:border-[#C8A147]'
@@ -2428,15 +2428,15 @@ function MyQueueContent() {
               )}
 
               {/* Stage Filter Dropdown (from database stages) */}
-              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0 focus-within:border-[#C8A147]">
-                <Briefcase className="w-3.5 h-3.5 text-[#C8A147]" />
+              <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2 py-1.5 shrink-0 focus-within:border-[#C8A147]">
+                <Briefcase className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
                 <select
                   value={selectedStage}
                   onChange={(e) => {
                     setSelectedStage(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer max-w-[120px] xl:max-w-[140px] truncate"
                 >
                   <option value="all">📊 All Stages</option>
                   <option value="no_deal">⚠️ No Deal Created</option>
@@ -2449,18 +2449,18 @@ function MyQueueContent() {
               </div>
 
               {/* Call Outcome Filter Dropdown (from database call outcomes) */}
-              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0 focus-within:border-[#C8A147]">
-                <PhoneCall className="w-3.5 h-3.5 text-[#C8A147]" />
+              <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2 py-1.5 shrink-0 focus-within:border-[#C8A147]">
+                <PhoneCall className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
                 <select
                   value={selectedCallOutcome}
                   onChange={(e) => {
                     setSelectedCallOutcome(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer max-w-[130px] xl:max-w-[160px] truncate"
                 >
-                  <option value="all">📞 All Call Outcomes</option>
-                  <option value="uncontacted">🟢 New / Uncontacted (No Call Yet)</option>
+                  <option value="all">📞 All Outcomes</option>
+                  <option value="uncontacted">🟢 New / Uncontacted</option>
                   <option value="Interested - Schedule Viewing">Interested — Schedule Viewing</option>
                   <option value="Callback Requested">Callback Requested</option>
                   <option value="Follow-up Required">Follow-up Required</option>
@@ -2473,13 +2473,13 @@ function MyQueueContent() {
               {/* Reset Button (Always visible like Lead Pool / Owner Data) */}
               <button
                 onClick={handleResetFilters}
-                className="text-xs text-[#C8A147] font-bold hover:underline px-1 transition-colors ml-1 cursor-pointer"
+                className="text-xs text-[#C8A147] font-bold hover:underline px-1 transition-colors shrink-0 cursor-pointer"
               >
                 Reset
               </button>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 shrink-0">
               {/* Columns Visibility Dropdown */}
               <div className="relative">
                 <button
