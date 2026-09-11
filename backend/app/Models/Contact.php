@@ -39,11 +39,21 @@ class Contact extends Model
 
     public function getInquirySpecsAttribute()
     {
-        $activities = $this->relationLoaded('activities') ? $this->activities : $this->activities()->get();
-        $note = $activities ? $activities->first(function ($act) {
-            $desc = $act->description ?? '';
-            return str_contains($desc, 'Initial Inquiry Requirements:') || str_contains($desc, 'Initial Inquiry Details:') || str_contains($desc, 'Initial Inquiry');
-        }) : null;
+        $note = null;
+        if ($this->relationLoaded('activities')) {
+            $note = $this->activities->first(function ($act) {
+                $desc = $act->description ?? '';
+                return str_contains($desc, 'Initial Inquiry Requirements:') || str_contains($desc, 'Initial Inquiry Details:') || str_contains($desc, 'Initial Inquiry');
+            });
+        }
+
+        if (!$note) {
+            $note = $this->activities()->where(function($q) {
+                $q->where('description', 'like', '%Initial Inquiry Requirements:%')
+                  ->orWhere('description', 'like', '%Initial Inquiry Details:%')
+                  ->orWhere('description', 'like', '%Initial Inquiry%');
+            })->latest()->first();
+        }
 
         if (!$note) return (object) [];
 

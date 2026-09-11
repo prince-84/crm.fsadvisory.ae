@@ -536,30 +536,29 @@ class ContactController extends Controller
                     ]);
                 }
             }
+        }
 
-            // Opportunity deals are strictly created MANUALLY by advisors from My Queue after qualification.
-            // Inquiry preferences are preserved as an initial inquiry activity note on the contact profile.
+        // Opportunity deals are strictly created MANUALLY by advisors from My Queue after qualification.
+        // Inquiry preferences are preserved as an initial inquiry activity note on the contact profile for all leads (including duplicates).
+        $inquiryDetails = [];
+        if ($request->filled('developer')) $inquiryDetails[] = "Developer: {$request->developer}";
+        if ($request->filled('community')) $inquiryDetails[] = "Location/Community: {$request->community}";
+        if ($request->filled('project')) $inquiryDetails[] = "Project: {$request->project}";
+        if ($request->filled('project_property')) $inquiryDetails[] = "Unit: {$request->project_property}";
+        if ($request->filled('property_type')) $inquiryDetails[] = "Property Type: {$request->property_type}";
+        if ($request->filled('bedrooms')) $inquiryDetails[] = "Beds: {$request->bedrooms}";
+        if ($request->filled('budget_min') || $request->filled('budget_max')) {
+            $inquiryDetails[] = "Budget: AED " . ($request->budget_min ?: '0') . " - " . ($request->budget_max ?: 'Max');
+        }
+        if ($request->filled('key_requirement')) $inquiryDetails[] = "Notes: {$request->key_requirement}";
 
-            $inquiryDetails = [];
-            if ($request->filled('developer')) $inquiryDetails[] = "Developer: {$request->developer}";
-            if ($request->filled('community')) $inquiryDetails[] = "Location/Community: {$request->community}";
-            if ($request->filled('project')) $inquiryDetails[] = "Project: {$request->project}";
-            if ($request->filled('project_property')) $inquiryDetails[] = "Unit: {$request->project_property}";
-            if ($request->filled('property_type')) $inquiryDetails[] = "Property Type: {$request->property_type}";
-            if ($request->filled('bedrooms')) $inquiryDetails[] = "Beds: {$request->bedrooms}";
-            if ($request->filled('budget_min') || $request->filled('budget_max')) {
-                $inquiryDetails[] = "Budget: AED " . ($request->budget_min ?: '0') . " - " . ($request->budget_max ?: 'Max');
-            }
-            if ($request->filled('key_requirement')) $inquiryDetails[] = "Notes: {$request->key_requirement}";
-
-            if (!empty($inquiryDetails)) {
-                Activity::create([
-                    'contact_id'  => $contact->id,
-                    'user_name'   => 'Lead Engine',
-                    'type'        => 'note',
-                    'description' => 'Initial Inquiry Requirements: ' . implode(' | ', $inquiryDetails),
-                ]);
-            }
+        if (!empty($inquiryDetails)) {
+            Activity::create([
+                'contact_id'  => $contact->id,
+                'user_name'   => 'Lead Engine',
+                'type'        => 'note',
+                'description' => 'Initial Inquiry Requirements: ' . implode(' | ', $inquiryDetails),
+            ]);
         }
 
         if ($request->filled('activity_description')) {

@@ -485,7 +485,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
               const payMatch = desc.match(/Payment Method:\s*([^,|]+)/i);
               if (payMatch) fbPm = payMatch[1].trim();
 
-              const notesMatch = desc.match(/Notes:\s*([^,|]+)/i);
+              const notesMatch = desc.match(/Notes:\s*([^|]+)/i);
               if (notesMatch) fbKeyReq = notesMatch[1].trim();
 
               const nextMatch = desc.match(/Next Action:\s*([^,|]+)/i);
@@ -587,7 +587,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
         }
 
         // Key Requirement / Notes
-        const keyReqVal = opp ? (opp.key_requirement || '') : fbKeyReq;
+        const keyReqVal = opp?.key_requirement || fbKeyReq || '';
         setKeyRequirement(keyReqVal);
 
         // Sales Ownership

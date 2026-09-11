@@ -1218,6 +1218,18 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - PHP syntax verified with 0 errors (`php -l`).
     - Artisan tinker unit verified: `Contact(['source' => 'Meta Ads (Instagram Feed)'])->sub_source === 'Instagram Feed'`.
 
+- **110 — Key Requirement & Inquiry Specs Ingestion & Edit Form Resilience (`ContactController.php`, `Contact.php`, `leads/[id]/edit/page.tsx`)**:
+  - **Inquiry Details Persistence for All Leads (Including Duplicates)**:
+    - Fixed `store()` in [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php): moved `$inquiryDetails` activity creation outside of the `$contact->state === 'duplicate'` condition. When external leads (n8n, Meta Ads, webhooks) submit inquiries with an existing phone number during testing, the client's `key_requirement` and inquiry specs are now preserved and logged without being discarded.
+  - **Resilient Inquiry Specs Parsing Across Eager-Loaded Relationships (`Contact.php`)**:
+    - Upgraded `getInquirySpecsAttribute()` in [`Contact.php`](file:///d:/FSadvisory-crm/backend/app/Models/Contact.php): when `activities` is loaded with `limit(1)` in list views or superseded by ownership assignment notes, the model intelligently executes a targeted fallback query to find the `Initial Inquiry Requirements:` note, preventing empty `inquiry_specs: {}` across table and edit views.
+  - **Enhanced Edit Lead Form Parsing (`leads/[id]/edit/page.tsx`)**:
+    - Refactored Notes regex extraction to `Notes:\s*([^|]+)` instead of `Notes:\s*([^,|]+)`, preventing requirements and notes containing commas from being prematurely truncated or dropped.
+    - Updated `keyRequirement` state loader with a seamless fallback: `const keyReqVal = opp?.key_requirement || fbKeyReq || ''`, guaranteeing that the client's inquiry notes are displayed in the form input even when an opportunity has not yet recorded custom deal notes.
+  - **Verification**:
+    - PHP syntax verified with 0 errors (`php -l`).
+    - Full TypeScript type-safety verified with 0 compilation errors (`npx tsc --noEmit` exit code 0).
+
 ---
 
 ## ⚙️ Installation & Running Instructions
