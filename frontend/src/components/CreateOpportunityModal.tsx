@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, UserCheck, AlertCircle, Building2 } from 'lucide-react';
+import { X, UserCheck, AlertCircle, Building2, MapPin, Home, Bed, DollarSign, Calendar, Layers } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import SearchableSelect from './SearchableSelect';
 
@@ -19,7 +19,7 @@ interface CreateOpportunityModalProps {
   ownerRecord?: any | null;
 }
 
-const OPPORTUNITY_TYPES = [
+const DEFAULT_OPPORTUNITY_TYPES = [
   { value: 'buyer', label: 'Buyer Opportunity' },
   { value: 'seller', label: 'Seller Opportunity' },
   { value: 'landlord', label: 'Landlord Opportunity' },
@@ -32,7 +32,7 @@ const TEMPERATURES = [
   { value: 'cold', label: '🔵 Cold (Long-term potential)' },
 ];
 
-const DEVELOPERS = [
+const DEFAULT_DEVELOPERS = [
   'Emaar Properties',
   'Nakheel',
   'DAMAC Properties',
@@ -51,6 +51,65 @@ const DEVELOPERS = [
   'Other / General',
 ];
 
+const DEFAULT_COMMUNITIES = [
+  'Downtown Dubai',
+  'Dubai Marina',
+  'Palm Jumeirah',
+  'Business Bay',
+  'Dubai Hills Estate',
+  'Dubai Creek Harbour',
+  'Jumeirah Village Circle (JVC)',
+  'MBR City (Sobha Hartland)',
+  'Arabian Ranches',
+  'Damac Hills',
+  'Bluewaters Island',
+  'City Walk',
+  'DIFC',
+  'Jumeirah Beach Residence (JBR)',
+  'Other / General',
+];
+
+const DEFAULT_PROPERTY_TYPES = [
+  'Apartment',
+  'Villa',
+  'Townhouse',
+  'Penthouse',
+  'Duplex',
+  'Plot / Land',
+  'Commercial / Office',
+  'Whole Building',
+  'Other',
+];
+
+const BEDROOM_OPTIONS = [
+  'Studio',
+  '1 Bedroom',
+  '2 Bedrooms',
+  '3 Bedrooms',
+  '4 Bedrooms',
+  '5 Bedrooms',
+  '6+ Bedrooms',
+  'Penthouse',
+  'Duplex',
+  'Villa / Townhouse',
+];
+
+const MARKET_OPTIONS = [
+  { value: 'Offplan', label: 'Offplan' },
+  { value: 'Secondary', label: 'Secondary' },
+];
+
+const HANDOVER_YEARS = [
+  { value: 'Ready / Completed', label: 'Ready / Completed' },
+  { value: '2024', label: '2024' },
+  { value: '2025', label: '2025' },
+  { value: '2026', label: '2026' },
+  { value: '2027', label: '2027' },
+  { value: '2028', label: '2028' },
+  { value: '2029', label: '2029' },
+  { value: '2030+', label: '2030+' },
+];
+
 export default function CreateOpportunityModal({
   isOpen,
   onClose,
@@ -60,24 +119,32 @@ export default function CreateOpportunityModal({
 }: CreateOpportunityModalProps) {
   const [contactsList, setContactsList] = useState<any[]>([]);
   const [selectedContactId, setSelectedContactId] = useState<string>('');
-  const [opportunityType, setOpportunityType] = useState('buyer');
-  const [temperature, setTemperature] = useState('hot');
-  const [developer, setDeveloper] = useState('Emaar Properties');
-  const [budgetMin, setBudgetMin] = useState('1800000');
-  const [budgetMax, setBudgetMax] = useState('2200000');
-  const [keyRequirement, setKeyRequirement] = useState('Interested in 2BR Apartment in Business Bay');
-  const [nextAction, setNextAction] = useState('Call lead to confirm criteria & budget');
-  const [nextActionDueDate, setNextActionDueDate] = useState(() => {
-    const d = new Date();
-    d.setHours(d.getHours() + 2);
-    return d.toISOString().slice(0, 16);
-  });
+
+  // Form fields (blank by default, no pre-filled values)
+  const [opportunityType, setOpportunityType] = useState('');
+  const [temperature, setTemperature] = useState('');
+  const [developer, setDeveloper] = useState('');
+  const [community, setCommunity] = useState('');
+  const [propertyType, setPropertyType] = useState('');
+  const [bedrooms, setBedrooms] = useState('');
+  const [paymentPlan, setPaymentPlan] = useState('');
+  const [market, setMarket] = useState('');
+  const [handover, setHandover] = useState('');
+  const [budgetMin, setBudgetMin] = useState('');
+  const [budgetMax, setBudgetMax] = useState('');
+  const [keyRequirement, setKeyRequirement] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [opportunityTypeOptions, setOpportunityTypeOptions] = useState<any[]>(OPPORTUNITY_TYPES);
+
+  // Dynamic catalogs loaded from DB
+  const [opportunityTypeOptions, setOpportunityTypeOptions] = useState<any[]>(DEFAULT_OPPORTUNITY_TYPES);
+  const [developerOptions, setDeveloperOptions] = useState<string[]>(DEFAULT_DEVELOPERS);
+  const [communityOptions, setCommunityOptions] = useState<string[]>(DEFAULT_COMMUNITIES);
+  const [propertyTypeOptions, setPropertyTypeOptions] = useState<string[]>(DEFAULT_PROPERTY_TYPES);
 
   useEffect(() => {
+    // 1. Opportunity Types
     fetchApi('/catalog/opportunity-types')
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
@@ -90,29 +157,66 @@ export default function CreateOpportunityModal({
         }
       })
       .catch(() => {});
+
+    // 2. Developers
+    fetchApi('/catalog/developers')
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const names = data.filter((d: any) => d.is_active).map((d: any) => d.name);
+          if (names.length > 0) setDeveloperOptions(names);
+        }
+      })
+      .catch(() => {});
+
+    // 3. Communities
+    fetchApi('/catalog/communities')
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const names = data.filter((c: any) => c.is_active).map((c: any) => c.name);
+          if (names.length > 0) setCommunityOptions(names);
+        }
+      })
+      .catch(() => {});
+
+    // 4. Property Types
+    fetchApi('/catalog/properties')
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const names = data.filter((p: any) => p.is_active).map((p: any) => p.name);
+          if (names.length > 0) setPropertyTypeOptions(names);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     if (isOpen) {
-      if (ownerRecord) {
-        setOpportunityType('seller');
-        setDeveloper('Other / General');
-        setBudgetMin('1500000');
-        setBudgetMax('2500000');
-        setKeyRequirement(
-          `Selling / Leasing ${ownerRecord.bedrooms || ''} ${ownerRecord.property_type || 'Property'} in ${ownerRecord.building_name || ownerRecord.area || 'Dubai'}${ownerRecord.property_number ? ` (Unit #${ownerRecord.property_number})` : ''}`
-        );
-        setNextAction(`Call owner (${ownerRecord.owner_name}) to confirm listing agreement & expected price`);
-      } else if (contact) {
+      setError('');
+      // By default all fields start completely blank (not prefilled)
+      setOpportunityType('');
+      setTemperature('');
+      setDeveloper('');
+      setCommunity('');
+      setPropertyType('');
+      setBedrooms('');
+      setPaymentPlan('');
+      setMarket('');
+      setHandover('');
+      setBudgetMin('');
+      setBudgetMax('');
+      setKeyRequirement('');
+
+      if (contact) {
         setSelectedContactId(String(contact.id));
-        setOpportunityType('buyer');
+      } else if (ownerRecord) {
+        setSelectedContactId('');
       } else {
-        // Fetch contacts if creating without a specific contact selected
+        setSelectedContactId('');
+        // Fetch contacts if creating without a preselected contact
         fetchApi('/contacts')
           .then((data) => {
-            const list = Array.isArray(data) ? data : data.data || [];
+            const list = Array.isArray(data) ? data : (data?.contacts?.data || data?.contacts || data?.data || []);
             setContactsList(list);
-            if (list.length > 0) setSelectedContactId(String(list[0].id));
           })
           .catch(() => {});
       }
@@ -136,14 +240,18 @@ export default function CreateOpportunityModal({
 
     try {
       const payload: any = {
-        opportunity_type: opportunityType,
-        temperature,
-        developer,
-        budget_min: Number(budgetMin),
-        budget_max: Number(budgetMax),
-        key_requirement: keyRequirement,
-        next_action: nextAction,
-        next_action_due_at: nextActionDueDate,
+        opportunity_type: opportunityType || 'buyer',
+        temperature: temperature || 'hot',
+        developer: developer || null,
+        community: community || null,
+        property_type: propertyType || null,
+        bedrooms: bedrooms || null,
+        payment_plan: paymentPlan || null,
+        market: market || null,
+        handover_year: handover || null,
+        budget_min: budgetMin !== '' ? Number(budgetMin) : null,
+        budget_max: budgetMax !== '' ? Number(budgetMax) : null,
+        key_requirement: keyRequirement || null,
         current_owner_name: (() => {
           try {
             const raw = localStorage.getItem('crm_user');
@@ -155,11 +263,11 @@ export default function CreateOpportunityModal({
 
       if (ownerRecord) {
         payload.owner_record_id = ownerRecord.id;
-        payload.community = ownerRecord.area;
+        if (!payload.community && ownerRecord.area) payload.community = ownerRecord.area;
+        if (!payload.property_type && ownerRecord.property_type) payload.property_type = ownerRecord.property_type;
+        if (!payload.bedrooms && ownerRecord.bedrooms) payload.bedrooms = ownerRecord.bedrooms;
         payload.building_name = ownerRecord.building_name;
         payload.unit_number = ownerRecord.property_number;
-        payload.property_type = ownerRecord.property_type;
-        payload.bedrooms = ownerRecord.bedrooms;
       } else {
         payload.contact_id = targetContactId;
       }
@@ -185,7 +293,7 @@ export default function CreateOpportunityModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white border border-[#E8E4DC] rounded-lg max-w-lg w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white border border-[#E8E4DC] rounded-lg max-w-xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-6">
         {/* Header */}
         <div className="p-5 bg-[#081428] text-white flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -209,7 +317,7 @@ export default function CreateOpportunityModal({
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs max-h-[80vh] overflow-y-auto">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -217,9 +325,10 @@ export default function CreateOpportunityModal({
             </div>
           )}
 
+          {/* Contact Selection */}
           <div>
             <label className="block text-[#081428] font-bold mb-1">
-              {ownerRecord ? 'Property Owner & Asset Info *' : 'Select Existing Contact from Lead Bank *'}
+              {ownerRecord ? 'Property Owner & Asset Info' : 'Select Existing Contact from Lead Bank'}
             </label>
             {ownerRecord ? (
               <div className="p-3 bg-[#FAF8F5] border border-[#C8A147]/70 rounded-md font-bold text-[#081428] text-xs space-y-1.5">
@@ -244,8 +353,11 @@ export default function CreateOpportunityModal({
                 </div>
               </div>
             ) : contact ? (
-              <div className="p-2.5 bg-[#FAF8F5] border border-emerald-300 rounded font-bold text-[#081428] text-xs">
-                {contact.name} ({contact.phone}) — <span className="text-emerald-700 font-normal">{contact.nationality || 'Emirati'}</span>
+              <div className="p-2.5 bg-[#FAF8F5] border border-emerald-300 rounded font-bold text-[#081428] text-xs flex items-center justify-between">
+                <span>
+                  👤 {contact.name} ({contact.phone})
+                </span>
+                <span className="text-emerald-700 font-semibold">{contact.nationality || 'Expat / UAE Resident'}</span>
               </div>
             ) : (
               <SearchableSelect
@@ -257,47 +369,141 @@ export default function CreateOpportunityModal({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Opportunity Type & Temperature */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[#081428] font-semibold mb-1">Opportunity Type *</label>
+              <label className="block text-[#081428] font-semibold mb-1">Opportunity Type</label>
               <SearchableSelect
                 options={opportunityTypeOptions}
                 value={opportunityType}
                 onChange={setOpportunityType}
+                placeholder="Select Opportunity Type..."
               />
             </div>
 
             <div>
-              <label className="block text-[#081428] font-semibold mb-1">Temperature *</label>
+              <label className="block text-[#081428] font-semibold mb-1">Temperature</label>
               <SearchableSelect
                 options={TEMPERATURES}
                 value={temperature}
                 onChange={setTemperature}
+                placeholder="Select Temperature..."
               />
             </div>
           </div>
 
+          {/* Developer & Community/Area/Location */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[#081428] font-semibold mb-1 flex items-center gap-1">
+                <Building2 className="w-3.5 h-3.5 text-[#C8A147]" />
+                <span>Developer</span>
+              </label>
+              <SearchableSelect
+                options={developerOptions}
+                value={developer}
+                onChange={setDeveloper}
+                placeholder="Select Developer..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-[#081428] font-semibold mb-1 flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-[#C8A147]" />
+                <span>Community / Area / Location</span>
+              </label>
+              <SearchableSelect
+                options={communityOptions}
+                value={community}
+                onChange={setCommunity}
+                placeholder="Select Community..."
+              />
+            </div>
+          </div>
+
+          {/* Property Type & Bedrooms */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[#081428] font-semibold mb-1 flex items-center gap-1">
+                <Home className="w-3.5 h-3.5 text-[#C8A147]" />
+                <span>Property Type</span>
+              </label>
+              <SearchableSelect
+                options={propertyTypeOptions}
+                value={propertyType}
+                onChange={setPropertyType}
+                placeholder="Select Property Type..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-[#081428] font-semibold mb-1 flex items-center gap-1">
+                <Bed className="w-3.5 h-3.5 text-[#C8A147]" />
+                <span>Bedrooms</span>
+              </label>
+              <SearchableSelect
+                options={BEDROOM_OPTIONS}
+                value={bedrooms}
+                onChange={setBedrooms}
+                placeholder="Select Bedrooms..."
+              />
+            </div>
+          </div>
+
+          {/* Market & Handover */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[#081428] font-semibold mb-1 flex items-center gap-1">
+                <Layers className="w-3.5 h-3.5 text-[#C8A147]" />
+                <span>Market</span>
+              </label>
+              <SearchableSelect
+                options={MARKET_OPTIONS}
+                value={market}
+                onChange={setMarket}
+                placeholder="Select Market (Offplan / Secondary)..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-[#081428] font-semibold mb-1 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-[#C8A147]" />
+                <span>Handover</span>
+              </label>
+              <SearchableSelect
+                options={HANDOVER_YEARS}
+                value={handover}
+                onChange={setHandover}
+                placeholder="Select Handover Year..."
+              />
+            </div>
+          </div>
+
+          {/* Payment Plan */}
           <div>
             <label className="block text-[#081428] font-semibold mb-1 flex items-center gap-1">
-              <Building2 className="w-3.5 h-3.5 text-[#C8A147]" />
-              <span>Developer *</span>
+              <DollarSign className="w-3.5 h-3.5 text-[#C8A147]" />
+              <span>Payment Plan</span>
             </label>
-            <SearchableSelect
-              options={DEVELOPERS}
-              value={developer}
-              onChange={setDeveloper}
-              placeholder="Select Developer..."
+            <input
+              type="text"
+              value={paymentPlan}
+              onChange={(e) => setPaymentPlan(e.target.value)}
+              placeholder="e.g. 60/40 on Handover, 50/50, 1% Monthly or Cash"
+              className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] focus:outline-none focus:border-[#C8A147]"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Min & Max Budget */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-[#081428] font-semibold mb-1">Min Budget (AED)</label>
               <input
                 type="number"
                 value={budgetMin}
                 onChange={(e) => setBudgetMin(e.target.value)}
-                className="w-full p-2 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A]"
+                placeholder="e.g. 1500000"
+                className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] focus:outline-none focus:border-[#C8A147]"
               />
             </div>
             <div>
@@ -306,60 +512,37 @@ export default function CreateOpportunityModal({
                 type="number"
                 value={budgetMax}
                 onChange={(e) => setBudgetMax(e.target.value)}
-                className="w-full p-2 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A]"
+                placeholder="e.g. 2500000"
+                className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] focus:outline-none focus:border-[#C8A147]"
               />
             </div>
           </div>
 
+          {/* Key Requirement Overview */}
           <div>
             <label className="block text-[#081428] font-semibold mb-1">Key Requirement Overview</label>
             <input
               type="text"
               value={keyRequirement}
               onChange={(e) => setKeyRequirement(e.target.value)}
-              placeholder="e.g. 2BR Apartment in Business Bay"
-              className="w-full p-2 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A]"
+              placeholder="e.g. Interested in 2BR Apartment in Business Bay with Canal view"
+              className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] focus:outline-none focus:border-[#C8A147]"
             />
           </div>
 
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded space-y-2">
-            <div className="font-semibold text-[#081428] flex items-center gap-1.5">
-              <span>Mandatory SLA Next Action</span>
-            </div>
-            <div>
-              <label className="block text-[#6E6E6E] mb-1">Next Action *</label>
-              <input
-                type="text"
-                required
-                value={nextAction}
-                onChange={(e) => setNextAction(e.target.value)}
-                className="w-full p-2 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A]"
-              />
-            </div>
-            <div>
-              <label className="block text-[#6E6E6E] mb-1">Next Action Due Date & Time *</label>
-              <input
-                type="datetime-local"
-                required
-                value={nextActionDueDate}
-                onChange={(e) => setNextActionDueDate(e.target.value)}
-                className="w-full p-2 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A]"
-              />
-            </div>
-          </div>
-
+          {/* Footer Actions */}
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E8E4DC]">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-white border border-[#E8E4DC] text-[#6E6E6E] hover:bg-slate-50 font-medium rounded text-xs"
+              className="px-4 py-2 bg-white border border-[#E8E4DC] text-[#6E6E6E] hover:bg-slate-50 font-medium rounded text-xs cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold rounded text-xs shadow-xs transition-colors flex items-center gap-1.5"
+              className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C8A147] font-bold rounded text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               {loading ? 'Creating...' : '+ Create Opportunity'}
             </button>

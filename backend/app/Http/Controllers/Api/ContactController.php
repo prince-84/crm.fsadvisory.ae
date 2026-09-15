@@ -9,6 +9,7 @@ use App\Models\BuyerQualification;
 use App\Models\Activity;
 use App\Services\LeadDistributionService;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 
 class ContactController extends Controller
 {
@@ -26,18 +27,29 @@ class ContactController extends Controller
         $tab = $request->get('tab', 'all');
 
         if ($tab === 'deleted') {
-            $query = Contact::onlyTrashed()->with(['opportunities.buyerQualification', 'activities' => function($q) {
-                $q->latest()->limit(1);
-            }]);
+            $query = Contact::onlyTrashed()->with([
+                'opportunities.buyerQualification',
+                'opportunities.activities' => function($q) {
+                    $q->where('type', 'call')->latest()->limit(1);
+                },
+                'activities' => function($q) {
+                    $q->latest()->limit(5);
+                }
+            ]);
         } else {
-            $query = Contact::with(['opportunities.buyerQualification', 'activities' => function($q) {
-                $q->latest()->limit(1);
-            }]);
+            $query = Contact::with([
+                'opportunities.buyerQualification',
+                'opportunities.activities' => function($q) {
+                    $q->where('type', 'call')->latest()->limit(1);
+                },
+                'activities' => function($q) {
+                    $q->latest()->limit(5);
+                }
+            ]);
         }
 
         // Apply Tab Filter Logic
-        if ($tab === 'unassigned' || $tab === 'new') {
-            // Include unassigned leads awaiting allocation (including duplicate inbound leads)
+        if ($tab === 'unassigned') {
             $query->where(function($q) {
                 $q->where(function($sub) {
                     $sub->whereNull('contacts.assigned_to')
@@ -50,6 +62,39 @@ class ContactController extends Controller
                                  ->orWhere('current_owner_name', '')
                                  ->orWhere('current_owner_name', 'Unassigned');
                         });
+                });
+            });
+        } elseif ($tab === 'new' || $tab === 'uncontacted') {
+            // New / Inbound: Strictly external leads arriving from outside (Meta Ads, Portals, Webhooks: is_imported = false) not called yet
+            $query->where('contacts.is_imported', false)
+                  ->whereDoesntHave('activities', function($actQ) {
+                      $actQ->where('type', 'call');
+                  })->whereDoesntHave('opportunities.activities', function($actQ) {
+                      $actQ->where('type', 'call');
+                  });
+        } elseif ($tab === 'contacted') {
+            // Contacted: At least 1 call activity logged
+            $query->where(function($q) {
+                $q->whereHas('activities', function($actQ) {
+                    $actQ->where('type', 'call');
+                })->orWhereHas('opportunities.activities', function($actQ) {
+                    $actQ->where('type', 'call');
+                });
+            });
+        } elseif ($tab === 'overdue') {
+            $query->where(function($q) {
+                $q->where(function($cq) {
+                    $cq->where('contacts.sla_status', 'overdue')
+                       ->orWhere(function($sub) {
+                           $sub->whereNotNull('contacts.next_action_due_at')
+                               ->where('contacts.next_action_due_at', '<', now());
+                       });
+                })->orWhereHas('opportunities', function($oppQ) {
+                    $oppQ->where('sla_status', 'overdue')
+                         ->orWhere(function($sub) {
+                             $sub->whereNotNull('next_action_due_at')
+                                 ->where('next_action_due_at', '<', now());
+                         });
                 });
             });
         } elseif ($tab === 'assigned') {
@@ -112,22 +157,94 @@ class ContactController extends Controller
             $query->where('contacts.source', 'like', "%{$request->source}%");
         }
 
-        if ($request->filled('assigned_owner') && $request->assigned_owner !== 'all') {
-            $owner = $request->assigned_owner;
-            $query->where(function($q) use ($owner) {
-                $q->where('contacts.assigned_to', $owner)
-                  ->orWhereHas('opportunities', function($oppQ) use ($owner) {
-                      $oppQ->where('current_owner_name', $owner);
-                  });
-            });
+        $authUser = $request->user();
+        $canViewAllLeads = $authUser && (
+            strtolower($authUser->role ?? '') === 'super admin' ||
+            strtolower($authUser->role ?? '') === 'sales manager' ||
+            strtolower($authUser->role ?? '') === 'operations coordinator' ||
+            $authUser->id === 1 ||
+            $authUser->hasPermission('*') ||
+            $authUser->hasPermission('leads.view_all')
+        );
+
+        $targetOwner = null;
+        if (!$canViewAllLeads) {
+            // Standard agent / advisor: Strictly locked to their own assigned leads
+            $targetOwner = $authUser ? $authUser->name : 'Unassigned';
+        } elseif ($request->filled('assigned_owner') && $request->assigned_owner !== 'all') {
+            // Super Admin or Sales Manager explicitly filtering by an advisor
+            $targetOwner = $request->assigned_owner;
+        }
+
+        if ($targetOwner !== null) {
+            if ($targetOwner === 'unassigned') {
+                $query->where(function($q) {
+                    $q->where(function($sub) {
+                        $sub->whereNull('contacts.assigned_to')
+                            ->orWhere('contacts.assigned_to', '')
+                            ->orWhere('contacts.assigned_to', 'Unassigned');
+                    })->where(function($sub) {
+                        $sub->whereDoesntHave('opportunities')
+                            ->orWhereHas('opportunities', function($oppQ) {
+                                $oppQ->whereNull('current_owner_name')
+                                     ->orWhere('current_owner_name', '')
+                                     ->orWhere('current_owner_name', 'Unassigned');
+                            });
+                    });
+                });
+            } else {
+                $query->where(function($q) use ($targetOwner) {
+                    $q->where('contacts.assigned_to', $targetOwner)
+                      ->orWhereHas('opportunities', function($oppQ) use ($targetOwner) {
+                          $oppQ->where('current_owner_name', $targetOwner);
+                      });
+                });
+            }
         }
 
         // SLA Status filter
         if ($request->filled('sla_status') && $request->sla_status !== 'all') {
             $sla = $request->sla_status;
-            $query->whereHas('opportunities', function($q) use ($sla) {
-                $q->where('sla_status', $sla);
+            $query->where(function($q) use ($sla) {
+                $q->where('contacts.sla_status', $sla)
+                  ->orWhereHas('opportunities', function($oppQ) use ($sla) {
+                      $oppQ->where('sla_status', $sla);
+                  });
             });
+        }
+
+        // Pipeline Stage filter
+        if ($request->filled('stage') && $request->stage !== 'all') {
+            if ($request->stage === 'no_deal') {
+                $query->whereDoesntHave('opportunities', function($oppQ) {
+                    $oppQ->whereNotIn('stage', ['closed_won', 'closed_lost']);
+                });
+            } else {
+                $stage = $request->stage;
+                $query->whereHas('opportunities', function($oppQ) use ($stage) {
+                    $oppQ->where('stage', $stage);
+                });
+            }
+        }
+
+        // Call Outcome filter
+        if ($request->filled('call_outcome') && $request->call_outcome !== 'all') {
+            if ($request->call_outcome === 'uncontacted') {
+                $query->whereDoesntHave('activities', function($actQ) {
+                    $actQ->where('type', 'call');
+                })->whereDoesntHave('opportunities.activities', function($actQ) {
+                    $actQ->where('type', 'call');
+                });
+            } else {
+                $outcome = $request->call_outcome;
+                $query->where(function($q) use ($outcome) {
+                    $q->whereHas('activities', function($actQ) use ($outcome) {
+                        $actQ->where('type', 'call')->where('call_outcome', 'like', "%{$outcome}%");
+                    })->orWhereHas('opportunities.activities', function($actQ) use ($outcome) {
+                        $actQ->where('type', 'call')->where('call_outcome', 'like', "%{$outcome}%");
+                    });
+                });
+            }
         }
 
         // Advanced Lead Origin & Channel Source filters
@@ -245,43 +362,89 @@ class ContactController extends Controller
             });
         }
 
-        $sortBy = $request->get('sort_by', 'updated_at');
+        $sortBy = $request->get('sort_by');
         $sortOrder = strtolower($request->get('sort_order', 'desc')) === 'asc' ? 'asc' : 'desc';
 
-        $contactSorts = ['name', 'phone', 'secondary_phone', 'email', 'nationality', 'source', 'state', 'created_at', 'updated_at'];
-        $oppSorts = [
+        // 1. Direct Contact Columns
+        $contactDirectMap = [
+            'name' => 'name',
+            'phone' => 'phone',
+            'secondary_phone' => 'secondary_phone',
+            'email' => 'email',
+            'nationality' => 'nationality',
+            'source' => 'source',
+            'state' => 'state',
+            'created_at' => 'created_at',
+            'updated_at' => 'updated_at',
+        ];
+
+        // 2. Direct Opportunity Columns
+        $oppDirectMap = [
+            'opportunity' => 'stage',
+            'stage' => 'stage',
             'opportunity_type' => 'opportunity_type',
-            'developer' => 'developer',
-            'community' => 'community',
-            'project' => 'project',
-            'project_property' => 'project_property',
-            'bedrooms' => 'bedrooms',
             'budget_min' => 'budget_min',
             'budget_max' => 'budget_max',
-            'cash_or_finance' => 'cash_or_finance',
             'key_requirement' => 'key_requirement',
-            'assigned_owner' => 'current_owner_name',
             'next_action' => 'next_action',
             'next_action_due_at' => 'next_action_due_at',
             'sla' => 'sla_status',
             'sla_status' => 'sla_status',
         ];
 
-        if (array_key_exists($sortBy, $oppSorts)) {
-            $dbCol = $oppSorts[$sortBy];
-            if ($sortBy === 'assigned_owner') {
-                $query->orderBy('contacts.assigned_to', $sortOrder);
-            } else {
-                $query->leftJoin('opportunities', 'contacts.id', '=', 'opportunities.contact_id')
-                      ->select('contacts.*')
-                      ->distinct()
-                      ->orderBy("opportunities.{$dbCol}", $sortOrder);
-            }
-        } elseif (in_array($sortBy, $contactSorts)) {
-            $query->orderBy("contacts.{$sortBy}", $sortOrder);
+        // 3. Buyer Qualifications Property Specs Columns
+        $buyerQualMap = [
+            'developer' => 'developer',
+            'community' => 'community',
+            'project' => 'project',
+            'project_property' => 'project_property',
+            'bedrooms' => 'bedrooms',
+            'cash_or_finance' => 'cash_or_finance',
+        ];
+
+        if (!empty($sortBy) && isset($contactDirectMap[$sortBy])) {
+            $col = $contactDirectMap[$sortBy];
+            $query->orderBy("contacts.{$col}", $sortOrder);
+        } elseif ($sortBy === 'assigned_owner') {
+            $query->orderByRaw("COALESCE(NULLIF(contacts.assigned_to, 'Unassigned'), '') {$sortOrder}");
+        } elseif ($sortBy === 'sub_source') {
+            $query->orderByRaw("COALESCE(contacts.utm_source, contacts.source, '') {$sortOrder}");
+        } elseif ($sortBy === 'utm_campaign') {
+            $query->orderByRaw("COALESCE(contacts.utm_campaign, '') {$sortOrder}");
+        } elseif ($sortBy === 'call_status') {
+            $query->orderBy(
+                Activity::select('call_outcome')
+                    ->whereColumn('activities.contact_id', 'contacts.id')
+                    ->where('type', 'call')
+                    ->latest('id')
+                    ->limit(1),
+                $sortOrder
+            );
+        } elseif (!empty($sortBy) && isset($oppDirectMap[$sortBy])) {
+            $oppCol = $oppDirectMap[$sortBy];
+            $query->orderBy(
+                Opportunity::select($oppCol)
+                    ->whereColumn('opportunities.contact_id', 'contacts.id')
+                    ->latest('id')
+                    ->limit(1),
+                $sortOrder
+            );
+        } elseif (!empty($sortBy) && isset($buyerQualMap[$sortBy])) {
+            $bqCol = $buyerQualMap[$sortBy];
+            $query->orderBy(
+                BuyerQualification::select("buyer_qualifications.{$bqCol}")
+                    ->join('opportunities', 'opportunities.id', '=', 'buyer_qualifications.opportunity_id')
+                    ->whereColumn('opportunities.contact_id', 'contacts.id')
+                    ->latest('buyer_qualifications.id')
+                    ->limit(1),
+                $sortOrder
+            );
         } else {
-            $query->orderBy("contacts.updated_at", "desc");
+            // Default Sort: Created Date latest first
+            $query->orderBy('contacts.created_at', 'desc');
         }
+
+        $query->orderBy('contacts.id', 'desc');
 
         $perPage = (int) $request->get('per_page', 20);
         $contacts = $query->paginate($perPage);
@@ -291,6 +454,31 @@ class ContactController extends Controller
         $baseCountQuery = Contact::query();
         if ($isInboundOnly) {
             $baseCountQuery->where('is_imported', false);
+        }
+        if ($targetOwner !== null) {
+            if ($targetOwner === 'unassigned') {
+                $baseCountQuery->where(function($q) {
+                    $q->where(function($sub) {
+                        $sub->whereNull('assigned_to')
+                            ->orWhere('assigned_to', '')
+                            ->orWhere('assigned_to', 'Unassigned');
+                    })->where(function($sub) {
+                        $sub->whereDoesntHave('opportunities')
+                            ->orWhereHas('opportunities', function($oppQ) {
+                                $oppQ->whereNull('current_owner_name')
+                                     ->orWhere('current_owner_name', '')
+                                     ->orWhere('current_owner_name', 'Unassigned');
+                            });
+                    });
+                });
+            } else {
+                $baseCountQuery->where(function($q) use ($targetOwner) {
+                    $q->where('assigned_to', $targetOwner)
+                      ->orWhereHas('opportunities', function($oppQ) use ($targetOwner) {
+                          $oppQ->where('current_owner_name', $targetOwner);
+                      });
+                });
+            }
         }
 
         $unassignedCount = (clone $baseCountQuery)->where(function($q) {
@@ -320,12 +508,56 @@ class ContactController extends Controller
             });
         })->count();
 
+        $newUncontactedCount = (clone $baseCountQuery)->where('is_imported', false)
+            ->whereDoesntHave('activities', function($actQ) {
+                $actQ->where('type', 'call');
+            })->whereDoesntHave('opportunities.activities', function($actQ) {
+                $actQ->where('type', 'call');
+            })->count();
+
+        $contactedCount = (clone $baseCountQuery)->where(function($q) {
+            $q->whereHas('activities', function($actQ) {
+                $actQ->where('type', 'call');
+            })->orWhereHas('opportunities.activities', function($actQ) {
+                $actQ->where('type', 'call');
+            });
+        })->count();
+
+        $contactedTodayCount = (clone $baseCountQuery)->where(function($q) {
+            $q->whereHas('activities', function($actQ) {
+                $actQ->where('type', 'call')->whereDate('created_at', now()->toDateString());
+            })->orWhereHas('opportunities.activities', function($actQ) {
+                $actQ->where('type', 'call')->whereDate('created_at', now()->toDateString());
+            });
+        })->count();
+
+        $overdueCount = (clone $baseCountQuery)->where(function($q) {
+            $q->where(function($cq) {
+                $cq->where('contacts.sla_status', 'overdue')
+                   ->orWhere(function($sub) {
+                       $sub->whereNotNull('contacts.next_action_due_at')
+                           ->where('contacts.next_action_due_at', '<', now());
+                   });
+            })->orWhereHas('opportunities', function($oppQ) {
+                $oppQ->where('sla_status', 'overdue')
+                     ->orWhere(function($sub) {
+                         $sub->whereNotNull('next_action_due_at')
+                             ->where('next_action_due_at', '<', now());
+                     });
+            });
+        })->count();
+
         $stats = [
             'total' => (clone $baseCountQuery)->count(),
             'available' => (clone $baseCountQuery)->where('state', 'available')->count(),
             'active' => (clone $baseCountQuery)->where('state', 'active')->count(),
             'reactivation' => (clone $baseCountQuery)->where('state', 'reactivation')->count(),
             'duplicates' => (clone $baseCountQuery)->where('state', 'duplicate')->count(),
+            'new_leads' => $newUncontactedCount,
+            'contacted' => $contactedCount,
+            'contacted_today' => $contactedTodayCount,
+            'overdue' => $overdueCount,
+            'unassigned' => $unassignedCount,
             'inbound_total' => Contact::where('is_imported', false)->count(),
             'inbound_unassigned' => Contact::where('is_imported', false)->where(function($q) {
                 $q->where(function($sub) {
@@ -355,13 +587,29 @@ class ContactController extends Controller
             })->count(),
         ];
 
+        $deletedQuery = Contact::onlyTrashed();
+        if ($isInboundOnly) {
+            $deletedQuery->where('is_imported', false);
+        }
+        if ($targetOwner !== null && $targetOwner !== 'unassigned') {
+            $deletedQuery->where(function($q) use ($targetOwner) {
+                $q->where('assigned_to', $targetOwner)
+                  ->orWhereHas('opportunities', function($oppQ) use ($targetOwner) {
+                      $oppQ->where('current_owner_name', $targetOwner);
+                  });
+            });
+        }
+        $deletedCount = $deletedQuery->count();
+
         $tabCounts = [
             'all' => (clone $baseCountQuery)->count(),
             'unassigned' => $unassignedCount,
-            'new' => $unassignedCount,
+            'new' => $newUncontactedCount,
+            'contacted' => $contactedCount,
+            'overdue' => $overdueCount,
             'assigned' => $assignedCount,
             'duplicate' => (clone $baseCountQuery)->where('state', 'duplicate')->count(),
-            'deleted' => $isInboundOnly ? Contact::onlyTrashed()->where('is_imported', false)->count() : Contact::onlyTrashed()->count(),
+            'deleted' => $deletedCount,
         ];
 
         return response()->json([
@@ -373,13 +621,20 @@ class ContactController extends Controller
 
     public function show($id)
     {
-        $contact = Contact::with([
-            'opportunities.buyerQualification',
-            'opportunities.sellerQualification',
-            'opportunities.landlordQualification',
-            'opportunities.tenantQualification',
-            'activities',
-        ])->findOrFail($id);
+        $contact = Contact::withTrashed()
+            ->with([
+                'opportunities.buyerQualification',
+                'opportunities.sellerQualification',
+                'opportunities.landlordQualification',
+                'opportunities.tenantQualification',
+                'opportunities.activities' => function ($q) {
+                    $q->latest();
+                },
+                'activities' => function ($q) {
+                    $q->latest();
+                },
+            ])
+            ->findOrFail($id);
 
         return response()->json($contact);
     }
@@ -495,14 +750,7 @@ class ContactController extends Controller
 
         $contact = Contact::create($contactData);
 
-        if ($contact->state === 'duplicate') {
-            Activity::create([
-                'contact_id'  => $contact->id,
-                'user_name'   => 'Lead Engine',
-                'type'        => 'note',
-                'description' => "Duplicate contact created. Matches existing Contact #{$existingContact->id} ({$existingContact->name}, Phone: {$existingContact->phone}). Routed to Duplicate tab.",
-            ]);
-        } else {
+        if ($contact->state !== 'duplicate') {
             // Lead Distribution: Assign directly if specific advisor explicitly provided
             $assignedOwner = $request->input('assigned_owner');
             if (!empty($assignedOwner) && $assignedOwner !== 'auto' && $assignedOwner !== 'Unassigned') {
@@ -511,70 +759,23 @@ class ContactController extends Controller
                     'assigned_at' => now(),
                     'state'       => 'assigned',
                 ]);
-
-                Activity::create([
-                    'contact_id'  => $contact->id,
-                    'user_name'   => 'Lead Engine',
-                    'type'        => 'ownership_change',
-                    'description' => "Lead assigned to {$assignedOwner} (Awaiting qualification call).",
-                ]);
             } else {
                 // Dynamic Lead Distribution according to Master Settings scope
                 $settings = LeadDistributionService::getSettings();
-                $autoAssigned = null;
                 if ($settings->is_enabled && $settings->apply_to_lead_pool) {
-                    $autoAssigned = LeadDistributionService::autoAssignContact($contact, 'lead_pool');
+                    LeadDistributionService::autoAssignContact($contact, 'lead_pool');
                     $contact->refresh();
-                }
-
-                if (!$autoAssigned) {
-                    Activity::create([
-                        'contact_id'  => $contact->id,
-                        'user_name'   => 'Lead Engine',
-                        'type'        => 'note',
-                        'description' => "New lead registered and placed in New Leads pool (awaiting assignment).",
-                    ]);
                 }
             }
         }
 
-        // Opportunity deals are strictly created MANUALLY by advisors from My Queue after qualification.
-        // Inquiry preferences are preserved as an initial inquiry activity note on the contact profile for all leads (including duplicates).
-        $inquiryDetails = [];
-        if ($request->filled('developer')) $inquiryDetails[] = "Developer: {$request->developer}";
-        if ($request->filled('community')) $inquiryDetails[] = "Location/Community: {$request->community}";
-        if ($request->filled('project')) $inquiryDetails[] = "Project: {$request->project}";
-        if ($request->filled('project_property')) $inquiryDetails[] = "Unit: {$request->project_property}";
-        if ($request->filled('property_type')) $inquiryDetails[] = "Property Type: {$request->property_type}";
-        if ($request->filled('bedrooms')) $inquiryDetails[] = "Beds: {$request->bedrooms}";
-        if ($request->filled('budget_min') || $request->filled('budget_max')) {
-            $inquiryDetails[] = "Budget: AED " . ($request->budget_min ?: '0') . " - " . ($request->budget_max ?: 'Max');
-        }
-        if ($request->filled('key_requirement')) $inquiryDetails[] = "Notes: {$request->key_requirement}";
-
-        if (!empty($inquiryDetails)) {
-            Activity::create([
-                'contact_id'  => $contact->id,
-                'user_name'   => 'Lead Engine',
-                'type'        => 'note',
-                'description' => 'Initial Inquiry Requirements: ' . implode(' | ', $inquiryDetails),
-            ]);
-        }
-
-        if ($request->filled('activity_description')) {
-            Activity::create([
-                'contact_id' => $contact->id,
-                'user_name' => $request->get('user_name', 'System Agent'),
-                'type' => $request->get('activity_type', 'note'),
-                'description' => $request->get('activity_description'),
-            ]);
-        }
         $contact->update(['last_activity_at' => now()]);
 
         $contact->load(['opportunities.buyerQualification', 'activities']);
 
         return response()->json($contact, 201);
     }
+
 
     public function update(Request $request, $id)
     {
@@ -634,6 +835,15 @@ class ContactController extends Controller
 
         $newOwner = $request->input('assigned_owner') ?? $request->input('assigned_to');
         if (!empty($newOwner) && $newOwner !== 'Unassigned' && $newOwner !== 'auto') {
+            if ($contact->assigned_to !== $newOwner) {
+                $assignedBy = $request->input('assigned_by') ?? ($request->user()?->name ?? 'Admin');
+                Activity::create([
+                    'contact_id'  => $contact->id,
+                    'user_name'   => $assignedBy,
+                    'type'        => 'ownership_change',
+                    'description' => "Lead assigned to {$newOwner} by {$assignedBy}.",
+                ]);
+            }
             $validated['assigned_to'] = $newOwner;
             $validated['assigned_at'] = now();
             $validated['state'] = 'assigned';
@@ -643,13 +853,6 @@ class ContactController extends Controller
         unset($validated['assigned_owner']);
 
         $contact->update($validated);
-
-        Activity::create([
-            'contact_id' => $contact->id,
-            'user_name' => 'System Agent',
-            'type' => 'note',
-            'description' => "Updated client contact profile details.",
-        ]);
 
         return response()->json($contact);
     }
@@ -728,18 +931,56 @@ class ContactController extends Controller
             'state'       => 'assigned',
         ]);
 
+        $assignedBy = $request->input('assigned_by') ?? ($request->user()?->name ?? 'Admin');
         foreach ($ids as $cid) {
             Activity::create([
                 'contact_id'  => $cid,
-                'user_name'   => 'Admin',
+                'user_name'   => $assignedBy,
                 'type'        => 'ownership_change',
-                'description' => "Lead assigned to {$owner} via bulk assignment (Awaiting qualification call).",
+                'description' => "Lead assigned to {$owner} by {$assignedBy}.",
             ]);
         }
 
         return response()->json([
             'success' => true,
             'message' => count($ids) . " leads successfully assigned to {$owner}.",
+        ]);
+    }
+
+    public function reassign(Request $request, $id)
+    {
+        $request->validate([
+            'assigned_owner' => 'required|string|max:255',
+        ]);
+
+        $contact = Contact::findOrFail($id);
+        $newOwner = $request->input('assigned_owner');
+        $oldOwner = $contact->assigned_to ?: 'Unassigned';
+        $assignedBy = $request->input('assigned_by') ?? ($request->user()?->name ?? 'Admin');
+
+        $contact->update([
+            'assigned_to' => $newOwner,
+            'assigned_at' => now(),
+            'state'       => 'assigned',
+        ]);
+
+        // Update all associated opportunities
+        Opportunity::where('contact_id', $contact->id)->update([
+            'current_owner_name' => $newOwner,
+        ]);
+
+        // Record ownership change log
+        Activity::create([
+            'contact_id'  => $contact->id,
+            'user_name'   => $assignedBy,
+            'type'        => 'ownership_change',
+            'description' => "Lead re-assigned from {$oldOwner} to {$newOwner} by {$assignedBy}.",
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Lead successfully re-assigned to {$newOwner}.",
+            'contact' => $contact->fresh(['opportunities.buyerQualification', 'activities']),
         ]);
     }
 
@@ -882,5 +1123,190 @@ class ContactController extends Controller
                 }
             }
         }
+    }
+
+    /**
+     * Get upcoming follow-up SLA alerts (due within 10 minutes or overdue)
+     */
+    public function upcomingAlerts(Request $request)
+    {
+        $now = Carbon::now();
+        $inTenMinutes = $now->copy()->addMinutes(10);
+        $user = $request->user();
+        $userName = $user ? $user->name : null;
+
+        // Synchronize overdue status in database for past due dates
+        Opportunity::whereNotNull('next_action_due_at')
+            ->where('next_action_due_at', '<', $now)
+            ->where('sla_status', '!=', 'overdue')
+            ->update(['sla_status' => 'overdue']);
+
+        Contact::whereNotNull('next_action_due_at')
+            ->where('next_action_due_at', '<', $now)
+            ->where('sla_status', '!=', 'overdue')
+            ->update(['sla_status' => 'overdue']);
+
+        $isSuper = $user && ($user->role === 'superadmin' || $user->role === 'admin' || $user->role === 'manager' || !empty($user->is_super_user));
+
+        // 1. Opportunities with scheduled follow-ups
+        $oppQuery = Opportunity::with(['contact'])
+            ->whereNotNull('next_action_due_at')
+            ->whereNotIn('stage', ['closed_won', 'closed_lost'])
+            ->where(function ($q) use ($now, $inTenMinutes) {
+                // Due within next 10 minutes OR overdue within past 48 hours
+                $q->whereBetween('next_action_due_at', [$now, $inTenMinutes])
+                  ->orWhere(function ($sub) use ($now) {
+                      $sub->where('next_action_due_at', '<', $now)
+                          ->where('next_action_due_at', '>=', $now->copy()->subHours(48));
+                  });
+            });
+
+        if (!$isSuper && !empty($userName)) {
+            $oppQuery->where(function ($q) use ($userName) {
+                $q->where('current_owner_name', $userName)
+                  ->orWhereHas('contact', function ($cq) use ($userName) {
+                      $cq->where('assigned_to', $userName);
+                  });
+            });
+        }
+
+        $opportunities = $oppQuery->orderBy('next_action_due_at', 'asc')->limit(20)->get();
+
+        // 2. Contacts with scheduled follow-ups (pre-deal / no deal created yet)
+        $contactQuery = Contact::whereNotNull('next_action_due_at')
+            ->where(function ($q) use ($now, $inTenMinutes) {
+                // Due within next 10 minutes OR overdue within past 48 hours
+                $q->whereBetween('next_action_due_at', [$now, $inTenMinutes])
+                  ->orWhere(function ($sub) use ($now) {
+                      $sub->where('next_action_due_at', '<', $now)
+                          ->where('next_action_due_at', '>=', $now->copy()->subHours(48));
+                  });
+            });
+
+        if (!$isSuper && !empty($userName)) {
+            $contactQuery->where(function ($q) use ($userName) {
+                $q->where('assigned_to', $userName)
+                  ->orWhereNull('assigned_to')
+                  ->orWhere('assigned_to', 'Unassigned');
+            });
+        }
+
+        $contactFollowUps = $contactQuery->orderBy('next_action_due_at', 'asc')->limit(20)->get();
+
+        // Avoid duplicating if contact already has an opportunity in $opportunities
+        $coveredContactIds = $opportunities->pluck('contact_id')->filter()->all();
+        $filteredContacts = $contactFollowUps->reject(function ($c) use ($coveredContactIds) {
+            return in_array($c->id, $coveredContactIds);
+        });
+
+        $alerts = collect();
+
+        foreach ($opportunities as $opp) {
+            $dueAt = Carbon::parse($opp->next_action_due_at);
+            $isOverdue = $dueAt->isPast();
+            $diffMinutes = abs((int) $dueAt->diffInMinutes($now));
+
+            $alerts->push([
+                'id' => 'opp_' . $opp->id,
+                'opportunity_id' => $opp->id,
+                'contact_id' => $opp->contact_id,
+                'contact' => $opp->contact,
+                'client_name' => $opp->contact ? $opp->contact->name : 'Client',
+                'phone' => $opp->contact ? $opp->contact->phone : '',
+                'assigned_owner' => $opp->current_owner_name ?: ($opp->contact ? $opp->contact->assigned_to : 'Unassigned'),
+                'next_action' => $opp->next_action ?: 'Follow-up Call',
+                'next_action_due_at' => $opp->next_action_due_at,
+                'is_overdue' => $isOverdue,
+                'diff_minutes' => $diffMinutes,
+                'sla_status' => $opp->sla_status,
+                'status_label' => $isOverdue ? "Overdue by {$diffMinutes}m" : "Due in {$diffMinutes}m",
+            ]);
+        }
+
+        foreach ($filteredContacts as $c) {
+            $dueAt = Carbon::parse($c->next_action_due_at);
+            $isOverdue = $dueAt->isPast();
+            $diffMinutes = abs((int) $dueAt->diffInMinutes($now));
+
+            $alerts->push([
+                'id' => 'ct_' . $c->id,
+                'opportunity_id' => null,
+                'contact_id' => $c->id,
+                'contact' => $c,
+                'client_name' => $c->name ?: 'Client',
+                'phone' => $c->phone ?: '',
+                'assigned_owner' => $c->assigned_to ?: 'Unassigned',
+                'next_action' => $c->next_action ?: 'Follow-up Call',
+                'next_action_due_at' => $c->next_action_due_at,
+                'is_overdue' => $isOverdue,
+                'diff_minutes' => $diffMinutes,
+                'sla_status' => $c->sla_status,
+                'status_label' => $isOverdue ? "Overdue by {$diffMinutes}m" : "Due in {$diffMinutes}m",
+            ]);
+        }
+
+        $sortedAlerts = $alerts->sortBy(function ($item) {
+            return Carbon::parse($item['next_action_due_at'])->timestamp;
+        })->values();
+
+        return response()->json([
+            'alerts' => $sortedAlerts,
+            'count' => $sortedAlerts->count(),
+            'server_time' => $now->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * Snooze/Postpone follow-up by specified minutes (default 10)
+     */
+    public function snoozeFollowUp(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'minutes' => 'nullable|integer|min:1|max:1440',
+            'notes' => 'nullable|string',
+        ]);
+
+        $minutes = (int) ($validated['minutes'] ?? 10);
+        $contact = Contact::findOrFail($id);
+        $user = $request->user();
+        $userName = $user ? $user->name : 'Agent';
+
+        $opp = Opportunity::where('contact_id', $contact->id)->latest()->first();
+        $now = Carbon::now();
+        $newDue = $now->copy()->addMinutes($minutes);
+
+        if ($opp) {
+            if ($opp->next_action_due_at && Carbon::parse($opp->next_action_due_at)->isFuture()) {
+                $newDue = Carbon::parse($opp->next_action_due_at)->addMinutes($minutes);
+            }
+            $opp->next_action_due_at = $newDue;
+            $opp->sla_status = 'due_soon';
+            $opp->is_orphaned = false;
+            $opp->save();
+        }
+
+        if ($contact->next_action_due_at && Carbon::parse($contact->next_action_due_at)->isFuture()) {
+            $newDue = Carbon::parse($contact->next_action_due_at)->addMinutes($minutes);
+        }
+        $contact->next_action_due_at = $newDue;
+        $contact->sla_status = 'due_soon';
+        $contact->save();
+
+        Activity::create([
+            'contact_id' => $contact->id,
+            'opportunity_id' => $opp ? $opp->id : null,
+            'user_name' => $userName,
+            'type' => 'note',
+            'description' => "Follow-up postponed/snoozed by {$minutes} minutes by {$userName}." . (!empty($validated['notes']) ? " Note: {$validated['notes']}" : ""),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Follow-up postponed by {$minutes} minutes.",
+            'next_action_due_at' => $newDue->toIso8601String(),
+            'sla_status' => 'due_soon',
+            'contact' => $contact,
+            'opportunity' => $opp,
+        ]);
     }
 }

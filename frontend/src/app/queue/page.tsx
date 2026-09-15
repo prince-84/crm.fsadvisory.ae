@@ -579,6 +579,11 @@ function MyQueueContent() {
 
   // Quick call for Regular Leads
   const handleQuickCall = async (oppId: number, contactId: number, contactName: string = 'Client') => {
+    const now = new Date();
+    const nowLocalIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
+    const tomorrowLocalIso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
     const { value: formValues } = await Swal.fire({
       title: `<div class="text-[#081428] font-bold text-base">Log Call Outcome — ${contactName}</div>`,
       html: `
@@ -589,12 +594,12 @@ function MyQueueContent() {
           <div>
             <label class="block text-[#081428] font-bold mb-1">Call Outcome Status</label>
             <select id="swal-call-outcome" class="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none">
-              <option value="Interested - Schedule Viewing">Interested — Schedule Viewing / Meeting</option>
-              <option value="Callback Requested">Callback Requested — Busy Right Now</option>
-              <option value="Follow-up Required">Follow-up Required — Thinking / Comparing Options</option>
-              <option value="No Answer / Left Voicemail">No Answer — Left Voicemail / Sent WhatsApp</option>
-              <option value="Not Interested">Not Interested — Out of Budget / Changed Mind</option>
-              <option value="Wrong Number">Wrong Number / Invalid Contact Info</option>
+              <option value="Interested">Interested</option>
+              <option value="Callback">Callback</option>
+              <option value="Follow-up">Follow-up</option>
+              <option value="No Answer">No Answer</option>
+              <option value="Not Interested">Not Interested</option>
+              <option value="Wrong Number">Wrong Number</option>
             </select>
           </div>
           <div id="swal-next-schedule-container">
@@ -604,8 +609,14 @@ function MyQueueContent() {
               <option value="15m">⚡ Quick Callback in 15 mins — [Due Soon 🟡]</option>
               <option value="2h">⏰ Later Today (in 2 hours) — [On Track 🟢]</option>
               <option value="48h">📆 In 2 Days — [On Track 🟢]</option>
+              <option value="custom">🗓️ Pick Specific Date & Time (Calendar)</option>
               <option value="now">🚨 Immediate Escalation (Now) — [Overdue 🔴]</option>
             </select>
+            <div id="swal-custom-datetime-container" style="display: none;" class="mt-2.5 p-2.5 bg-amber-50/50 border border-amber-200 rounded text-left">
+              <label class="block text-[#081428] font-semibold text-[11px] mb-1">🗓️ Choose Custom Follow-up Date & Time:</label>
+              <input type="datetime-local" id="swal-custom-datetime" value="${tomorrowLocalIso}" min="${nowLocalIso}" class="w-full p-2 bg-white border border-[#C8A147] rounded text-xs text-[#081428] font-mono focus:ring-2 focus:ring-[#C8A147] focus:outline-none" />
+              <p class="text-[10px] text-slate-500 mt-1">SLA alert will trigger 10 minutes prior to scheduled time.</p>
+            </div>
           </div>
           <div>
             <label class="block text-[#081428] font-bold mb-1">Call Notes / Discussion Summary</label>
@@ -622,6 +633,17 @@ function MyQueueContent() {
       didOpen: (popup) => {
         const outcomeSelect = popup.querySelector('#swal-call-outcome') as HTMLSelectElement | null;
         const scheduleContainer = popup.querySelector('#swal-next-schedule-container') as HTMLElement | null;
+        const scheduleSelect = popup.querySelector('#swal-next-schedule') as HTMLSelectElement | null;
+        const customContainer = popup.querySelector('#swal-custom-datetime-container') as HTMLElement | null;
+
+        if (scheduleSelect && customContainer) {
+          const toggleCustom = () => {
+            customContainer.style.display = scheduleSelect.value === 'custom' ? 'block' : 'none';
+          };
+          scheduleSelect.addEventListener('change', toggleCustom);
+          toggleCustom();
+        }
+
         if (outcomeSelect && scheduleContainer) {
           const toggleSchedule = () => {
             const val = outcomeSelect.value || '';
@@ -635,24 +657,46 @@ function MyQueueContent() {
       preConfirm: () => {
         const outcome = (document.getElementById('swal-call-outcome') as HTMLSelectElement)?.value;
         const schedule = (document.getElementById('swal-next-schedule') as HTMLSelectElement)?.value;
+        const customDateTime = (document.getElementById('swal-custom-datetime') as HTMLInputElement)?.value;
         const notes = (document.getElementById('swal-call-notes') as HTMLTextAreaElement)?.value;
         if (!notes || notes.trim() === '') {
           Swal.showValidationMessage('Please enter call notes / summary before saving.');
           return false;
         }
         const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number');
-        return { outcome, schedule: isTerminal ? null : schedule, notes, isTerminal };
+
+        if (!isTerminal && schedule === 'custom') {
+          if (!customDateTime) {
+            Swal.showValidationMessage('Please select a date and time from the calendar.');
+            return false;
+          }
+          const dt = new Date(customDateTime);
+          if (isNaN(dt.getTime())) {
+            Swal.showValidationMessage('Invalid date & time selected.');
+            return false;
+          }
+        }
+
+        return { outcome, schedule: isTerminal ? null : schedule, customDateTime, notes, isTerminal };
       }
     });
 
     if (formValues) {
       let dueAt: Date | null = null;
       if (!formValues.isTerminal && formValues.schedule) {
-        dueAt = new Date(Date.now() + 24 * 3600 * 1000);
-        if (formValues.schedule === '15m') dueAt = new Date(Date.now() + 15 * 60 * 1000);
-        else if (formValues.schedule === '2h') dueAt = new Date(Date.now() + 2 * 3600 * 1000);
-        else if (formValues.schedule === '48h') dueAt = new Date(Date.now() + 48 * 3600 * 1000);
-        else if (formValues.schedule === 'now') dueAt = new Date(Date.now() - 5 * 60 * 1000);
+        if (formValues.schedule === 'custom' && formValues.customDateTime) {
+          dueAt = new Date(formValues.customDateTime);
+        } else if (formValues.schedule === '15m') {
+          dueAt = new Date(Date.now() + 15 * 60 * 1000);
+        } else if (formValues.schedule === '2h') {
+          dueAt = new Date(Date.now() + 2 * 3600 * 1000);
+        } else if (formValues.schedule === '24h') {
+          dueAt = new Date(Date.now() + 24 * 3600 * 1000);
+        } else if (formValues.schedule === '48h') {
+          dueAt = new Date(Date.now() + 48 * 3600 * 1000);
+        } else if (formValues.schedule === 'now') {
+          dueAt = new Date(Date.now() - 5 * 60 * 1000);
+        }
       }
 
       try {
@@ -703,13 +747,12 @@ function MyQueueContent() {
           <div>
             <label class="block text-[#081428] font-bold mb-1">Call Outcome Status</label>
             <select id="swal-call-outcome" class="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none">
-              <option value="Interested - Wants to List Property">Interested — Wants to List / Sell / Rent Property</option>
-              <option value="Interested - Needs Market Valuation">Interested — Needs Market Valuation / Pricing Advice</option>
-              <option value="Callback Requested">Callback Requested — Busy Right Now</option>
-              <option value="Follow-up Required">Follow-up Required — Considering Options</option>
-              <option value="No Answer / Sent WhatsApp">No Answer — Sent WhatsApp / Left Message</option>
-              <option value="Not Interested / Already Rented">Not Interested — Already Rented / Not Selling</option>
-              <option value="Wrong Number">Wrong Number / Invalid Contact Info</option>
+              <option value="Interested">Interested</option>
+              <option value="Callback">Callback</option>
+              <option value="Follow-up">Follow-up</option>
+              <option value="No Answer">No Answer</option>
+              <option value="Not Interested">Not Interested</option>
+              <option value="Wrong Number">Wrong Number</option>
             </select>
           </div>
           <div>
@@ -1459,42 +1502,42 @@ function MyQueueContent() {
     if (o.includes('Interested') || o.includes('Viewing') || o.includes('List') || o.includes('Valuation')) {
       return (
         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 whitespace-nowrap">
-          {o}
+          Interested
         </span>
       );
     }
     if (o.includes('Callback')) {
       return (
         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap">
-          {o}
+          Callback
         </span>
       );
     }
-    if (o.includes('Follow-up')) {
+    if (o.includes('Follow-up') || o.includes('Follow up')) {
       return (
         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-300 whitespace-nowrap">
-          {o}
+          Follow-up
         </span>
       );
     }
     if (o.includes('No Answer') || o.includes('Voicemail')) {
       return (
         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-300 whitespace-nowrap">
-          {o}
+          No Answer
         </span>
       );
     }
     if (o.includes('Not Interested') || o.includes('Rented')) {
       return (
         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-300 whitespace-nowrap">
-          {o}
+          Not Interested
         </span>
       );
     }
     if (o.includes('Wrong Number') || o.includes('Invalid')) {
       return (
         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-rose-100 text-rose-800 border border-rose-300 whitespace-nowrap">
-          {o}
+          Wrong Number
         </span>
       );
     }
@@ -2422,10 +2465,10 @@ function MyQueueContent() {
                 >
                   <option value="all">📞 All Outcomes</option>
                   <option value="uncontacted">🟢 New / Uncontacted</option>
-                  <option value="Interested - Schedule Viewing">Interested — Schedule Viewing</option>
-                  <option value="Callback Requested">Callback Requested</option>
-                  <option value="Follow-up Required">Follow-up Required</option>
-                  <option value="No Answer / Left Voicemail">No Answer / Left Voicemail</option>
+                  <option value="Interested">Interested</option>
+                  <option value="Callback">Callback</option>
+                  <option value="Follow-up">Follow-up</option>
+                  <option value="No Answer">No Answer</option>
                   <option value="Not Interested">Not Interested</option>
                   <option value="Wrong Number">Wrong Number</option>
                 </select>

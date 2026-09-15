@@ -44,6 +44,14 @@ const PBX_USERS = [
   { ext: '1035', name: 'FA Advisory 3', email: 'admin@fsadvisory.ae', dept: 'fsadvisory3, All', role: 'Advisor' },
 ];
 
+export const getPlayableAudioUrl = (url: string | null) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const backendBase = API_BASE_URL.replace(/\/api$/, '');
+  const clean = url.startsWith('/') ? url : `/${url}`;
+  return `${backendBase}${clean}`;
+};
+
 export default function CallRecordingsPage() {
   const [recordings, setRecordings] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({
@@ -57,12 +65,18 @@ export default function CallRecordingsPage() {
     user_stats: [],
   });
   const [pbxStatus, setPbxStatus] = useState<any>({
-    server_host: '3cx.fsadvisory.ae',
+    server_host: 'ukits.3cx.ae',
     gateway_status: 'ONLINE',
     active_users_count: 5,
     webhook_url: `${API_BASE_URL}/3cx/call-event`,
   });
   const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadExt, setUploadExt] = useState('1030');
+  const [uploadCaller, setUploadCaller] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -146,54 +160,55 @@ export default function CallRecordingsPage() {
     }
   };
 
-  // Audio Playback Controls & Progress Ticker
+  // Safely synchronize Audio Element with Active Recording & Playing State
   useEffect(() => {
-    let interval: any = null;
-    if (isPlaying && activeRecording) {
-      interval = setInterval(() => {
-        setCurrentTime((prev) => {
-          const maxDur = duration || activeRecording.duration_seconds || 133;
-          const next = prev + 1;
-          if (next >= maxDur) {
-            setIsPlaying(false);
-            return maxDur;
-          }
-          return next;
-        });
-      }, 1000 / playbackSpeed);
-    } else {
-      clearInterval(interval);
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (!activeRecording) {
+      audio.pause();
+      return;
     }
-    return () => clearInterval(interval);
-  }, [isPlaying, duration, playbackSpeed, activeRecording]);
+
+    const playUrl = getPlayableAudioUrl(activeRecording.audio_url);
+    if (!playUrl) return;
+
+    // Only update src if pointing to a different audio file
+    if (audio.src !== playUrl) {
+      audio.src = playUrl;
+      audio.load();
+    }
+
+    audio.playbackRate = playbackSpeed;
+
+    if (isPlaying) {
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err: any) => {
+          // Browser aborts play() when interrupted by user clicking another track or rapid toggle
+          if (err.name !== 'AbortError') {
+            console.warn('Audio playback notice:', err);
+          }
+        });
+      }
+    } else {
+      audio.pause();
+    }
+  }, [activeRecording, isPlaying, playbackSpeed]);
 
   const handlePlayRecording = (rec: any) => {
     if (activeRecording?.id === rec.id) {
-      if (isPlaying) {
-        setIsPlaying(false);
-        if (audioRef.current) audioRef.current.pause();
-      } else {
-        setIsPlaying(true);
-        if (audioRef.current && rec.audio_url && rec.audio_url.startsWith('http')) {
-          audioRef.current.play().catch(() => {});
-        }
-      }
+      setIsPlaying((prev) => !prev);
     } else {
       setActiveRecording(rec);
-      setIsPlaying(true);
       setCurrentTime(0);
-      const recDur = rec.duration_seconds || 133;
-      setDuration(recDur);
-      if (audioRef.current && rec.audio_url) {
-        audioRef.current.src = rec.audio_url;
-        audioRef.current.playbackRate = playbackSpeed;
-        audioRef.current.play().catch(() => {});
-      }
+      setDuration(rec.duration_seconds || 120);
+      setIsPlaying(true);
     }
   };
 
   const handleTimeUpdate = () => {
-    if (audioRef.current && audioRef.current.currentTime > 0) {
+    if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
     }
   };
@@ -306,6 +321,76 @@ export default function CallRecordingsPage() {
     loadRecordings(1, newLimit);
   };
 
+  const handleScanServerRecordings = async () => {
+    setScanning(true);
+    try {
+      const res = await fetchApi('/recordings/scan-server', { method: 'POST' });
+      Swal.fire({
+        icon: 'success',
+        title: 'Server Audio Synced!',
+        text: res.message || `Scanned server recordings directory and synced ${res.imported_count || 0} calls.`,
+        timer: 3000,
+        showConfirmButton: true,
+      });
+      loadRecordings(1, perPage);
+    } catch (err: any) {
+      Swal.fire('Scan Error', err.message || 'Failed to scan server recordings directory', 'error');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleReseedRecordings = async () => {
+    try {
+      const res = await fetchApi('/recordings/reseed', { method: 'POST' });
+      Swal.fire({
+        icon: 'success',
+        title: 'Demo Calls Generated',
+        text: res.message || 'Generated sample call recordings with audio playback.',
+        timer: 2000,
+        showConfirmButton: false,
+      });
+      loadRecordings(1, perPage);
+    } catch (err: any) {
+      Swal.fire('Error', err.message || 'Failed to reseed recordings', 'error');
+    }
+  };
+
+  const handleUploadAudio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadFile) {
+      Swal.fire('Error', 'Please select an audio file (.wav, .mp3, .ogg)', 'warning');
+      return;
+    }
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('audio_file', uploadFile);
+    formData.append('extension', uploadExt);
+    if (uploadCaller) formData.append('caller_number', uploadCaller);
+
+    try {
+      const res = await fetchApi('/3cx/upload-recording', {
+        method: 'POST',
+        body: formData,
+      });
+      Swal.fire({
+        icon: 'success',
+        title: 'Call Audio Uploaded!',
+        text: res.message || 'Recording uploaded and registered in CRM successfully.',
+        timer: 2500,
+        showConfirmButton: false,
+      });
+      setUploadModalOpen(false);
+      setUploadFile(null);
+      setUploadCaller('');
+      loadRecordings(1, perPage);
+    } catch (err: any) {
+      Swal.fire('Upload Error', err.message || 'Failed to upload audio file', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleClearAllRecordings = async () => {
     const result = await Swal.fire({
       title: 'Clear All Call Recordings?',
@@ -368,12 +453,20 @@ export default function CallRecordingsPage() {
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#1A1A1A] flex pb-28">
-      {/* Audio element for playback */}
+      {/* Audio element for playback (controlled safely via ref to avoid AbortError on re-render) */}
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
-        onEnded={() => setIsPlaying(false)}
-        src={activeRecording?.audio_url || 'https://actions.google.com/sounds/v1/ambiences/office_murmur.ogg'}
+        onEnded={() => {
+          setIsPlaying(false);
+          setCurrentTime(0);
+        }}
+        onLoadedMetadata={(e) => {
+          const dur = e.currentTarget.duration;
+          if (dur && !isNaN(dur) && isFinite(dur)) {
+            setDuration(Math.round(dur));
+          }
+        }}
       />
 
       <Sidebar />
@@ -381,72 +474,7 @@ export default function CallRecordingsPage() {
       <div className="flex-1 pl-56 flex flex-col min-w-0">
         <Navbar />
 
-        <main className="p-6 space-y-6 w-full max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E8E4DC] pb-6">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#C8A147] uppercase tracking-wider mb-1">
-                <Radio className="w-4 h-4 text-emerald-600 animate-pulse" />
-                <span>07 — 3CX Phone System & Call Recordings</span>
-              </div>
-              <h1 className="font-heading font-bold text-2xl text-[#081428]">
-                3CX Call Recordings & Audio Intelligence
-              </h1>
-              <p className="text-xs text-[#6E6E6E] mt-0.5">
-                Centralized repository of all inbound and outbound client phone recordings synchronized from 3CX IP-PBX Gateway for 5 active extensions.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Clear All Recordings Button */}
-              <button
-                onClick={handleClearAllRecordings}
-                className="px-3 py-2 bg-white border border-red-200 hover:bg-red-50 text-red-600 hover:text-red-700 font-bold text-xs rounded-md shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                title="Permanently delete all old call records and audio files"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                <span>Clear All Recordings</span>
-              </button>
-            </div>
-          </div>
-
-
-          {/* 4 Top KPI Stat Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs">
-              <div className="text-[10px] font-bold text-[#6E6E6E] uppercase tracking-wider">Total Recorded Calls</div>
-              <div className="font-heading text-2xl font-bold text-[#081428] mt-1">
-                {stats.total_recordings || paginationMeta.total}
-              </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Across 5 active extensions</div>
-            </div>
-
-            <div className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs">
-              <div className="text-[10px] font-bold text-amber-900 uppercase tracking-wider">Total Talk Time</div>
-              <div className="font-heading text-2xl font-bold text-amber-800 mt-1">
-                {stats.total_talk_time_minutes || 0} Mins
-              </div>
-              <div className="text-[10px] text-amber-700 mt-0.5">Approx {stats.total_talk_time_hours || 0} hours total</div>
-            </div>
-
-            <div className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs">
-              <div className="text-[10px] font-bold text-blue-900 uppercase tracking-wider">Average Duration</div>
-              <div className="font-heading text-2xl font-bold text-blue-800 mt-1">
-                {stats.avg_duration_formatted || '03:45'}
-              </div>
-              <div className="text-[10px] text-blue-700 mt-0.5">Per conversation session</div>
-            </div>
-
-            <div className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs">
-              <div className="text-[10px] font-bold text-[#C8A147] uppercase tracking-wider">Call Breakdown</div>
-              <div className="font-heading text-lg font-bold text-[#081428] mt-1">
-                {stats.outbound_count} Outbound · {stats.inbound_count} Inbound
-              </div>
-              <div className="text-[10px] text-emerald-700 font-semibold mt-0.5">
-                {stats.positive_sentiment_count} High-intent discussions
-              </div>
-            </div>
-          </div>
+        <main className="p-6 space-y-4 w-full max-w-7xl mx-auto">
 
           {/* Filter & Search Bar */}
           <div className="p-3 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -554,10 +582,22 @@ export default function CallRecordingsPage() {
                     </tr>
                   ) : recordings.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-12 text-center text-[#6E6E6E] space-y-2">
-                        <FileAudio className="w-8 h-8 text-slate-300 mx-auto" />
+                      <td colSpan={9} className="p-12 text-center text-[#6E6E6E] space-y-3">
+                        <FileAudio className="w-10 h-10 text-slate-300 mx-auto" />
                         <div className="font-bold text-sm text-[#081428]">No Call Recordings Found</div>
-                        <p className="text-xs text-[#6E6E6E]">Click "Sync Call" to fetch recordings from 3CX PBX.</p>
+                        <p className="text-xs text-[#6E6E6E] max-w-md mx-auto">
+                          Waiting for live 3CX calls. When an advisor places or receives a call on extension 1030–1035, the recording will automatically appear here with direct audio playback.
+                        </p>
+                        <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                          <button
+                            onClick={handleScanServerRecordings}
+                            disabled={scanning}
+                            className="px-4 py-2 bg-[#081428] hover:bg-[#122444] text-white font-bold text-xs rounded-md shadow-2xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 text-[#C8A147] ${scanning ? 'animate-spin' : ''}`} />
+                            <span>Scan Server Recordings</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ) : (
@@ -722,8 +762,9 @@ export default function CallRecordingsPage() {
                               </label>
 
                               <a
-                                href={rec.audio_url || '#'}
+                                href={getPlayableAudioUrl(rec.audio_url) || '#'}
                                 target="_blank"
+                                rel="noreferrer"
                                 download={`3CX-${rec.pbx_call_id}.wav`}
                                 className="p-1.5 text-slate-500 hover:text-[#081428] hover:bg-slate-100 rounded transition-colors"
                                 title="Download WAV Recording"
@@ -806,6 +847,89 @@ export default function CallRecordingsPage() {
           </div>
         </main>
       </div>
+
+      {/* Upload Voice Recording Modal */}
+      {uploadModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-[#E8E4DC] overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-4 bg-[#081428] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileAudio className="w-5 h-5 text-[#C8A147]" />
+                <h3 className="font-heading font-bold text-sm">Upload 3CX Voice Recording</h3>
+              </div>
+              <button
+                onClick={() => setUploadModalOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUploadAudio} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#081428] mb-1">
+                  Select Audio File (.wav, .mp3, .ogg, .m4a) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".wav,.mp3,.ogg,.m4a,audio/*"
+                  required
+                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#081428] file:text-white hover:file:bg-[#122444] file:cursor-pointer border border-[#E8E4DC] rounded-md p-1.5"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#081428] mb-1">
+                  Assign 3CX Extension / Advisor
+                </label>
+                <select
+                  value={uploadExt}
+                  onChange={(e) => setUploadExt(e.target.value)}
+                  className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium"
+                >
+                  {PBX_USERS.map((u) => (
+                    <option key={u.ext} value={u.ext}>
+                      Ext {u.ext} — {u.name} ({u.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#081428] mb-1">
+                  Client Caller Phone Number (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="+971 50 123 4567"
+                  value={uploadCaller}
+                  onChange={(e) => setUploadCaller(e.target.value)}
+                  className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E8E4DC]">
+                <button
+                  type="button"
+                  onClick={() => setUploadModalOpen(false)}
+                  className="px-3 py-2 text-xs font-semibold text-[#6E6E6E] hover:text-[#081428] transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={uploading}
+                  className="px-4 py-2 bg-[#081428] hover:bg-[#122444] text-white font-bold text-xs rounded-md shadow-2xs transition-colors flex items-center gap-2 disabled:opacity-60 cursor-pointer"
+                >
+                  {uploading ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#C8A147]" /> : <Upload className="w-3.5 h-3.5 text-[#C8A147]" />}
+                  <span>{uploading ? 'Uploading Voice...' : 'Upload & Ingest'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* STICKY BOTTOM AUDIO PLAYER */}
       {activeRecording && (() => {

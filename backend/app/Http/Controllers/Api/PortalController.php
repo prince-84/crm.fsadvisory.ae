@@ -92,23 +92,6 @@ class PortalController extends Controller
         ]);
 
         if ($isDuplicate) {
-            // Duplicate Lead: routed to dedicated Duplicate tab for review; not auto-assigned to advisor rotation
-            Activity::create([
-                'contact_id' => $contact->id,
-                'opportunity_id' => null,
-                'user_name' => 'System / Webhook',
-                'type' => 'note',
-                'description' => "Duplicate inquiry received via {$portalName}. Matches existing Contact #{$existingContact->id} ({$existingContact->name}, Phone: {$existingContact->phone}). Displayed in Duplicate tab for review.",
-            ]);
-
-            Activity::create([
-                'contact_id' => $existingContact->id,
-                'opportunity_id' => null,
-                'user_name' => 'System / Webhook',
-                'type' => 'note',
-                'description' => "Re-inquiry received from {$portalName}. A new duplicate profile #{$contact->id} was created and displayed in Duplicate tab.",
-            ]);
-
             return response()->json([
                 'success' => true,
                 'is_duplicate' => true,
@@ -124,16 +107,6 @@ class PortalController extends Controller
         if ($settings->is_enabled && $settings->apply_to_lead_pool) {
             $assignedAgent = LeadDistributionService::autoAssignContact($contact, 'lead_pool');
             $contact->refresh();
-        }
-
-        if (!$assignedAgent) {
-            Activity::create([
-                'contact_id' => $contact->id,
-                'opportunity_id' => null,
-                'user_name' => 'System / Webhook',
-                'type' => 'note',
-                'description' => "New Inbound Lead ingested from {$portalName}. Placed in New Leads pool awaiting manual allocation.",
-            ]);
         }
 
         return response()->json([

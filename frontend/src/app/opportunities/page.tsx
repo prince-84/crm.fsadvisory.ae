@@ -31,7 +31,13 @@ import {
   CheckCircle2,
   XCircle,
   TrendingUp,
-  X
+  X,
+  SlidersHorizontal,
+  Copy,
+  Check,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from 'lucide-react';
 import Link from 'next/link';
 import Swal from 'sweetalert2';
@@ -93,6 +99,215 @@ export default function OpportunitiesPage() {
   const [teamAgents, setTeamAgents] = useState<any[]>([]);
   const [selectedOwner, setSelectedOwner] = useState<string>('auto');
 
+  // Copy to clipboard helper
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const copyToClipboard = (text: string, fieldKey: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldKey);
+    setTimeout(() => setCopiedField(null), 1500);
+  };
+
+  // Opportunity Columns Spectrum
+  const ALL_OPP_COLUMNS = [
+    { key: 'id', label: 'Deal ID', category: 'Core' },
+    { key: 'client', label: 'Client Contact', category: 'Core' },
+    { key: 'phone', label: 'Primary Phone', category: 'Client Details' },
+    { key: 'type_temp', label: 'Type & Temp', category: 'Core' },
+    { key: 'budget', label: 'Budget Range', category: 'Core' },
+    { key: 'stage', label: 'Pipeline Stage', category: 'Core' },
+    { key: 'developer', label: 'Developer', category: 'Property Specs' },
+    { key: 'community', label: 'Community', category: 'Property Specs' },
+    { key: 'project', label: 'Project', category: 'Property Specs' },
+    { key: 'project_property', label: 'Unit / Property', category: 'Property Specs' },
+    { key: 'property_type', label: 'Property Type', category: 'Property Specs' },
+    { key: 'bedrooms', label: 'Bedrooms', category: 'Property Specs' },
+    { key: 'cash_or_finance', label: 'Payment Method', category: 'Property Specs' },
+    { key: 'owner', label: 'Advisor / Owner', category: 'Core' },
+    { key: 'next_action', label: 'Next Action', category: 'SLA & Timestamps' },
+    { key: 'next_action_due_at', label: 'Next Action Due', category: 'SLA & Timestamps' },
+    { key: 'sla_status', label: 'SLA Status', category: 'SLA & Timestamps' },
+    { key: 'created_at', label: 'Created Date', category: 'SLA & Timestamps' },
+    { key: 'updated_at', label: 'Last Update', category: 'SLA & Timestamps' },
+    { key: 'secondary_phone', label: 'Secondary Phone', category: 'Client Details' },
+    { key: 'email', label: 'Email Address', category: 'Client Details' },
+    { key: 'nationality', label: 'Nationality', category: 'Client Details' },
+    { key: 'source', label: 'Source Channel', category: 'Client Details' },
+    { key: 'purchase_timeline', label: 'Purchase Timeline', category: 'Property Specs' },
+    { key: 'lead_score', label: 'Lead Score', category: 'Property Specs' },
+    { key: 'key_requirement', label: 'Key Requirement', category: 'Property Specs' },
+    { key: 'actions', label: 'Actions', category: 'Core' },
+  ];
+
+  const DEFAULT_OPP_COLUMN_VISIBILITY: Record<string, boolean> = {
+    id: true,
+    client: true,
+    phone: true,
+    type_temp: true,
+    budget: true,
+    stage: true,
+    developer: true,
+    community: true,
+    project: false,
+    project_property: false,
+    property_type: false,
+    bedrooms: false,
+    cash_or_finance: false,
+    owner: true,
+    next_action: true,
+    next_action_due_at: false,
+    sla_status: true,
+    created_at: true,
+    updated_at: false,
+    secondary_phone: false,
+    email: false,
+    nationality: false,
+    source: false,
+    purchase_timeline: false,
+    lead_score: false,
+    key_requirement: false,
+    actions: true,
+  };
+
+  const DEFAULT_OPP_COLUMN_ORDER = [
+    'id',
+    'client',
+    'phone',
+    'type_temp',
+    'budget',
+    'stage',
+    'developer',
+    'community',
+    'project',
+    'project_property',
+    'property_type',
+    'bedrooms',
+    'cash_or_finance',
+    'owner',
+    'next_action',
+    'next_action_due_at',
+    'sla_status',
+    'created_at',
+    'updated_at',
+    'secondary_phone',
+    'email',
+    'nationality',
+    'source',
+    'purchase_timeline',
+    'lead_score',
+    'key_requirement',
+    'actions',
+  ];
+
+  const OPP_VISIBILITY_STORAGE_KEY = 'opportunities_column_visibility_v1';
+  const OPP_ORDER_STORAGE_KEY = 'opportunities_column_order_v1';
+
+  // Dynamic Column Visibility & Order States
+  const [columnsDropdownOpen, setColumnsDropdownOpen] = useState(false);
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(DEFAULT_OPP_COLUMN_VISIBILITY);
+  const [columnOrder, setColumnOrder] = useState<string[]>(DEFAULT_OPP_COLUMN_ORDER);
+
+  // Database Sorting State
+  const [sortBy, setSortBy] = useState<string>('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  // Drag and Drop States for Header Reordering
+  const [draggedColKey, setDraggedColKey] = useState<string | null>(null);
+  const [dragOverColKey, setDragOverColKey] = useState<string | null>(null);
+
+  const handleColDragStart = (e: React.DragEvent, colKey: string) => {
+    if (colKey === 'actions') return;
+    setDraggedColKey(colKey);
+    e.dataTransfer.setData('text/plain', colKey);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleColDragOver = (e: React.DragEvent, targetColKey: string) => {
+    e.preventDefault();
+    if (targetColKey === 'actions') return;
+    if (draggedColKey && draggedColKey !== targetColKey) {
+      setDragOverColKey(targetColKey);
+    }
+  };
+
+  const handleColDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverColKey(null);
+  };
+
+  const handleColDrop = (e: React.DragEvent, targetColKey: string) => {
+    e.preventDefault();
+    setDragOverColKey(null);
+    if (!draggedColKey || draggedColKey === targetColKey || targetColKey === 'actions') return;
+
+    const newOrder = [...columnOrder];
+    const draggedIndex = newOrder.indexOf(draggedColKey);
+    const targetIndex = newOrder.indexOf(targetColKey);
+
+    if (draggedIndex !== -1 && targetIndex !== -1) {
+      newOrder.splice(draggedIndex, 1);
+      newOrder.splice(targetIndex, 0, draggedColKey);
+      // Guarantee actions always remains pinned at the end
+      const withoutActions = newOrder.filter((k) => k !== 'actions');
+      withoutActions.push('actions');
+      updateColumnOrder(withoutActions);
+    }
+    setDraggedColKey(null);
+  };
+
+  const updateColumnVisibility = (newVisibility: Record<string, boolean>) => {
+    setColumnVisibility(newVisibility);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(OPP_VISIBILITY_STORAGE_KEY, JSON.stringify(newVisibility));
+    }
+  };
+
+  const updateColumnOrder = (newOrder: string[]) => {
+    setColumnOrder(newOrder);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(OPP_ORDER_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+  };
+
+  // Load saved column preferences from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const validKeys = ALL_OPP_COLUMNS.map((c) => c.key);
+      const savedVis = localStorage.getItem(OPP_VISIBILITY_STORAGE_KEY);
+      if (savedVis) {
+        try {
+          const parsedVis = JSON.parse(savedVis);
+          const cleanVis: Record<string, boolean> = { ...DEFAULT_OPP_COLUMN_VISIBILITY };
+          validKeys.forEach((k) => {
+            if (k in parsedVis) {
+              cleanVis[k] = !!parsedVis[k];
+            }
+          });
+          cleanVis.created_at = true; // By default Created Date must be enabled
+          cleanVis.actions = true;
+          setColumnVisibility(cleanVis);
+        } catch (e) {
+          console.error('Error parsing opportunities column visibility:', e);
+        }
+      }
+
+      const savedOrder = localStorage.getItem(OPP_ORDER_STORAGE_KEY);
+      if (savedOrder) {
+        try {
+          const parsed = JSON.parse(savedOrder);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            let sanitized = parsed.filter((k: string) => validKeys.includes(k) && k !== 'actions');
+            if (!sanitized.includes('created_at')) sanitized.push('created_at');
+            sanitized.push('actions');
+            setColumnOrder(sanitized);
+          }
+        } catch (e) {
+          console.error('Error parsing opportunities column order:', e);
+        }
+      }
+    }
+  }, []);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem('crm_user');
@@ -113,7 +328,7 @@ export default function OpportunitiesPage() {
       .catch(console.error);
   }, []);
 
-  const loadOpportunitiesData = async (ownerOverride?: string) => {
+  const loadOpportunitiesData = async (ownerOverride?: string, sByOverride?: string, sOrderOverride?: string) => {
     setLoading(true);
     try {
       let raw = localStorage.getItem('crm_user');
@@ -122,14 +337,17 @@ export default function OpportunitiesPage() {
         try { user = JSON.parse(raw); } catch {}
       }
 
-      let url = '/opportunities';
+      const curSortBy = sByOverride !== undefined ? sByOverride : sortBy;
+      const curSortOrder = sOrderOverride !== undefined ? sOrderOverride : sortOrder;
+
+      let url = `/opportunities?sort_by=${encodeURIComponent(curSortBy)}&sort_order=${encodeURIComponent(curSortOrder)}`;
       let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
       if (targetOwner === 'auto') {
         targetOwner = isSuperUser(user) ? 'all' : (user?.name || 'all');
       }
 
       if (targetOwner && targetOwner !== 'all') {
-        url += `?owner=${encodeURIComponent(targetOwner)}`;
+        url += `&owner=${encodeURIComponent(targetOwner)}`;
       }
 
       const res = await fetchApi(url);
@@ -153,7 +371,8 @@ export default function OpportunitiesPage() {
         ...(pipe.future_prospectus || []),
         ...(pipe.closed || []),
       ];
-      setAllOpps(flattened);
+      // Use database-sorted opportunities for List View; fallback to flattened
+      setAllOpps(res.opportunities || flattened);
 
       const contactsRes = await fetchApi('/contacts');
       setContacts(contactsRes.contacts?.data || []);
@@ -161,6 +380,22 @@ export default function OpportunitiesPage() {
     } catch (err) {
       console.error('Failed to load opportunities:', err);
       setLoading(false);
+    }
+  };
+
+  const handleSort = (colKey: string) => {
+    if (colKey === 'actions') return;
+    if (sortBy === colKey) {
+      const nextOrder: 'asc' | 'desc' = sortOrder === 'asc' ? 'desc' : 'asc';
+      setSortOrder(nextOrder);
+      loadOpportunitiesData(undefined, colKey, nextOrder);
+    } else {
+      const defaultOrder: 'asc' | 'desc' = ['created_at', 'updated_at', 'budget', 'lead_score', 'next_action_due_at'].includes(colKey)
+        ? 'desc'
+        : 'asc';
+      setSortBy(colKey);
+      setSortOrder(defaultOrder);
+      loadOpportunitiesData(undefined, colKey, defaultOrder);
     }
   };
 
@@ -327,12 +562,8 @@ export default function OpportunitiesPage() {
   };
 
   const handleOpenCreateOppModal = () => {
-    if (contacts.length > 0) {
-      setSelectedContactForOpp(contacts[0]);
-      setIsOppModalOpen(true);
-    } else {
-      Swal.fire('No Contacts', 'Please add a Contact in Lead Pool first.', 'info');
-    }
+    setSelectedContactForOpp(null);
+    setIsOppModalOpen(true);
   };
 
   // Stage column definitions (7 Sales Stages)
@@ -395,13 +626,354 @@ export default function OpportunitiesPage() {
     },
   ];
 
-  // Pipeline metrics calculation
-  const totalPipelineBudget = allOpps.reduce((sum, opp) => sum + (opp.budget_min || 0), 0);
-  const activeOpportunitiesCount = allOpps.filter(
-    (o) => o.stage !== 'closed' && o.stage !== 'closed_won' && o.stage !== 'closed_lost'
-  ).length;
-  const wonCount = allOpps.filter((o) => o.stage === 'closed' || o.stage === 'closed_won').length;
-  const meetingCount = allOpps.filter((o) => o.stage === 'meeting').length;
+  // Render table header cell based on columnVisibility with Draggable Reordering and Database Sorting
+  const renderOppHeaderCell = (colKey: string) => {
+    const colMeta = ALL_OPP_COLUMNS.find((c) => c.key === colKey);
+    if (!colMeta || !columnVisibility[colKey]) return null;
+
+    if (colKey === 'actions') {
+      return (
+        <th key={colKey} className="py-3 px-3 text-right">
+          {colMeta.label}
+        </th>
+      );
+    }
+
+    const isSortable = true;
+    const isSorted = sortBy === colKey;
+
+    return (
+      <th
+        key={colKey}
+        draggable
+        onDragStart={(e) => handleColDragStart(e, colKey)}
+        onDragOver={(e) => handleColDragOver(e, colKey)}
+        onDragLeave={handleColDragLeave}
+        onDrop={(e) => handleColDrop(e, colKey)}
+        onClick={() => handleSort(colKey)}
+        className={`py-3 px-3 whitespace-nowrap font-semibold uppercase tracking-wider text-[10px] select-none transition-all group hover:bg-[#F3EEDD] cursor-pointer ${
+          dragOverColKey === colKey ? 'border-l-2 border-[#C8A147] bg-amber-50/60' : ''
+        } ${draggedColKey === colKey ? 'opacity-40' : ''}`}
+        title="Click to sort from database | Drag & drop to reorder column"
+      >
+        <div className="flex items-center gap-1.5">
+          <GripVertical className="w-3.5 h-3.5 text-slate-400 opacity-50 group-hover:opacity-100 shrink-0 cursor-grab active:cursor-grabbing" />
+          <span>{colMeta.label}</span>
+          {isSorted ? (
+            sortOrder === 'asc' ? (
+              <ArrowUp className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+            ) : (
+              <ArrowDown className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+            )
+          ) : (
+            <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
+          )}
+        </div>
+      </th>
+    );
+  };
+
+  // Render table body cell for each opportunity
+  const renderOppBodyCell = (colKey: string, opp: any) => {
+    const qual = opp.buyer_qualification || opp.seller_qualification || opp.landlord_qualification || opp.tenant_qualification || {};
+    const contact = opp.contact || {};
+
+    switch (colKey) {
+      case 'id':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-mono font-bold text-[#081428]">
+            #{opp.id}
+          </td>
+        );
+
+      case 'client':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-bold text-[#081428]">
+            <Link
+              href={`/opportunities/${opp.id}`}
+              className="hover:text-[#C8A147] hover:underline transition-colors flex items-center gap-1.5"
+            >
+              <span>{contact.name || `Opportunity #${opp.id}`}</span>
+            </Link>
+          </td>
+        );
+
+      case 'phone':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-mono text-xs text-slate-700">
+            {contact.phone ? (
+              <div className="flex items-center gap-1.5">
+                <span>{contact.phone}</span>
+                <button
+                  type="button"
+                  onClick={(e) => copyToClipboard(contact.phone, `phone-${opp.id}`, e)}
+                  className="text-slate-400 hover:text-slate-700 cursor-pointer p-0.5"
+                  title="Copy Phone"
+                >
+                  {copiedField === `phone-${opp.id}` ? (
+                    <Check className="w-3 h-3 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
+            ) : (
+              '—'
+            )}
+          </td>
+        );
+
+      case 'secondary_phone':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-mono text-xs text-slate-600">
+            {contact.secondary_phone ? (
+              <div className="flex items-center gap-1.5">
+                <span>{contact.secondary_phone}</span>
+                <button
+                  type="button"
+                  onClick={(e) => copyToClipboard(contact.secondary_phone, `sec-phone-${opp.id}`, e)}
+                  className="text-slate-400 hover:text-slate-700 cursor-pointer p-0.5"
+                  title="Copy Secondary Phone"
+                >
+                  {copiedField === `sec-phone-${opp.id}` ? (
+                    <Check className="w-3 h-3 text-emerald-600" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
+            ) : (
+              '—'
+            )}
+          </td>
+        );
+
+      case 'email':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-xs text-slate-600">
+            {contact.email || '—'}
+          </td>
+        );
+
+      case 'nationality':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-xs text-slate-700 font-medium">
+            {contact.nationality || '—'}
+          </td>
+        );
+
+      case 'source':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-xs">
+            {contact.source ? (
+              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                {contact.source}
+              </span>
+            ) : (
+              '—'
+            )}
+          </td>
+        );
+
+      case 'type_temp':
+        return (
+          <td key={colKey} className="py-3.5 px-4 whitespace-nowrap">
+            <span className="uppercase font-bold text-[#081428] text-xs">{opp.opportunity_type || 'Buyer'}</span> ·{' '}
+            <span
+              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                opp.temperature === 'hot'
+                  ? 'bg-red-100 text-red-700'
+                  : opp.temperature === 'cold'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {opp.temperature || 'warm'}
+            </span>
+          </td>
+        );
+
+      case 'budget':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-bold text-[#081428] whitespace-nowrap">
+            {opp.budget_min
+              ? `AED ${(opp.budget_min / 1000000).toFixed(1)}M${
+                  opp.budget_max ? ` – ${(opp.budget_max / 1000000).toFixed(1)}M` : ''
+                }`
+              : 'Pending'}
+          </td>
+        );
+
+      case 'stage':
+        return (
+          <td key={colKey} className="py-3.5 px-4 whitespace-nowrap">
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 uppercase">
+              {(opp.stage || 'new').replace(/_/g, ' ')}
+            </span>
+          </td>
+        );
+
+      case 'developer':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-medium text-[#081428]">
+            {qual.developer || '—'}
+          </td>
+        );
+
+      case 'community':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-medium text-[#081428]">
+            {qual.community || '—'}
+          </td>
+        );
+
+      case 'project':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-slate-700">
+            {qual.project || '—'}
+          </td>
+        );
+
+      case 'project_property':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-slate-700">
+            {qual.project_property || '—'}
+          </td>
+        );
+
+      case 'property_type':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-slate-700">
+            {qual.property_type || '—'}
+          </td>
+        );
+
+      case 'bedrooms':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-slate-700 font-mono">
+            {qual.bedrooms || '—'}
+          </td>
+        );
+
+      case 'cash_or_finance':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-slate-700">
+            {qual.cash_or_finance
+              ? qual.cash_or_finance === 'cash'
+                ? 'Cash'
+                : 'Mortgage / Finance'
+              : '—'}
+          </td>
+        );
+
+      case 'purchase_timeline':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-slate-700">
+            {qual.purchase_timeline || '—'}
+          </td>
+        );
+
+      case 'lead_score':
+        return (
+          <td key={colKey} className="py-3.5 px-4">
+            {qual.lead_score ? (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                {qual.lead_score}/100
+              </span>
+            ) : (
+              '—'
+            )}
+          </td>
+        );
+
+      case 'key_requirement':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-slate-700 max-w-xs truncate" title={opp.key_requirement || qual.qualification_notes || ''}>
+            {opp.key_requirement || qual.qualification_notes || '—'}
+          </td>
+        );
+
+      case 'owner':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-semibold text-[#081428] whitespace-nowrap">
+            {opp.current_owner_name || 'Unassigned'}
+          </td>
+        );
+
+      case 'next_action':
+        return (
+          <td key={colKey} className="py-3.5 px-4 text-[#6E6E6E] max-w-xs truncate" title={opp.next_action || ''}>
+            {opp.next_action || 'Follow up'}
+          </td>
+        );
+
+      case 'next_action_due_at':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-mono text-xs text-slate-600 whitespace-nowrap">
+            {opp.next_action_due_at ? opp.next_action_due_at.replace('T', ' ').substring(0, 16) : '—'}
+          </td>
+        );
+
+      case 'sla_status':
+        return (
+          <td key={colKey} className="py-3.5 px-4 whitespace-nowrap">
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                opp.sla_status === 'overdue'
+                  ? 'bg-red-100 text-red-700 border border-red-200'
+                  : opp.sla_status === 'due_soon'
+                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+              }`}
+            >
+              {opp.sla_status || 'On Track'}
+            </span>
+          </td>
+        );
+
+      case 'created_at':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-mono text-xs text-slate-600 whitespace-nowrap">
+            {opp.created_at ? opp.created_at.replace('T', ' ').substring(0, 16) : '—'}
+          </td>
+        );
+
+      case 'updated_at':
+        return (
+          <td key={colKey} className="py-3.5 px-4 font-mono text-xs text-slate-600 whitespace-nowrap">
+            {opp.updated_at ? opp.updated_at.replace('T', ' ').substring(0, 16) : '—'}
+          </td>
+        );
+
+      case 'actions':
+        return (
+          <td key={colKey} className="py-3.5 px-3 text-right whitespace-nowrap">
+            <div className="flex items-center justify-end gap-1.5">
+              <Link
+                href={`/opportunities/${opp.id}`}
+                className="px-2.5 py-1 bg-[#081428] hover:bg-[#122444] text-white font-bold text-xs rounded transition-colors"
+              >
+                View Deal
+              </Link>
+              {canDeleteDeals && (
+                <button
+                  onClick={() =>
+                    handleDeleteOpportunity(opp.id, contact.name || `Opportunity #${opp.id}`)
+                  }
+                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                  title="Delete Opportunity"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </td>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   if (canViewDeals === false) {
     return (
@@ -422,23 +994,10 @@ export default function OpportunitiesPage() {
       <div className="flex-1 pl-56 flex flex-col min-w-0">
         <Navbar />
 
-        <main className="p-6 space-y-6 w-full max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E8E4DC] pb-6">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#C8A147] uppercase tracking-wider mb-1">
-                <Briefcase className="w-4 h-4" />
-                <span>03 — Deal Pipeline & Opportunities</span>
-              </div>
-              <h1 className="font-heading font-bold text-2xl text-[#081428]">
-                Opportunities & Sales Pipeline
-              </h1>
-              <p className="text-xs text-[#6E6E6E] mt-0.5">
-                Drag deals across pipeline stages to track buyer qualifications, viewings, and SPA closures.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
+        <main className="p-6 space-y-4 w-full max-w-7xl mx-auto">
+          {/* Top Actions Bar (View Switcher, Advisor Scope Selector & Create Opportunity) */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-[#E8E4DC] p-3 rounded-lg shadow-2xs">
+            <div className="flex items-center gap-3 flex-wrap">
               {/* View Switcher: Kanban vs List */}
               <div className="bg-[#EFECE6] p-1 rounded-lg flex items-center border border-[#E0DBD1]">
                 <button
@@ -467,43 +1026,42 @@ export default function OpportunitiesPage() {
                 </button>
               </div>
 
-              <Link
-                href="/opportunities/create"
-                className="px-4 py-2 bg-[#C8A147] hover:bg-[#b48e35] text-white font-bold rounded-md shadow-xs transition-colors flex items-center gap-1.5 text-xs cursor-pointer"
-              >
-                <Plus className="w-4 h-4 text-white" />
-                <span>Create Opportunity</span>
-              </Link>
-            </div>
-          </div>
-
-          {/* 4 Top Pipeline KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs">
-              <div className="text-[10px] font-bold text-[#6E6E6E] uppercase tracking-wider">Active Pipeline</div>
-              <div className="font-heading text-2xl font-bold text-[#081428] mt-1">{activeOpportunitiesCount} Deals</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">Across 4 active stages</div>
-            </div>
-
-            <div className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs">
-              <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">Active Meetings</div>
-              <div className="font-heading text-2xl font-bold text-purple-800 mt-1">{meetingCount} Meetings</div>
-              <div className="text-[10px] text-purple-700 mt-0.5">Developer viewings & Zoom</div>
-            </div>
-
-            <div className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs">
-              <div className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Closed Won 🏆</div>
-              <div className="font-heading text-2xl font-bold text-emerald-800 mt-1">{wonCount} Deals</div>
-              <div className="text-[10px] text-emerald-700 mt-0.5">Successfully closed SPAs</div>
-            </div>
-
-            <div className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs">
-              <div className="text-[10px] font-bold text-[#C8A147] uppercase tracking-wider">Total Pipeline Value</div>
-              <div className="font-heading text-2xl font-bold text-[#081428] mt-1">
-                AED {totalPipelineBudget > 0 ? (totalPipelineBudget / 1000000).toFixed(1) + 'M' : '15.5M'}
+              {/* Advisor / Scope Selector */}
+              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] hover:border-[#C8A147] rounded-md px-3 py-1.5 shrink-0 transition-colors">
+                <User className="w-3.5 h-3.5 text-[#C8A147]" />
+                <select
+                  value={selectedOwner === 'auto' ? (isSuperUser(currentUser) ? 'all' : (currentUser?.name || 'auto')) : selectedOwner}
+                  onChange={(e) => setSelectedOwner(e.target.value)}
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
+                >
+                  {isSuperUser(currentUser) ? (
+                    <>
+                      <option value="all">👥 All Deals (Entire Team)</option>
+                      {currentUser?.name && (
+                        <option value={currentUser.name}>⭐ My Deals ({currentUser.name})</option>
+                      )}
+                      {teamAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
+                        <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <option value={currentUser?.name || 'auto'}>🎯 My Deals ({currentUser?.name || 'Assigned to Me'})</option>
+                      <option value="all">👥 View Team Pipeline</option>
+                    </>
+                  )}
+                </select>
               </div>
-              <div className="text-[10px] text-[#C8A147] font-semibold mt-0.5">Combined buyer budget</div>
             </div>
+
+            <button
+              type="button"
+              onClick={handleOpenCreateOppModal}
+              className="px-4 py-2 bg-[#C8A147] hover:bg-[#b48e35] text-white font-bold rounded-md shadow-xs transition-colors flex items-center gap-1.5 text-xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-white" />
+              <span>Create Opportunity</span>
+            </button>
           </div>
 
           {/* Filters & Search Bar */}
@@ -547,33 +1105,6 @@ export default function OpportunitiesPage() {
                 <option value="investor">Investor</option>
               </select>
 
-              {/* Agent / Scope Selector */}
-              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
-                <User className="w-3.5 h-3.5 text-[#C8A147]" />
-                <select
-                  value={selectedOwner === 'auto' ? (isSuperUser(currentUser) ? 'all' : (currentUser?.name || 'auto')) : selectedOwner}
-                  onChange={(e) => setSelectedOwner(e.target.value)}
-                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
-                >
-                  {isSuperUser(currentUser) ? (
-                    <>
-                      <option value="all">👥 All Deals (Entire Team)</option>
-                      {currentUser?.name && (
-                        <option value={currentUser.name}>⭐ My Deals ({currentUser.name})</option>
-                      )}
-                      {teamAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
-                        <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <option value={currentUser?.name || 'auto'}>🎯 My Deals ({currentUser?.name || 'Assigned to Me'})</option>
-                      <option value="all">👥 View Team Pipeline</option>
-                    </>
-                  )}
-                </select>
-              </div>
-
               {(searchQuery || filterTemp !== 'all' || filterType !== 'all') && (
                 <button
                   onClick={() => {
@@ -588,9 +1119,92 @@ export default function OpportunitiesPage() {
               )}
             </div>
 
-            <div className="text-[11px] font-medium text-[#6E6E6E] flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-[#C8A147]" />
-              <span>Showing {filteredOpps.length} Opportunities</span>
+            <div className="flex items-center gap-3">
+              {viewMode === 'list' && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setColumnsDropdownOpen(!columnsDropdownOpen)}
+                    className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] hover:border-[#C8A147] rounded text-xs text-[#081428] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-[#C8A147]" />
+                    <span>Columns</span>
+                    <span className="bg-[#C8A147] text-white text-[10px] px-1.5 rounded-full font-bold">
+                      {Object.values(columnVisibility).filter(Boolean).length}
+                    </span>
+                  </button>
+
+                  {columnsDropdownOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-40" 
+                        onClick={() => setColumnsDropdownOpen(false)} 
+                      />
+                      <div className="absolute right-0 mt-2 w-72 bg-white border border-[#E8E4DC] rounded-lg shadow-xl z-50 p-3 text-xs space-y-2 max-h-96 overflow-y-auto">
+                        <div className="flex items-center justify-between border-b border-[#E8E4DC] pb-2 font-bold text-[#081428]">
+                          <span>Manage Deal Columns</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateColumnVisibility(DEFAULT_OPP_COLUMN_VISIBILITY);
+                              updateColumnOrder(DEFAULT_OPP_COLUMN_ORDER);
+                            }}
+                            className="text-[11px] text-[#C8A147] hover:underline cursor-pointer"
+                          >
+                            Reset Default
+                          </button>
+                        </div>
+
+                        {['Core', 'Client Details', 'Property Specs', 'SLA & Timestamps'].map((cat) => (
+                          <div key={cat} className="space-y-1 pt-1">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-[#6E6E6E] bg-[#FAF8F5] px-1.5 py-0.5 rounded">
+                              {cat}
+                            </div>
+                            {ALL_OPP_COLUMNS.filter((c) => c.category === cat).map((col) => {
+                              const isAction = col.key === 'actions';
+                              return (
+                                <label
+                                  key={col.key}
+                                  className={`flex items-center gap-2 px-1.5 py-1 rounded hover:bg-slate-50 select-none ${
+                                    isAction ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    disabled={isAction}
+                                    checked={isAction || !!columnVisibility[col.key]}
+                                    onChange={(e) => {
+                                      if (isAction) return;
+                                      updateColumnVisibility({
+                                        ...columnVisibility,
+                                        [col.key]: e.target.checked,
+                                      });
+                                    }}
+                                    className="rounded border-slate-300 text-[#C8A147] focus:ring-[#C8A147] accent-[#C8A147]"
+                                  />
+                                  <span className={columnVisibility[col.key] ? 'font-medium text-[#081428]' : 'text-slate-500'}>
+                                    {col.label}
+                                  </span>
+                                  {isAction && (
+                                    <span className="text-[9px] text-amber-700 bg-amber-50 px-1 rounded ml-auto">
+                                      Required
+                                    </span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <div className="text-[11px] font-medium text-[#6E6E6E] flex items-center gap-1 shrink-0">
+                <Sparkles className="w-3 h-3 text-[#C8A147]" />
+                <span>Showing {filteredOpps.length} Opportunities</span>
+              </div>
             </div>
           </div>
 
@@ -775,142 +1389,76 @@ export default function OpportunitiesPage() {
           )}
 
           {/* ===================== LIST TABLE VIEW ===================== */}
-          {viewMode === 'list' && (
-            <div className="bg-white border border-[#E8E4DC] rounded-lg shadow-2xs overflow-hidden text-xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-[#E8E4DC] bg-[#FAF8F5] text-[10px] tracking-wider font-bold text-[#6E6E6E] uppercase">
-                      {canBulkDeleteDeals && (
-                        <th className="py-3 px-3 w-10 text-center">
-                          <input
-                            type="checkbox"
-                            checked={filteredOpps.length > 0 && selectedOppIds.length === filteredOpps.length}
-                            onChange={handleToggleSelectAllOpps}
-                            className="w-4 h-4 rounded border-[#E8E4DC] accent-[#C8A147] cursor-pointer align-middle"
-                            title="Select all on current list"
-                          />
-                        </th>
-                      )}
-                      <th className="py-3 px-4">Deal ID</th>
-                      <th className="py-3 px-4">Client Contact</th>
-                      <th className="py-3 px-4">Type & Temp</th>
-                      <th className="py-3 px-4">Budget Range</th>
-                      <th className="py-3 px-4">Stage</th>
-                      <th className="py-3 px-4">Advisor / Owner</th>
-                      <th className="py-3 px-4">Next Action</th>
-                      <th className="py-3 px-4">SLA Status</th>
-                      <th className="py-3 px-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#E8E4DC]">
-                    {loading ? (
-                      <tr>
-                        <td colSpan={canBulkDeleteDeals ? 10 : 9} className="py-8 text-center text-[#6E6E6E]">
-                          <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#C8A147] mb-2" />
-                          <span>Loading Opportunities...</span>
-                        </td>
+          {viewMode === 'list' && (() => {
+            const visibleColumnCount = columnOrder.filter((k) => columnVisibility[k]).length;
+            const totalCols = canBulkDeleteDeals ? visibleColumnCount + 1 : visibleColumnCount;
+
+            return (
+              <div className="bg-white border border-[#E8E4DC] rounded-lg shadow-2xs overflow-hidden text-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#E8E4DC] bg-[#FAF8F5] text-[10px] tracking-wider font-bold text-[#6E6E6E] uppercase">
+                        {canBulkDeleteDeals && (
+                          <th className="py-3 px-3 w-10 text-center">
+                            <input
+                              type="checkbox"
+                              checked={filteredOpps.length > 0 && selectedOppIds.length === filteredOpps.length}
+                              onChange={handleToggleSelectAllOpps}
+                              className="w-4 h-4 rounded border-[#E8E4DC] accent-[#C8A147] cursor-pointer align-middle"
+                              title="Select all on current list"
+                            />
+                          </th>
+                        )}
+                        {columnOrder.map((colKey) => renderOppHeaderCell(colKey))}
                       </tr>
-                    ) : filteredOpps.length === 0 ? (
-                      <tr>
-                        <td colSpan={canBulkDeleteDeals ? 10 : 9} className="py-12 text-center text-[#6E6E6E] space-y-2">
-                          <Briefcase className="w-8 h-8 text-slate-300 mx-auto" />
-                          <div className="font-bold text-sm text-[#081428]">No Opportunities Found</div>
-                          <p className="text-xs text-[#6E6E6E]">Try adjusting your search or filters.</p>
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredOpps.map((opp: any) => (
-                        <tr 
-                          key={opp.id} 
-                          className={`transition-colors ${
-                            selectedOppIds.includes(opp.id) ? 'bg-[#FAF6EC] hover:bg-[#F5EEDC]' : 'hover:bg-[#FAF8F5]'
-                          }`}
-                        >
-                          {canBulkDeleteDeals && (
-                            <td className="py-3.5 px-3 text-center">
-                              <input
-                                type="checkbox"
-                                checked={selectedOppIds.includes(opp.id)}
-                                onChange={() => handleToggleSelectOpp(opp.id)}
-                                className="w-4 h-4 rounded border-[#E8E4DC] accent-[#C8A147] cursor-pointer align-middle"
-                              />
-                            </td>
-                          )}
-                          <td className="py-3.5 px-4 font-mono font-bold text-[#081428]">#{opp.id}</td>
-                          <td className="py-3.5 px-4 font-bold text-[#081428]">
-                            <Link
-                              href={`/opportunities/${opp.id}`}
-                              className="hover:text-[#C8A147] hover:underline transition-colors"
-                            >
-                              {opp.contact?.name || `Opportunity #${opp.id}`}
-                            </Link>
-                            {opp.contact?.phone && (
-                              <div className="text-[10px] font-mono text-[#6E6E6E]">{opp.contact.phone}</div>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span className="uppercase font-bold text-[#081428]">{opp.opportunity_type || 'Buyer'}</span> ·{' '}
-                            <span
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                opp.temperature === 'hot'
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'bg-amber-100 text-amber-800'
-                              }`}
-                            >
-                              {opp.temperature || 'warm'}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 font-bold text-[#081428]">
-                            {opp.budget_min
-                              ? `AED ${(opp.budget_min / 1000000).toFixed(1)}M${
-                                  opp.budget_max ? ` – ${(opp.budget_max / 1000000).toFixed(1)}M` : ''
-                                }`
-                              : 'Pending'}
-                          </td>
-                          <td className="py-3.5 px-4">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 uppercase">
-                              {(opp.stage || 'new').replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 font-semibold text-[#081428]">
-                            {opp.current_owner_name || 'Faraz Shafi'}
-                          </td>
-                          <td className="py-3.5 px-4 text-[#6E6E6E]">{opp.next_action || 'Follow up'}</td>
-                          <td className="py-3.5 px-4">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                              {opp.sla_status || 'On Track'}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <Link
-                                href={`/opportunities/${opp.id}`}
-                                className="px-2.5 py-1 bg-[#081428] hover:bg-[#122444] text-white font-bold text-xs rounded transition-colors"
-                              >
-                                View Deal
-                              </Link>
-                              {canDeleteDeals && (
-                                <button
-                                  onClick={() =>
-                                    handleDeleteOpportunity(opp.id, opp.contact?.name || `Opportunity #${opp.id}`)
-                                  }
-                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
-                                  title="Delete Opportunity"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
+                    </thead>
+                    <tbody className="divide-y divide-[#E8E4DC]">
+                      {loading ? (
+                        <tr>
+                          <td colSpan={totalCols} className="py-8 text-center text-[#6E6E6E]">
+                            <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#C8A147] mb-2" />
+                            <span>Loading Opportunities...</span>
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : filteredOpps.length === 0 ? (
+                        <tr>
+                          <td colSpan={totalCols} className="py-12 text-center text-[#6E6E6E] space-y-2">
+                            <Briefcase className="w-8 h-8 text-slate-300 mx-auto" />
+                            <div className="font-bold text-sm text-[#081428]">No Opportunities Found</div>
+                            <p className="text-xs text-[#6E6E6E]">Try adjusting your search or filters.</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredOpps.map((opp: any) => (
+                          <tr 
+                            key={opp.id} 
+                            className={`transition-colors ${
+                              selectedOppIds.includes(opp.id) ? 'bg-[#FAF6EC] hover:bg-[#F5EEDC]' : 'hover:bg-[#FAF8F5]'
+                            }`}
+                          >
+                            {canBulkDeleteDeals && (
+                              <td className="py-3.5 px-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedOppIds.includes(opp.id)}
+                                  onChange={() => handleToggleSelectOpp(opp.id)}
+                                  className="w-4 h-4 rounded border-[#E8E4DC] accent-[#C8A147] cursor-pointer align-middle"
+                                />
+                              </td>
+                            )}
+                            {columnOrder.map((colKey) =>
+                              columnVisibility[colKey] ? renderOppBodyCell(colKey, opp) : null
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* FLOATING BULK DELETE ACTION BAR */}
           {canBulkDeleteDeals && selectedOppIds.length > 0 && (

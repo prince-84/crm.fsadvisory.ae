@@ -324,10 +324,10 @@ export default function CallActivityPage() {
                 className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none cursor-pointer"
               >
                 <option value="all">All Call Outcomes</option>
-                <option value="Interested - Schedule Viewing">Interested — Schedule Viewing</option>
-                <option value="Callback Requested">Callback Requested</option>
-                <option value="Follow-up Required">Follow-up Required</option>
-                <option value="No Answer / Left Voicemail">No Answer / Left Voicemail</option>
+                <option value="Interested">Interested</option>
+                <option value="Callback">Callback</option>
+                <option value="Follow-up">Follow-up</option>
+                <option value="No Answer">No Answer</option>
                 <option value="Not Interested">Not Interested</option>
                 <option value="Wrong Number">Wrong Number</option>
               </select>

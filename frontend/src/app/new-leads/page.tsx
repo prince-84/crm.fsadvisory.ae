@@ -1198,7 +1198,7 @@ export default function NewLeadsPage() {
           </div>
 
           {/* MAIN NEW LEADS TOP TAB NAVIGATION (All, New, Duplicate, Deleted) */}
-          <div className="bg-white border border-[#E8E4DC] rounded-lg px-4 shadow-2xs flex items-center gap-2 overflow-x-auto">
+          <div className="w-full bg-white border border-[#E8E4DC] rounded-lg px-4 shadow-2xs flex items-center gap-2 overflow-x-auto">
             {[
               { id: 'all', label: 'All Leads', count: tabCounts.all, color: 'text-[#081428]' },
               { id: 'unassigned', label: 'New', count: tabCounts.unassigned ?? tabCounts.new, color: 'text-amber-800' },

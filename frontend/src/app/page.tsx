@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import ContactDrawer from '@/components/ContactDrawer';
 import CreateContactModal from '@/components/CreateContactModal';
 import CreateLeadModal from '@/components/CreateLeadModal';
+import CreateOpportunityModal from '@/components/CreateOpportunityModal';
 import ImportLeadsModal from '@/components/ImportLeadsModal';
 import AdvancedFilterModal, { AdvancedFiltersState, INITIAL_ADVANCED_FILTERS } from '@/components/AdvancedFilterModal';
 import DateRangePicker, { DateRangeValue } from '@/components/DateRangePicker';
@@ -15,11 +16,69 @@ import {
   Search, Download, Upload, Plus, Users, CheckCircle2, Briefcase, 
   RotateCcw, Copy, ChevronLeft, ChevronRight, RefreshCw, Trash2, Undo2, UserX,
   ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, GripVertical, UserCheck, X,
-  Eye, Edit3, MessageSquare, Check, Zap, Filter
+  Eye, Edit3, MessageSquare, Check, Zap, Filter, PhoneCall, AlertCircle, Sparkles, ListOrdered, Phone,
+  Bell, Clock, Calendar, ChevronDown, ChevronUp
 } from 'lucide-react';
 import Link from 'next/link';
 import { hasPermission, refreshCurrentUser, isSuperUser } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
+
+const formatCallOutcome = (outcome: string | null | undefined): string => {
+  if (!outcome) return '';
+  const o = outcome.trim();
+  if (o.includes('Interested') || o.includes('Viewing') || o.includes('Meeting')) return 'Interested';
+  if (o.includes('Callback')) return 'Callback';
+  if (o.includes('Follow-up') || o.includes('Follow up')) return 'Follow-up';
+  if (o.includes('No Answer') || o.includes('Voicemail')) return 'No Answer';
+  if (o.includes('Not Interested')) return 'Not Interested';
+  if (o.includes('Wrong Number') || o.includes('Invalid')) return 'Wrong Number';
+  return o;
+};
+
+const getStageBadgeInfo = (stage: string | null | undefined) => {
+  const s = (stage || 'new').toLowerCase().replace('-', '_');
+  switch (s) {
+    case 'closed_won':
+    case 'won':
+      return { label: 'Won 🏆', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+    case 'negotiation':
+      return { label: 'Negotiation', cls: 'bg-indigo-100 text-indigo-800 border-indigo-300' };
+    case 'meeting_scheduled':
+    case 'viewing_scheduled':
+      return { label: 'Meeting', cls: 'bg-amber-100 text-amber-900 border-amber-300' };
+    case 'qualified':
+      return { label: 'Qualified', cls: 'bg-blue-100 text-blue-800 border-blue-300' };
+    case 'contacted':
+      return { label: 'Contacted', cls: 'bg-cyan-100 text-cyan-800 border-cyan-300' };
+    case 'closed_lost':
+    case 'lost':
+      return { label: 'Lost', cls: 'bg-slate-100 text-slate-700 border-slate-300' };
+    case 'new':
+    case 'new_inquiry':
+    default:
+      return { label: 'New Inquiry', cls: 'bg-slate-100 text-slate-700 border-slate-200' };
+  }
+};
+
+const getOutcomeBadgeClass = (outcome: string | null | undefined) => {
+  if (!outcome) return 'bg-slate-100 text-slate-700 border-slate-200';
+  if (outcome.includes('Interested') || outcome.includes('Viewing')) {
+    return 'bg-emerald-50 text-emerald-800 border-emerald-300';
+  }
+  if (outcome.includes('Callback')) {
+    return 'bg-amber-50 text-amber-800 border-amber-300';
+  }
+  if (outcome.includes('Follow-up') || outcome.includes('Follow up')) {
+    return 'bg-blue-50 text-blue-800 border-blue-300';
+  }
+  if (outcome.includes('No Answer') || outcome.includes('Voicemail')) {
+    return 'bg-rose-50 text-rose-800 border-rose-300';
+  }
+  if (outcome.includes('Not Interested') || outcome.includes('Wrong Number')) {
+    return 'bg-slate-100 text-slate-700 border-slate-300';
+  }
+  return 'bg-amber-50 text-amber-800 border-amber-200';
+};
 
 export default function LeadPoolPage() {
   const [contacts, setContacts] = useState<any[]>([]);
@@ -35,12 +94,172 @@ export default function LeadPoolPage() {
   const [selectedOwner, setSelectedOwner] = useState<string>('auto');
   const [mounted, setMounted] = useState<boolean>(false);
 
+  // Real-time 10-minute follow-up alerts state
+  const [upcomingAlerts, setUpcomingAlerts] = useState<any[]>([]);
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<number[]>([]);
+  const [currentAlertIndex, setCurrentAlertIndex] = useState<number>(0);
+  const [isAlertsExpanded, setIsAlertsExpanded] = useState<boolean>(false);
+  const [alertPosition, setAlertPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDraggingAlert, setIsDraggingAlert] = useState<boolean>(false);
+  const isDraggingRef = useRef<boolean>(false);
+  const dragStartRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number }>({ startX: 0, startY: 0, initialX: 0, initialY: 0 });
+
+  const [bubblePosition, setBubblePosition] = useState<{ x: number; y: number } | null>(null);
+  const bubbleDragMovedRef = useRef<boolean>(false);
+
+  const handleBubbleMouseDown = (e: React.MouseEvent) => {
+    // Only left click triggers drag
+    if (e.button !== 0) return;
+    
+    e.preventDefault();
+    bubbleDragMovedRef.current = false;
+
+    const element = document.getElementById('floating-followup-bubble');
+    const rect = element ? element.getBoundingClientRect() : { left: window.innerWidth - 260, top: window.innerHeight - 80 };
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initialX = rect.left;
+    const initialY = rect.top;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+
+      if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+        bubbleDragMovedRef.current = true;
+      }
+
+      const bubbleWidth = element?.offsetWidth || 230;
+      const bubbleHeight = element?.offsetHeight || 50;
+
+      const newX = Math.max(10, Math.min(window.innerWidth - bubbleWidth - 10, initialX + deltaX));
+      const newY = Math.max(10, Math.min(window.innerHeight - bubbleHeight - 10, initialY + deltaY));
+
+      setBubblePosition({ x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleDragMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+
+    e.preventDefault();
+    isDraggingRef.current = true;
+    setIsDraggingAlert(true);
+
+    const element = document.getElementById('floating-followup-window');
+    const rect = element ? element.getBoundingClientRect() : { left: window.innerWidth - 410, top: window.innerHeight - 500 };
+
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: rect.left,
+      initialY: rect.top,
+    };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const deltaX = moveEvent.clientX - dragStartRef.current.startX;
+      const deltaY = moveEvent.clientY - dragStartRef.current.startY;
+
+      const newX = Math.max(10, Math.min(window.innerWidth - 400, dragStartRef.current.initialX + deltaX));
+      const newY = Math.max(10, Math.min(window.innerHeight - 150, dragStartRef.current.initialY + deltaY));
+
+      setAlertPosition({ x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+      setIsDraggingAlert(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const playAlertSound = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch (e) {}
+  };
+
+  const fetchUpcomingAlerts = async () => {
+    try {
+      const res = await fetchApi('/contacts/upcoming-alerts');
+      if (res && Array.isArray(res.alerts)) {
+        setUpcomingAlerts(res.alerts);
+      }
+    } catch (e) {
+      console.error('Error fetching upcoming follow-up alerts:', e);
+    }
+  };
+
+  const handleSnoozeAlert = async (contactId: number, minutes = 10) => {
+    try {
+      await fetchApi(`/contacts/${contactId}/snooze-followup`, {
+        method: 'POST',
+        body: JSON.stringify({ minutes }),
+      });
+      const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 2500,
+        timerProgressBar: true,
+      });
+      Toast.fire({
+        icon: 'success',
+        title: `Follow-up postponed/snoozed by ${minutes} minutes!`,
+      });
+      fetchUpcomingAlerts();
+      loadData(currentPage);
+    } catch (err: any) {
+      Swal.fire('Error', err.message || 'Failed to snooze follow-up.', 'error');
+    }
+  };
+
+  useEffect(() => {
+    fetchUpcomingAlerts();
+    const alertTimer = setInterval(() => {
+      fetchUpcomingAlerts();
+    }, 30000);
+    return () => clearInterval(alertTimer);
+  }, []);
+
   useEffect(() => {
     setMounted(true);
     const syncUser = () => {
       try {
         const raw = localStorage.getItem('crm_user');
-        if (raw) setCurrentUser(JSON.parse(raw));
+        if (raw) {
+          const u = JSON.parse(raw);
+          setCurrentUser(u);
+          const canViewAll = isSuperUser(u) || (u?.permissions && (u.permissions.includes('*') || u.permissions.includes('leads.view_all')));
+          if (!canViewAll && u?.name) {
+            setSelectedOwner(u.name);
+          }
+        }
       } catch {}
     };
     syncUser();
@@ -77,16 +296,20 @@ export default function LeadPoolPage() {
       .catch(console.error);
   }, []);
 
-  // Top Tabs State: 'all' | 'unassigned' | 'duplicate' | 'deleted'
-  const [activeTab, setActiveTab] = useState<'all' | 'unassigned' | 'duplicate' | 'deleted'>('all');
-  const [tabCounts, setTabCounts] = useState({ all: 0, unassigned: 0, duplicate: 0, deleted: 0 });
+  // Top Tabs State: 'all' | 'new' | 'contacted' | 'overdue' | 'unassigned' | 'duplicate' | 'deleted'
+  const [activeTab, setActiveTab] = useState<'all' | 'new' | 'contacted' | 'overdue' | 'unassigned' | 'duplicate' | 'deleted'>('all');
+  const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, contacted: 0, overdue: 0, unassigned: 0, duplicate: 0, deleted: 0 });
 
-  // Sorting State connected to database
-  const [sortBy, setSortBy] = useState('updated_at');
+  // Sorting State connected to database (default: newest Created Date first)
+  const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // Secondary Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStage, setSelectedStage] = useState<string>('all');
+  const [selectedCallOutcome, setSelectedCallOutcome] = useState<string>('all');
+  const [opportunityModalContact, setOpportunityModalContact] = useState<any | null>(null);
+  const [isOpportunityModalOpen, setIsOpportunityModalOpen] = useState<boolean>(false);
   
   // Date Range Calendar State (filters created_at in database)
   const [dateRange, setDateRange] = useState<DateRangeValue>({
@@ -103,20 +326,24 @@ export default function LeadPoolPage() {
     return Object.values(advancedFilters).filter((v) => v && v.trim() !== '' && v !== 'all').length;
   }, [advancedFilters]);
 
+  const VISIBILITY_STORAGE_KEY = 'leads_column_visibility_v7';
+  const ORDER_STORAGE_KEY = 'leads_column_order_v7';
+
   const DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = {
     name: true,
-    source: true,
-    state: true,
-    opportunity: true,
-    assigned_owner: true,
-    actions: true,
     phone: true,
-    secondary_phone: false,
-    email: true,
-    nationality: true,
+    call_status: true,
+    source: true,
+    assigned_owner: true,
     created_at: true,
+    updated_at: true,
+    actions: true,
+    state: false,
+    secondary_phone: false,
+    email: false,
+    nationality: false,
     sub_source: false,
-    utm_campaign: true,
+    utm_campaign: false,
     opportunity_type: false,
     developer: false,
     community: false,
@@ -138,18 +365,19 @@ export default function LeadPoolPage() {
   const updateColumnVisibility = (newVisibility: Record<string, boolean>) => {
     setColumnVisibility(newVisibility);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('lead_pool_column_visibility', JSON.stringify(newVisibility));
+      localStorage.setItem(VISIBILITY_STORAGE_KEY, JSON.stringify(newVisibility));
     }
   };
 
   const DEFAULT_COLUMN_ORDER = [
     'name',
     'phone',
+    'call_status',
     'source',
-    'created_at',
-    'state',
-    'opportunity',
     'assigned_owner',
+    'created_at',
+    'updated_at',
+    'state',
     'secondary_phone',
     'email',
     'nationality',
@@ -176,7 +404,7 @@ export default function LeadPoolPage() {
   const updateColumnOrder = (newOrder: string[]) => {
     setColumnOrder(newOrder);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('lead_pool_column_order', JSON.stringify(newOrder));
+      localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(newOrder));
     }
   };
 
@@ -184,7 +412,7 @@ export default function LeadPoolPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const validKeys = ALL_COLUMNS.map((c) => c.key);
-      const savedVis = localStorage.getItem('lead_pool_column_visibility');
+      const savedVis = localStorage.getItem(VISIBILITY_STORAGE_KEY);
       if (savedVis) {
         try {
           const parsedVis = JSON.parse(savedVis);
@@ -195,33 +423,36 @@ export default function LeadPoolPage() {
             }
           });
           cleanVis.created_at = true; // By default Created Date must be visible
+          cleanVis.actions = true;
           setColumnVisibility(cleanVis);
         } catch (e) {
           console.error('Error parsing column visibility:', e);
         }
+      } else {
+        setColumnVisibility({ ...DEFAULT_COLUMN_VISIBILITY });
       }
-      const savedOrder = localStorage.getItem('lead_pool_column_order');
+      const savedOrder = localStorage.getItem(ORDER_STORAGE_KEY);
       if (savedOrder) {
         try {
           const parsed = JSON.parse(savedOrder);
           if (Array.isArray(parsed) && parsed.length > 0) {
             let sanitized = parsed.filter((k: string) => validKeys.includes(k) && k !== 'actions');
             if (!sanitized.includes('created_at')) {
-              const srcIdx = sanitized.indexOf('source');
-              if (srcIdx !== -1) {
-                sanitized.splice(srcIdx + 1, 0, 'created_at');
-              } else {
-                sanitized.splice(3, 0, 'created_at');
-              }
+              sanitized.push('created_at');
+            }
+            if (!sanitized.includes('updated_at')) {
+              sanitized.push('updated_at');
             }
             const missing = DEFAULT_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
-            const finalOrder = [...sanitized, ...missing, 'actions'];
+            const finalOrder = Array.from(new Set([...sanitized, ...missing, 'actions']));
             setColumnOrder(finalOrder);
-            localStorage.setItem('lead_pool_column_order', JSON.stringify(finalOrder));
+            localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(finalOrder));
           }
         } catch (e) {
           console.error('Error parsing column order:', e);
         }
+      } else {
+        setColumnOrder([...DEFAULT_COLUMN_ORDER]);
       }
     }
   }, []);
@@ -267,14 +498,16 @@ export default function LeadPoolPage() {
 
   const ALL_COLUMNS = [
     { key: 'name', label: 'Client Profile', category: 'Core' },
-    { key: 'source', label: 'Source Channel', category: 'Core' },
-    { key: 'state', label: 'Lifecycle State', category: 'Core' },
-    { key: 'opportunity', label: 'Opportunity Workspace', category: 'Core' },
     { key: 'phone', label: 'Primary Phone', category: 'Client Details' },
+    { key: 'call_status', label: 'Call Status', category: 'Core' },
+    { key: 'source', label: 'Source', category: 'Core' },
+    { key: 'assigned_owner', label: 'Assigned Owner', category: 'SLA & Owner' },
+    { key: 'created_at', label: 'Created Date', category: 'Client Details' },
+    { key: 'updated_at', label: 'Last Update', category: 'Client Details' },
+    { key: 'state', label: 'Lifecycle State', category: 'Core' },
     { key: 'secondary_phone', label: 'Secondary Phone', category: 'Client Details' },
     { key: 'email', label: 'Email Address', category: 'Client Details' },
     { key: 'nationality', label: 'Nationality', category: 'Client Details' },
-    { key: 'created_at', label: 'Created Date', category: 'Client Details' },
     { key: 'sub_source', label: 'Sub-Source Campaign', category: 'Source Details' },
     { key: 'utm_campaign', label: 'UTM Campaign / URL', category: 'Source Details' },
     { key: 'opportunity_type', label: 'Opportunity Type', category: 'Opportunity Specs' },
@@ -287,7 +520,6 @@ export default function LeadPoolPage() {
     { key: 'budget_max', label: 'Max Budget', category: 'Opportunity Specs' },
     { key: 'cash_or_finance', label: 'Payment Method', category: 'Opportunity Specs' },
     { key: 'key_requirement', label: 'Key Requirement', category: 'Opportunity Specs' },
-    { key: 'assigned_owner', label: 'Assigned Owner', category: 'SLA & Owner' },
     { key: 'next_action', label: 'Next Action', category: 'SLA & Owner' },
     { key: 'next_action_due_at', label: 'Next Action Due', category: 'SLA & Owner' },
     { key: 'actions', label: 'Actions', category: 'Core' },
@@ -370,6 +602,36 @@ export default function LeadPoolPage() {
           </td>
         );
 
+      case 'call_status': {
+        const rawOutcome = ct.latest_call_outcome;
+        const outcome = formatCallOutcome(rawOutcome);
+        if (outcome) {
+          return (
+            <td key={colKey} className="p-3">
+              <span 
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-xs ${getOutcomeBadgeClass(rawOutcome)}`}
+                title={`Last Call Outcome: ${rawOutcome}`}
+              >
+                <Phone className="w-2.5 h-2.5 shrink-0" />
+                <span>{outcome}</span>
+              </span>
+            </td>
+          );
+        }
+
+        return (
+          <td key={colKey} className="p-3">
+            <span 
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-xs border border-emerald-400"
+              title={ct.assigned_to ? `Assigned to ${ct.assigned_to} (Awaiting first call)` : "Fresh Inbound Lead in Pool (Awaiting call)"}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0" />
+              <span>NEW</span>
+            </span>
+          </td>
+        );
+      }
+
       case 'phone':
         return (
           <td key={colKey} className="p-3 font-mono text-slate-700 font-medium">
@@ -433,14 +695,43 @@ export default function LeadPoolPage() {
           </td>
         );
 
-      case 'source':
+      case 'updated_at':
         return (
-          <td key={colKey} className="p-3">
-            <span className="px-2 py-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-[#1A1A1A] text-[11px] font-medium inline-block">
-              {ct.source || 'Direct Inbound'}
-            </span>
+          <td key={colKey} className="p-3 text-slate-600 font-medium text-xs font-mono">
+            {ct.updated_at ? ct.updated_at.replace('T', ' ').substring(0, 16) : '—'}
           </td>
         );
+
+      case 'source': {
+        const rawSource = ct.source || 'Direct Inbound';
+        const match = rawSource.match(/^(.*?)\s*\((.*?)\)$/);
+        const main = match ? match[1].trim() : null;
+        const sub = match ? match[2].trim() : null;
+
+        return (
+          <td key={colKey} className="p-3">
+            <div 
+              className="inline-flex flex-col justify-center px-2.5 py-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md text-left min-w-[130px] max-w-[220px]" 
+              title={rawSource}
+            >
+              {main && sub ? (
+                <>
+                  <span className="text-[11px] font-bold text-[#081428] leading-tight whitespace-nowrap">
+                    {main}
+                  </span>
+                  <span className="text-[10px] text-[#6E6E6E] font-medium leading-tight mt-0.5 whitespace-normal break-words">
+                    ({sub})
+                  </span>
+                </>
+              ) : (
+                <span className="text-[11px] font-medium text-[#1A1A1A] leading-snug line-clamp-2">
+                  {rawSource}
+                </span>
+              )}
+            </div>
+          </td>
+        );
+      }
 
       case 'sub_source':
         return <td key={colKey} className="p-3 text-slate-600">{ct.source?.match(/\((.*?)\)/)?.[1] || '—'}</td>;
@@ -515,37 +806,135 @@ export default function LeadPoolPage() {
           </td>
         );
 
-      case 'opportunity':
+      case 'opportunity': {
+        const opps: any[] = Array.isArray(ct.opportunities) && ct.opportunities.length > 0 
+          ? ct.opportunities 
+          : (ct.active_opportunity ? [ct.active_opportunity] : (opp ? [opp] : []));
+
+        if (opps.length === 0) {
+          return (
+            <td key={colKey} className="p-3">
+              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
+                  No Deal
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpportunityModalContact(ct);
+                    setIsOpportunityModalOpen(true);
+                  }}
+                  className="px-1.5 py-0.5 text-[10px] font-bold text-[#C8A147] hover:text-[#081428] hover:bg-amber-100/50 rounded border border-[#C8A147]/50 flex items-center gap-0.5 transition-colors cursor-pointer shrink-0"
+                  title="Create deal for this lead"
+                >
+                  <Plus className="w-2.5 h-2.5" />
+                  <span>Deal</span>
+                </button>
+              </div>
+            </td>
+          );
+        }
+
+        // Identify primary/active deal: prefer active (non-closed) deals, latest first
+        const activeList = opps.filter((o: any) => o.stage !== 'closed_won' && o.stage !== 'closed_lost');
+        const primary = activeList.length > 0 ? activeList[0] : opps[0];
+        const primaryBadge = getStageBadgeInfo(primary.stage);
+        const hasMultiple = opps.length > 1;
+
         return (
           <td key={colKey} className="p-3">
-            {opp ? (
-              <div className="space-y-0.5">
-                <Link 
-                  href={`/opportunities/${opp.id}`}
+            <div className="space-y-1 max-w-[240px]">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Link
+                  href={`/opportunities/${primary.id}`}
                   onClick={(e) => e.stopPropagation()}
-                  className="font-bold text-[#081428] hover:text-[#C8A147] hover:underline text-xs flex items-center gap-1"
+                  className="font-bold text-[#081428] hover:text-[#C8A147] hover:underline text-xs truncate max-w-[120px]"
+                  title={primary.project || primary.community || primary.title || 'Dubai Property Deal'}
                 >
-                  <span>{opp.buyer_qualification?.community || opp.community || 'Dubai Project'}</span>
-                  <span className="text-[10px] font-normal text-[#6E6E6E]">({opp.bedrooms || '2BR'})</span>
+                  {primary.project || primary.community || primary.title || 'Dubai Deal'}
                 </Link>
-                <div className="text-[10px] text-[#6E6E6E]">
-                  Owner: <span className="font-semibold text-[#081428]">{opp.current_owner_name || ct.assigned_to || 'Unassigned'}</span>
-                </div>
-              </div>
-            ) : ct.assigned_to ? (
-              <div className="space-y-0.5">
-                <span className="text-xs text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                  Assigned (No Deal Yet)
+
+                <span 
+                  className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide border shadow-2xs ${primaryBadge.cls}`}
+                  title={`Stage: ${primaryBadge.label}`}
+                >
+                  {primaryBadge.label}
                 </span>
-                <div className="text-[10px] text-[#6E6E6E]">
-                  Advisor: <span className="font-semibold text-[#081428]">{ct.assigned_to}</span>
-                </div>
+
+                {hasMultiple && (
+                  <div className="relative group/deals inline-block" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-[#081428] border border-[#C8A147] hover:bg-[#C8A147] hover:text-white transition-all cursor-pointer shadow-2xs"
+                      title={`Client has ${opps.length} deals. Hover to view all.`}
+                    >
+                      <Briefcase className="w-2.5 h-2.5 shrink-0" />
+                      <span>+{opps.length - 1} Deals</span>
+                    </button>
+
+                    {/* Popover on hover/focus */}
+                    <div className="hidden group-hover/deals:block absolute left-0 top-full mt-1 w-64 bg-white rounded-lg shadow-xl border border-[#E8E4DC] p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="text-[10px] font-extrabold text-[#081428] uppercase tracking-wider pb-1.5 border-b border-slate-100 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <Briefcase className="w-3 h-3 text-[#C8A147]" />
+                          <span>All Deals ({opps.length})</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpportunityModalContact(ct);
+                            setIsOpportunityModalOpen(true);
+                          }}
+                          className="text-[9px] font-bold text-[#C8A147] hover:underline flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <Plus className="w-2.5 h-2.5" /> New Deal
+                        </button>
+                      </div>
+
+                      <div className="divide-y divide-slate-100 max-h-52 overflow-y-auto mt-1">
+                        {opps.map((o: any) => {
+                          const ob = getStageBadgeInfo(o.stage);
+                          return (
+                            <Link
+                              key={o.id}
+                              href={`/opportunities/${o.id}`}
+                              className="py-1.5 px-1 hover:bg-slate-50 flex items-center justify-between gap-2 rounded transition-colors block text-left"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="font-bold text-[#081428] truncate text-[11px]">
+                                  {o.project || o.community || o.title || 'Dubai Deal'}
+                                </div>
+                                <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                                  {o.budget_min ? (
+                                    <span className="font-mono text-emerald-700 font-semibold">AED {(Number(o.budget_min) / 1000000).toFixed(1)}M</span>
+                                  ) : null}
+                                  <span>·</span>
+                                  <span className="truncate">{o.current_owner_name || ct.assigned_to || 'Unassigned'}</span>
+                                </div>
+                              </div>
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase shrink-0 border ${ob.cls}`}>
+                                {ob.label}
+                              </span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <span className="text-xs text-[#6E6E6E] font-medium">Unassigned Lead</span>
-            )}
+
+              <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                {primary.budget_min ? (
+                  <span className="font-mono text-emerald-700 font-bold">AED {(Number(primary.budget_min) / 1000000).toFixed(1)}M</span>
+                ) : null}
+                <span className="text-slate-300">·</span>
+                <span className="truncate">{primary.current_owner_name || ct.assigned_to || 'Unassigned'}</span>
+              </div>
+            </div>
           </td>
         );
+      }
 
       case 'opportunity_type':
         return <td key={colKey} className="p-3 font-semibold uppercase text-[11px] text-slate-700">{opp?.opportunity_type || ct.inquiry_specs?.opportunity_type || (ct.inquiry_specs ? 'buyer' : '—')}</td>;
@@ -597,11 +986,55 @@ export default function LeadPoolPage() {
           </td>
         );
 
-      case 'next_action':
-        return <td key={colKey} className="p-3 text-slate-600 max-w-[180px] truncate">{opp?.next_action || '—'}</td>;
+      case 'next_action': {
+        const nextActionVal = ct.next_action || opp?.next_action || '—';
+        return <td key={colKey} className="p-3 text-slate-600 max-w-[180px] truncate">{nextActionVal}</td>;
+      }
 
-      case 'next_action_due_at':
-        return <td key={colKey} className="p-3 text-slate-600">{opp?.next_action_due_at ? opp.next_action_due_at.substring(0, 16).replace('T', ' ') : '—'}</td>;
+      case 'next_action_due_at': {
+        const dueAtVal = ct.next_action_due_at || opp?.next_action_due_at;
+        if (!dueAtVal) {
+          return <td key={colKey} className="p-3 text-slate-400 text-xs">—</td>;
+        }
+        const dueTime = new Date(dueAtVal).getTime();
+        const diffMs = dueTime - Date.now();
+        const diffMins = Math.round(diffMs / 60000);
+        const formattedDate = String(dueAtVal).substring(0, 16).replace('T', ' ');
+
+        if (diffMins < 0) {
+          const absMins = Math.abs(diffMins);
+          const timeStr = absMins < 60 ? `${absMins}m` : `${Math.floor(absMins / 60)}h ${absMins % 60}m`;
+          return (
+            <td key={colKey} className="p-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-300 animate-pulse w-fit" title={`Overdue by ${timeStr} (${formattedDate})`}>
+                  <AlertCircle className="w-2.5 h-2.5 text-rose-600 shrink-0" />
+                  <span>Overdue {timeStr}</span>
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">{formattedDate}</span>
+              </div>
+            </td>
+          );
+        } else if (diffMins <= 10) {
+          return (
+            <td key={colKey} className="p-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-300 animate-pulse w-fit" title={`Due in ${diffMins} mins (${formattedDate})`}>
+                  <Zap className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                  <span>Due in {diffMins}m</span>
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">{formattedDate}</span>
+              </div>
+            </td>
+          );
+        }
+
+        return (
+          <td key={colKey} className="p-3">
+            <span className="font-mono text-xs text-slate-700">{formattedDate}</span>
+          </td>
+        );
+      }
 
       case 'actions':
         return (
@@ -629,7 +1062,35 @@ export default function LeadPoolPage() {
               </div>
             ) : (
               <div className="flex items-center justify-end gap-1.5">
-                {/* 1. View Lead Details */}
+                {/* 1. Log Phone Call & Outcome */}
+                <button
+                  onClick={() => handleQuickCall(ct)}
+                  className="p-1.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 rounded border border-emerald-200 transition-colors cursor-pointer"
+                  title="Log Phone Call Outcome & Update SLA"
+                >
+                  <PhoneCall className="w-3.5 h-3.5" />
+                </button>
+
+                {/* 2. Open Deal / Create Opportunity */}
+                {opp && Number(opp.id) > 0 ? (
+                  <Link
+                    href={`/opportunities/${opp.id}`}
+                    className="p-1.5 bg-slate-50 hover:bg-[#081428] hover:text-[#C8A147] text-slate-600 rounded border border-slate-200 transition-colors cursor-pointer inline-flex items-center justify-center"
+                    title="Open Opportunity Deal Pipeline"
+                  >
+                    <Briefcase className="w-3.5 h-3.5 text-[#C8A147]" />
+                  </Link>
+                ) : (
+                  <button
+                    onClick={() => handleOpenOpportunityModalForContact(ct)}
+                    className="p-1.5 bg-[#C8A147]/10 hover:bg-[#C8A147] hover:text-[#081428] text-[#C8A147] rounded border border-[#C8A147]/30 transition-colors cursor-pointer"
+                    title="Create Opportunity from Lead"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                {/* 3. View Lead Details */}
                 <button
                   onClick={() => handleOpenDrawer(ct)}
                   className="p-1.5 bg-slate-50 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-500 rounded border border-slate-200 transition-colors cursor-pointer"
@@ -638,7 +1099,16 @@ export default function LeadPoolPage() {
                   <Eye className="w-3.5 h-3.5" />
                 </button>
 
-                {/* 2. Edit Lead Profile (Full Page) */}
+                {/* 4. WhatsApp Direct Chat */}
+                <Link
+                  href={`/whatsapp?phone=${encodeURIComponent(ct.phone || '')}&name=${encodeURIComponent(ct.name || '')}`}
+                  className="p-1.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-600 rounded border border-emerald-200 transition-colors inline-flex items-center justify-center"
+                  title="Open WhatsApp Chat"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                </Link>
+
+                {/* 5. Edit Lead Profile (Full Page) */}
                 {mounted && hasPermission('leads.edit') && (
                   <Link
                     href={`/leads/${ct.id}/edit`}
@@ -649,16 +1119,7 @@ export default function LeadPoolPage() {
                   </Link>
                 )}
 
-                {/* 3. WhatsApp Direct Chat */}
-                <Link
-                  href={`/whatsapp?phone=${encodeURIComponent(ct.phone || '')}&name=${encodeURIComponent(ct.name || '')}`}
-                  className="p-1.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-600 rounded border border-emerald-200 transition-colors"
-                  title="Open WhatsApp Chat"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                </Link>
-
-                {/* 4. Soft Delete / Trash Lead */}
+                {/* 6. Soft Delete / Trash Lead */}
                 {mounted && hasPermission('leads.delete') && (
                   <button
                     onClick={() => handleSoftDeleteContact(ct.id, ct.name)}
@@ -705,6 +1166,178 @@ export default function LeadPoolPage() {
     setCopiedField(fieldId);
     setTimeout(() => setCopiedField(null), 1500);
   };
+
+  const handleOpenOpportunityModalForContact = (contact: any) => {
+    setSelectedContact(contact);
+    setOpportunityModalContact(contact);
+    setIsOpportunityModalOpen(true);
+  };
+
+  const handleQuickCall = async (contact: any) => {
+    const opp = contact.active_opportunity || contact.opportunities?.[0];
+    const oppId = opp?.id || null;
+    const contactId = contact.id;
+    const contactName = contact.name || 'Client';
+
+    const now = new Date();
+    const nowLocalIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
+    const tomorrowLocalIso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+    const { value: formValues } = await Swal.fire({
+      title: `<div class="text-[#081428] font-bold text-base">Log Call Outcome — ${contactName}</div>`,
+      html: `
+        <div class="space-y-3.5 text-left p-1 text-xs font-['Poppins',sans-serif]">
+          <div class="text-[11px] text-[#6E6E6E] bg-slate-50 p-2.5 rounded border border-[#E8E4DC]">
+            📱 <strong>Agent Note:</strong> Dial client from handset. Log discussion points and outcome below to record activity & update SLA timer.
+          </div>
+          <div>
+            <label class="block text-[#081428] font-bold mb-1">Call Outcome Status</label>
+            <select id="swal-call-outcome" class="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none">
+              <option value="Interested">Interested</option>
+              <option value="Callback">Callback</option>
+              <option value="Follow-up">Follow-up</option>
+              <option value="No Answer">No Answer</option>
+              <option value="Not Interested">Not Interested</option>
+              <option value="Wrong Number">Wrong Number</option>
+            </select>
+          </div>
+          <div id="swal-next-schedule-container">
+            <label class="block text-[#081428] font-bold mb-1">Next Follow-up & SLA Schedule</label>
+            <select id="swal-next-schedule" class="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none">
+              <option value="24h">📅 Tomorrow at Same Time (24h) — [On Track 🟢]</option>
+              <option value="15m">⚡ Quick Callback in 15 mins — [Due Soon 🟡]</option>
+              <option value="2h">⏰ Later Today (in 2 hours) — [On Track 🟢]</option>
+              <option value="5h">⏳ In 5 Hours — [On Track 🟢]</option>
+              <option value="48h">📆 In 2 Days — [On Track 🟢]</option>
+              <option value="custom">🗓️ Pick Specific Date & Time (Calendar)</option>
+              <option value="now">🚨 Immediate Escalation (Now) — [Overdue 🔴]</option>
+            </select>
+            <div id="swal-custom-datetime-container" style="display: none;" class="mt-2.5 p-2.5 bg-amber-50/50 border border-amber-200 rounded text-left">
+              <label class="block text-[#081428] font-semibold text-[11px] mb-1">🗓️ Choose Custom Follow-up Date & Time:</label>
+              <input type="datetime-local" id="swal-custom-datetime" value="${tomorrowLocalIso}" min="${nowLocalIso}" class="w-full p-2 bg-white border border-[#C8A147] rounded text-xs text-[#081428] font-mono focus:ring-2 focus:ring-[#C8A147] focus:outline-none" />
+              <p class="text-[10px] text-slate-500 mt-1">SLA alert will trigger 10 minutes prior to this scheduled time.</p>
+            </div>
+          </div>
+          <div>
+            <label class="block text-[#081428] font-bold mb-1">Call Notes / Discussion Summary</label>
+            <textarea id="swal-call-notes" rows="3" placeholder="Enter key discussion summary, buyer preferences, or next steps..." class="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#081428] focus:ring-2 focus:ring-[#C8A147] focus:outline-none"></textarea>
+          </div>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Save Call Log & Next',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#16A34A',
+      cancelButtonColor: '#6E6E6E',
+      didOpen: (popup) => {
+        const outcomeSelect = popup.querySelector('#swal-call-outcome') as HTMLSelectElement | null;
+        const scheduleContainer = popup.querySelector('#swal-next-schedule-container') as HTMLElement | null;
+        const scheduleSelect = popup.querySelector('#swal-next-schedule') as HTMLSelectElement | null;
+        const customContainer = popup.querySelector('#swal-custom-datetime-container') as HTMLElement | null;
+
+        if (scheduleSelect && customContainer) {
+          const toggleCustom = () => {
+            customContainer.style.display = scheduleSelect.value === 'custom' ? 'block' : 'none';
+          };
+          scheduleSelect.addEventListener('change', toggleCustom);
+          toggleCustom();
+        }
+
+        if (outcomeSelect && scheduleContainer) {
+          const toggleSchedule = () => {
+            const val = outcomeSelect.value || '';
+            const isTerminal = val.includes('Not Interested') || val.includes('Wrong Number');
+            scheduleContainer.style.display = isTerminal ? 'none' : 'block';
+          };
+          outcomeSelect.addEventListener('change', toggleSchedule);
+          toggleSchedule();
+        }
+      },
+      preConfirm: () => {
+        const outcome = (document.getElementById('swal-call-outcome') as HTMLSelectElement)?.value;
+        const schedule = (document.getElementById('swal-next-schedule') as HTMLSelectElement)?.value;
+        const customDateTime = (document.getElementById('swal-custom-datetime') as HTMLInputElement)?.value;
+        const notes = (document.getElementById('swal-call-notes') as HTMLTextAreaElement)?.value;
+        if (!notes || notes.trim() === '') {
+          Swal.showValidationMessage('Please enter call notes / summary before saving.');
+          return false;
+        }
+        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number');
+
+        if (!isTerminal && schedule === 'custom') {
+          if (!customDateTime) {
+            Swal.showValidationMessage('Please select a date and time from the calendar.');
+            return false;
+          }
+          const dt = new Date(customDateTime);
+          if (isNaN(dt.getTime())) {
+            Swal.showValidationMessage('Invalid date & time selected.');
+            return false;
+          }
+        }
+
+        return { outcome, schedule: isTerminal ? null : schedule, customDateTime, notes, isTerminal };
+      }
+    });
+
+    if (formValues) {
+      let dueAt: Date | null = null;
+      if (!formValues.isTerminal && formValues.schedule) {
+        if (formValues.schedule === 'custom' && formValues.customDateTime) {
+          dueAt = new Date(formValues.customDateTime);
+        } else if (formValues.schedule === '15m') {
+          dueAt = new Date(Date.now() + 15 * 60 * 1000);
+        } else if (formValues.schedule === '2h') {
+          dueAt = new Date(Date.now() + 2 * 3600 * 1000);
+        } else if (formValues.schedule === '5h') {
+          dueAt = new Date(Date.now() + 5 * 3600 * 1000);
+        } else if (formValues.schedule === '24h') {
+          dueAt = new Date(Date.now() + 24 * 3600 * 1000);
+        } else if (formValues.schedule === '48h') {
+          dueAt = new Date(Date.now() + 48 * 3600 * 1000);
+        } else if (formValues.schedule === 'now') {
+          dueAt = new Date(Date.now() - 5 * 60 * 1000);
+        }
+      }
+
+      try {
+        await fetchApi('/activities', {
+          method: 'POST',
+          body: JSON.stringify({
+            contact_id: contactId,
+            opportunity_id: oppId,
+            type: 'call',
+            call_outcome: formValues.outcome,
+            description: `Quick Call: ${formValues.outcome} — ${formValues.notes}`,
+            user_name: currentUser?.name || 'Agent',
+            next_action: formValues.isTerminal ? `Closed: ${formValues.outcome}` : `Follow-up: ${formValues.outcome}`,
+            next_action_due_at: dueAt ? dueAt.toISOString() : null,
+          }),
+        });
+
+        const Toast = Swal.mixin({
+          toast: true,
+          position: 'top-end',
+          showConfirmButton: false,
+          timer: 2200,
+          timerProgressBar: true,
+        });
+        Toast.fire({
+          icon: 'success',
+          title: 'Call logged & SLA status updated!',
+        });
+
+        loadData(currentPage);
+        fetchUpcomingAlerts();
+        window.dispatchEvent(new CustomEvent('crm:contact-updated', { detail: { contactId } }));
+      } catch (err: any) {
+        Swal.fire('Error', err.message || 'Failed to save call activity.', 'error');
+      }
+    }
+  };
+
   const loadData = async (
     page = currentPage,
     limit = perPage,
@@ -719,6 +1352,12 @@ export default function LeadPoolPage() {
       let endpoint = `/contacts?page=${page}&per_page=${limit}&tab=${activeTab}&sort_by=${sBy}&sort_order=${sOrder}`;
       if (searchQuery) {
         endpoint += `&search=${encodeURIComponent(searchQuery)}`;
+      }
+      if (selectedStage && selectedStage !== 'all') {
+        endpoint += `&stage=${encodeURIComponent(selectedStage)}`;
+      }
+      if (selectedCallOutcome && selectedCallOutcome !== 'all') {
+        endpoint += `&call_outcome=${encodeURIComponent(selectedCallOutcome)}`;
       }
 
       // Date Range Calendar Filter
@@ -758,9 +1397,12 @@ export default function LeadPoolPage() {
         try { user = JSON.parse(raw); } catch {}
       }
 
+      const canViewAllLeads = isSuperUser(user) || (user?.permissions && (user.permissions.includes('*') || user.permissions.includes('leads.view_all')));
       let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
-      if (targetOwner === 'auto') {
-        targetOwner = isSuperUser(user) ? 'all' : (user?.name || 'all');
+      if (!canViewAllLeads) {
+        targetOwner = user?.name || 'Unassigned';
+      } else if (targetOwner === 'auto') {
+        targetOwner = 'all';
       }
 
       if (targetOwner && targetOwner !== 'all') {
@@ -783,8 +1425,11 @@ export default function LeadPoolPage() {
         setPaginationMeta({ current_page: 1, last_page: 1, from: 0, to: 0, total: 0 });
       }
 
-      setStats(res.stats || { total: 0, available: 0, active: 0, reactivation: 0, duplicates: 0 });
-      setTabCounts(res.tab_counts || { all: 0, unassigned: 0, duplicate: 0, deleted: 0 });
+      setStats(res.stats || { total: 0, available: 0, active: 0, reactivation: 0, duplicates: 0, new_leads: 0, contacted: 0, contacted_today: 0, overdue: 0 });
+      setTabCounts(res.tab_counts || { all: 0, new: 0, contacted: 0, overdue: 0, unassigned: 0, duplicate: 0, deleted: 0 });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('crm_new_leads_count', { detail: res.tab_counts?.new ?? 0 }));
+      }
       setLoading(false);
     } catch (err) {
       console.error('Failed to load contacts:', err);
@@ -1008,12 +1653,19 @@ export default function LeadPoolPage() {
   useEffect(() => {
     setCurrentPage(1);
     loadData(1, perPage, sortBy, sortOrder, selectedOwner);
-  }, [activeTab, searchQuery, selectedOwner, advancedFilters, dateRange]);
+  }, [activeTab, searchQuery, selectedOwner, selectedStage, selectedCallOutcome, advancedFilters, dateRange]);
 
   const handleSort = (columnKey: string) => {
     let newOrder: 'asc' | 'desc' = 'asc';
     if (sortBy === columnKey) {
       newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+      // Default to descending for dates and numbers (most recent or highest first)
+      if (['created_at', 'updated_at', 'budget_min', 'budget_max', 'next_action_due_at'].includes(columnKey)) {
+        newOrder = 'desc';
+      } else {
+        newOrder = 'asc';
+      }
     }
     setSortBy(columnKey);
     setSortOrder(newOrder);
@@ -1035,11 +1687,14 @@ export default function LeadPoolPage() {
 
   const handleResetFilters = () => {
     setActiveTab('all');
-    setSelectedOwner('all');
+    const canViewAll = isSuperUser(currentUser) || hasPermission('leads.view_all');
+    setSelectedOwner(canViewAll ? 'all' : (currentUser?.name || 'Unassigned'));
+    setSelectedStage('all');
+    setSelectedCallOutcome('all');
     setAdvancedFilters(INITIAL_ADVANCED_FILTERS);
     setDateRange({ from: '', to: '', preset: 'all' });
     setSearchQuery('');
-    setSortBy('updated_at');
+    setSortBy('created_at');
     setSortOrder('desc');
     setCurrentPage(1);
   };
@@ -1201,120 +1856,123 @@ export default function LeadPoolPage() {
 
         {/* Main Viewport */}
         <div className="flex-1 pl-56 flex flex-col min-w-0">
-          <Navbar onSearch={(q) => setSearchQuery(q)} />
-          
-          <main className="p-6 space-y-6 w-full">
-            {/* Header Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h1 className="font-heading font-bold text-2xl text-[#081428]">Lead Pool</h1>
-                <p className="text-xs text-[#6E6E6E] mt-0.5">Centralized Lead Bank for all Website, Social Media, Portals & Manual Leads</p>
-              </div>
-
-              <div className="flex items-center gap-2.5 text-xs font-medium min-h-[36px]">
-                {mounted ? (
-                  <>
-                    {hasPermission('leads.import') && (
-                      <button 
-                        onClick={() => setIsImportModalOpen(true)}
-                        className="px-3 py-2 bg-white border border-[#E8E4DC] rounded-md text-[#1A1A1A] hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5 text-[#6E6E6E]" />
-                        <span>Import CSV</span>
-                      </button>
+          <Navbar 
+            teamSelector={
+              mounted && (isSuperUser(currentUser) || hasPermission('leads.view_all')) ? (
+                <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] hover:border-[#C8A147] rounded-md px-2.5 py-1.5 text-xs shadow-2xs transition-colors">
+                  <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                  <select
+                    value={selectedOwner === 'auto' ? 'all' : selectedOwner}
+                    onChange={(e) => {
+                      setSelectedOwner(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer pr-1"
+                  >
+                    <option value="all">👥 All Assigned Leads (Entire Team)</option>
+                    <option value="unassigned">⏳ Unassigned Leads (Pool)</option>
+                    {currentUser?.name && (
+                      <option value={currentUser.name}>⭐ My Leads ({currentUser.name})</option>
                     )}
-                    {hasPermission('leads.export') && (
-                      <button 
-                        onClick={handleExportCsv}
-                        className="px-3 py-2 bg-white border border-[#E8E4DC] rounded-md text-[#1A1A1A] hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                      >
-                        <Upload className="w-3.5 h-3.5 text-[#6E6E6E]" />
-                        <span>Export</span>
-                      </button>
-                    )}
-
-                    {hasPermission('leads.create') && (
-                      <Link
-                        href="/leads/create"
-                        className="px-4 py-2 bg-[#C8A147] hover:bg-[#b48e35] text-white font-bold rounded-md shadow-xs transition-colors flex items-center gap-1.5"
-                      >
-                        <Plus className="w-4 h-4 text-white" />
-                        <span className="text-white">Create Lead</span>
-                      </Link>
-                    )}
-                  </>
-                ) : null}
-              </div>
-            </div>
-
-          {/* 5 KPI Stat Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {[
-              { label: 'Total Contacts', value: Number(stats?.total || 0).toLocaleString(), sub: 'Master Lead Bank', subColor: 'text-emerald-600', icon: Users, iconBg: 'bg-amber-100 text-amber-800' },
-              { label: 'Available', value: Number(stats?.available || 0).toLocaleString(), sub: 'Ready to assign', subColor: 'text-emerald-600', icon: CheckCircle2, iconBg: 'bg-emerald-100 text-emerald-700' },
-              { label: 'Active Opportunities', value: Number(stats?.active || 0).toLocaleString(), sub: 'In-progress deals', subColor: 'text-slate-500', icon: Briefcase, iconBg: 'bg-blue-100 text-blue-700' },
-              { label: 'Reactivation', value: Number(stats?.reactivation || 0).toLocaleString(), sub: 'Eligible', subColor: 'text-slate-500', icon: RotateCcw, iconBg: 'bg-orange-100 text-orange-700' },
-              { label: 'Duplicates', value: Number(stats?.duplicates || 0).toLocaleString(), sub: 'Need review', subColor: 'text-purple-600', icon: Copy, iconBg: 'bg-purple-100 text-purple-700' },
-            ].map((card, idx) => {
-              const Icon = card.icon;
-              return (
-                <div key={idx} className="p-4 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${card.iconBg}`}>
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-heading font-bold text-xl text-[#081428] leading-tight">{card.value}</div>
-                    <div className="text-[11px] font-medium text-[#6E6E6E]">{card.label}</div>
-                    <div className={`text-[10px] font-semibold ${card.subColor}`}>{card.sub}</div>
-                  </div>
+                    {activeAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
+                      <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
+                    ))}
+                  </select>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* MAIN LEAD POOL TOP TAB NAVIGATION (All, Unassigned, Duplicate, Deleted) */}
-          <div className="bg-white border border-[#E8E4DC] rounded-lg px-4 shadow-2xs flex items-center gap-2 overflow-x-auto">
-            {[
-              { id: 'all', label: 'All Leads', count: tabCounts.all, color: 'text-[#081428]' },
-              { id: 'unassigned', label: 'New', count: tabCounts.unassigned, color: 'text-amber-800' },
-              { id: 'duplicate', label: 'Duplicate', count: tabCounts.duplicate, color: 'text-purple-800' },
-              { id: 'deleted', label: 'Deleted', count: tabCounts.deleted, color: 'text-red-800' },
-            ].map((tab) => {
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id as any);
-                    setCurrentPage(1);
-                  }}
-                  className={`px-4 py-3 text-xs font-bold transition-all flex items-center gap-2 border-b-2 cursor-pointer ${
-                    isActive
-                      ? 'border-[#C8A147] text-[#081428]'
-                      : 'border-transparent text-[#6E6E6E] hover:text-[#081428] hover:border-slate-300'
-                  }`}
-                >
-                  <span>{tab.label}</span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-mono transition-colors ${
+              ) : mounted && currentUser?.name ? (
+                <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] rounded-md px-2.5 py-1.5 text-xs text-[#081428] font-bold shadow-2xs">
+                  <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                  <span>⭐ My Assigned Leads ({currentUser.name})</span>
+                </div>
+              ) : null
+            }
+          />
+          
+          {/* MAIN LEADS TOP TAB & ACTIONS BAR (Attached directly to Top Bar, Edge-to-Edge) */}
+          <div className="w-full bg-white border-b border-[#E8E4DC] px-6 lg:px-8 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs shrink-0 py-1 md:py-0">
+            {/* Left: Optimized 5 Tabs */}
+            <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto">
+              {[
+                { id: 'all', label: 'All Leads', count: tabCounts.all },
+                { id: 'new', label: 'New', count: tabCounts.new },
+                { id: 'contacted', label: 'Contacted', count: tabCounts.contacted },
+                { id: 'overdue', label: 'Overdue', count: tabCounts.overdue },
+                { id: 'deleted', label: 'Deleted', count: tabCounts.deleted },
+              ].map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setActiveTab(tab.id as any);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-3 sm:px-4 py-3 text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 border-b-2 whitespace-nowrap cursor-pointer ${
                       isActive
-                        ? 'bg-[#081428] text-[#C8A147]'
-                        : 'bg-slate-100 text-[#6E6E6E] border border-slate-200'
+                        ? 'border-[#C8A147] text-[#081428]'
+                        : 'border-transparent text-[#6E6E6E] hover:text-[#081428] hover:border-slate-300'
                     }`}
                   >
-                    {Number(tab.count || 0).toLocaleString()}
-                  </span>
-                </button>
-              );
-            })}
+                    <span>{tab.label}</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono transition-colors ${
+                        isActive
+                          ? 'bg-[#081428] text-[#C8A147]'
+                          : 'bg-slate-100 text-[#6E6E6E] border border-slate-200'
+                      }`}
+                    >
+                      {Number(tab.count || 0).toLocaleString()}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right: Import CSV, Export & Create Lead Action Buttons */}
+            <div className="flex items-center gap-2 text-xs font-medium shrink-0 py-1.5 md:py-0">
+              {mounted ? (
+                <>
+                  {hasPermission('leads.import') && (
+                    <button 
+                      onClick={() => setIsImportModalOpen(true)}
+                      className="px-3 py-1.5 bg-white border border-[#E8E4DC] rounded-md text-[#1A1A1A] hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer font-medium"
+                    >
+                      <Download className="w-3.5 h-3.5 text-[#6E6E6E]" />
+                      <span>Import CSV</span>
+                    </button>
+                  )}
+                  {hasPermission('leads.export') && (
+                    <button 
+                      onClick={handleExportCsv}
+                      className="px-3 py-1.5 bg-white border border-[#E8E4DC] rounded-md text-[#1A1A1A] hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer font-medium"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-[#6E6E6E]" />
+                      <span>Export</span>
+                    </button>
+                  )}
+
+                  {hasPermission('leads.create') && (
+                    <Link
+                      href="/leads/create"
+                      className="px-3.5 py-1.5 bg-[#C8A147] hover:bg-[#b48e35] text-white font-bold rounded-md shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4 text-white" />
+                      <span className="text-white">Create Lead</span>
+                    </Link>
+                  )}
+                </>
+              ) : null}
+            </div>
           </div>
 
-          {/* Secondary Filter Bar (Search, State Dropdown, Availability, Source & Reset on Left | Columns on Right) */}
+          <main className="p-6 space-y-4 w-full">
+
+          {/* Secondary Filter Bar */}
           <div className="p-3 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
             {/* Left Group: Search Input + Filters + Reset */}
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Live Search Input (Compact) */}
-              <div className="flex items-center gap-2 w-56 sm:w-64 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 focus-within:border-[#C8A147] focus-within:bg-white transition-colors shrink-0">
+              {/* Live Search Input */}
+              <div className="flex items-center gap-2 w-52 sm:w-60 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 focus-within:border-[#C8A147] focus-within:bg-white transition-colors shrink-0">
                 <Search className="w-3.5 h-3.5 text-[#6E6E6E] shrink-0" />
                 <input
                   type="text"
@@ -1333,6 +1991,51 @@ export default function LeadPoolPage() {
                   setCurrentPage(1);
                 }}
               />
+
+              {/* Pipeline Stage Filter Dropdown */}
+              <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
+                <Briefcase className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                <select
+                  value={selectedStage}
+                  onChange={(e) => {
+                    setSelectedStage(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer max-w-[130px] truncate"
+                >
+                  <option value="all">📊 All Stages</option>
+                  <option value="no_deal">⚠️ No Deal Created</option>
+                  <option value="new_inquiry">New Inquiry</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="qualified">Qualified</option>
+                  <option value="meeting_scheduled">Meeting Scheduled</option>
+                  <option value="negotiation">Negotiation</option>
+                  <option value="closed_won">Won</option>
+                  <option value="closed_lost">Lost</option>
+                </select>
+              </div>
+
+              {/* Call Outcome Filter Dropdown */}
+              <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
+                <PhoneCall className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                <select
+                  value={selectedCallOutcome}
+                  onChange={(e) => {
+                    setSelectedCallOutcome(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer max-w-[140px] truncate"
+                >
+                  <option value="all">📞 All Outcomes</option>
+                  <option value="uncontacted">🟢 New / Uncontacted</option>
+                  <option value="Interested">Interested</option>
+                  <option value="Callback">Callback</option>
+                  <option value="Follow-up">Follow-up</option>
+                  <option value="No Answer">No Answer</option>
+                  <option value="Not Interested">Not Interested</option>
+                  <option value="Wrong Number">Wrong Number</option>
+                </select>
+              </div>
 
               {/* Advanced Filter Button */}
               <button
@@ -1354,35 +2057,6 @@ export default function LeadPoolPage() {
                 )}
               </button>
 
-              {/* Agent / Scope Selector */}
-              <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
-                <UserCheck className="w-3.5 h-3.5 text-[#C8A147]" />
-                <select
-                  value={selectedOwner === 'auto' ? (isSuperUser(currentUser) ? 'all' : (currentUser?.name || 'auto')) : selectedOwner}
-                  onChange={(e) => {
-                    setSelectedOwner(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
-                >
-                  {isSuperUser(currentUser) ? (
-                    <>
-                      <option value="all">👥 All Assigned Leads (Entire Team)</option>
-                      {currentUser?.name && (
-                        <option value={currentUser.name}>⭐ My Leads ({currentUser.name})</option>
-                      )}
-                      {activeAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
-                        <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <option value={currentUser?.name || 'auto'}>🎯 My Assigned Leads ({currentUser?.name || 'Assigned to Me'})</option>
-                      <option value="all">👥 View Entire Lead Pool</option>
-                    </>
-                  )}
-                </select>
-              </div>
 
               {/* Reset Button */}
               <button 
@@ -1702,6 +2376,22 @@ export default function LeadPoolPage() {
         contact={selectedContact}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
+        onCreateOpportunity={(ct) => {
+          setIsDrawerOpen(false);
+          handleOpenOpportunityModalForContact(ct);
+        }}
+        onQuickCall={async (ct) => {
+          await handleQuickCall(ct);
+          if (ct?.id) {
+            try {
+              const updated = await fetchApi(`/contacts/${ct.id}`);
+              setSelectedContact(updated);
+            } catch (e) {}
+          }
+        }}
+        onContactUpdated={() => {
+          loadData(currentPage);
+        }}
       />
 
       {/* Import CSV Leads Modal */}
@@ -1727,6 +2417,283 @@ export default function LeadPoolPage() {
         }}
         activeCount={activeAdvancedCount}
       />
+
+      {/* Contextual Create Opportunity Modal */}
+      <CreateOpportunityModal
+        isOpen={isOpportunityModalOpen}
+        onClose={() => {
+          setIsOpportunityModalOpen(false);
+          setOpportunityModalContact(null);
+        }}
+        contact={opportunityModalContact}
+        onSuccess={() => {
+          setIsOpportunityModalOpen(false);
+          setOpportunityModalContact(null);
+          loadData(currentPage);
+        }}
+      />
+
+      {/* FLOATING CHAT-STYLE 10-MINUTE FOLLOW-UP & SLA ALERT WIDGET */}
+      {(() => {
+        const activeAlerts = upcomingAlerts.filter((a) => !dismissedAlertIds.includes(a.id));
+        if (activeAlerts.length === 0) return null;
+
+        const hasOverdue = activeAlerts.some((a) => a.is_overdue);
+
+        // 1. Collapsed State: Sleek Floating Chat Badge / Bubble (Moveable anywhere)
+        if (!isAlertsExpanded) {
+          return (
+            <div
+              id="floating-followup-bubble"
+              style={
+                bubblePosition
+                  ? { left: `${bubblePosition.x}px`, top: `${bubblePosition.y}px`, bottom: 'auto', right: 'auto' }
+                  : {}
+              }
+              className={`fixed z-50 animate-in slide-in-from-bottom-3 duration-200 select-none ${
+                !bubblePosition ? 'bottom-6 right-6' : ''
+              }`}
+            >
+              <button
+                type="button"
+                onMouseDown={handleBubbleMouseDown}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setBubblePosition(null);
+                }}
+                onClick={() => {
+                  if (!bubbleDragMovedRef.current) {
+                    setIsAlertsExpanded(true);
+                  }
+                }}
+                className={`group px-4 py-3 rounded-full shadow-2xl flex items-center gap-3 transition-all transform hover:scale-105 cursor-grab active:cursor-grabbing border backdrop-blur-md select-none ${
+                  hasOverdue
+                    ? 'bg-[#180b0b] border-rose-500 text-white ring-2 ring-rose-500/40 shadow-rose-950/50'
+                    : 'bg-[#081428] border-[#C8A147] text-white ring-2 ring-[#C8A147]/40 shadow-slate-950/50'
+                }`}
+                title="Drag to move anywhere · Double click to reset · Click to view follow-ups"
+              >
+                {/* Pulsing indicator */}
+                <div className="relative flex items-center justify-center pointer-events-none">
+                  <span className={`animate-ping absolute inline-flex h-3.5 w-3.5 rounded-full opacity-75 ${
+                    hasOverdue ? 'bg-rose-500' : 'bg-amber-400'
+                  }`} />
+                  <div className={`w-3 h-3 rounded-full ${
+                    hasOverdue ? 'bg-rose-500' : 'bg-[#C8A147]'
+                  }`} />
+                </div>
+
+                <div className="flex items-center gap-2 pointer-events-none">
+                  <PhoneCall className={`w-4 h-4 ${hasOverdue ? 'text-rose-400' : 'text-[#C8A147]'}`} />
+                  <span className="text-xs font-bold font-heading tracking-wide">
+                    {hasOverdue ? 'Follow-ups Overdue' : 'Follow-ups Due'}
+                  </span>
+                </div>
+
+                {/* Count Badge */}
+                <span className={`px-2 py-0.5 rounded-full text-xs font-mono font-extrabold shadow-xs pointer-events-none ${
+                  hasOverdue ? 'bg-rose-500 text-white' : 'bg-[#C8A147] text-[#081428]'
+                }`}>
+                  {activeAlerts.length}
+                </span>
+
+                <ChevronUp className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors ml-0.5 pointer-events-none" />
+              </button>
+            </div>
+          );
+        }
+
+        // 2. Expanded State: Floating Chat / Task Drawer Window (Moveable & Scrollable)
+        return (
+          <div 
+            id="floating-followup-window"
+            style={
+              alertPosition
+                ? { left: `${alertPosition.x}px`, top: `${alertPosition.y}px`, bottom: 'auto', right: 'auto' }
+                : {}
+            }
+            className={`fixed z-50 w-96 max-w-[calc(100vw-2rem)] flex flex-col bg-[#081428] border border-[#C8A147]/80 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-200 select-none ${
+              !alertPosition ? 'bottom-6 right-6' : ''
+            }`}
+          >
+            {/* Window Draggable Header */}
+            <div 
+              onMouseDown={handleDragMouseDown}
+              onDoubleClick={() => setAlertPosition(null)}
+              className={`p-3 flex items-center justify-between border-b border-white/10 select-none transition-colors cursor-grab active:cursor-grabbing ${
+                hasOverdue ? 'bg-[#180b0b]' : 'bg-[#0b1b36]'
+              }`}
+              title="Click & drag to move window anywhere | Double click to reset to bottom-right"
+            >
+              <div className="flex items-center gap-2">
+                {/* Drag Handle Icon */}
+                <div className="flex items-center justify-center p-1 rounded hover:bg-white/10 text-[#C8A147]/70 hover:text-[#C8A147] cursor-grab active:cursor-grabbing shrink-0" title="Drag to move">
+                  <GripVertical className="w-4 h-4" />
+                </div>
+
+                <div className="relative flex items-center justify-center">
+                  <span className={`animate-ping absolute inline-flex h-3 w-3 rounded-full opacity-75 ${
+                    hasOverdue ? 'bg-rose-500' : 'bg-amber-400'
+                  }`} />
+                  <div className={`w-2.5 h-2.5 rounded-full ${
+                    hasOverdue ? 'bg-rose-500' : 'bg-[#C8A147]'
+                  }`} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-[#C8A147] flex items-center gap-1.5">
+                    <Bell className="w-3.5 h-3.5" />
+                    <span>Follow-up Tasks ({activeAlerts.length})</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Drag header to move · {activeAlerts.length} to contact
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                {alertPosition && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAlertPosition(null);
+                    }}
+                    className="p-1 rounded-md hover:bg-white/10 text-slate-400 hover:text-amber-300 text-[10px] font-mono transition-colors cursor-pointer"
+                    title="Reset to bottom-right corner"
+                  >
+                    Reset
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsAlertsExpanded(false);
+                  }}
+                  className="p-1 rounded-md hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title="Minimize / Collapse"
+                >
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable List of Due Contacts with explicit vertical scrollbar */}
+            <div className="overflow-y-auto max-h-[380px] p-3 space-y-2.5 divide-y divide-white/5 [scrollbar-width:thin] [scrollbar-color:#C8A147_rgba(255,255,255,0.08)]">
+              {activeAlerts.map((alertItem) => (
+                <div key={alertItem.id} className="pt-2.5 first:pt-0 space-y-2">
+                  {/* Client Name & Urgency Status */}
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetCt = alertItem.contact || { id: alertItem.contact_id, name: alertItem.client_name, phone: alertItem.phone };
+                        handleOpenDrawer(targetCt);
+                      }}
+                      className="font-bold text-sm text-white hover:text-[#C8A147] transition-colors truncate text-left cursor-pointer flex items-center gap-1"
+                      title="Open Lead Drawer"
+                    >
+                      <span className="truncate">{alertItem.client_name}</span>
+                      <Eye className="w-3 h-3 text-slate-400 shrink-0" />
+                    </button>
+
+                    <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold shrink-0 ${
+                      alertItem.is_overdue
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    }`}>
+                      {alertItem.status_label}
+                    </span>
+                  </div>
+
+                  {/* Phone number */}
+                  <div className="flex items-center justify-between text-xs text-slate-300 font-mono">
+                    <div className="flex items-center gap-1.5">
+                      <Phone className="w-3 h-3 text-[#C8A147] shrink-0" />
+                      <span>{alertItem.phone || 'No phone'}</span>
+                      {alertItem.phone && (
+                        <button
+                          type="button"
+                          onClick={(e) => copyToClipboard(alertItem.phone, `alert-phone-${alertItem.id}`, e)}
+                          className="text-slate-400 hover:text-[#C8A147] cursor-pointer"
+                          title="Copy Phone"
+                        >
+                          {copiedField === `alert-phone-${alertItem.id}` ? (
+                            <Check className="w-3 h-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+
+                    <span className="text-[10px] text-slate-400 font-sans">
+                      Owner: {alertItem.assigned_owner || 'Unassigned'}
+                    </span>
+                  </div>
+
+                  {/* Follow-up Note & Scheduled time */}
+                  <div className="text-[11px] text-slate-300 bg-black/40 p-2 rounded-md border border-white/5 space-y-0.5">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                      <span>Scheduled Follow-up:</span>
+                      <span className="text-amber-300 font-mono">
+                        {new Date(alertItem.next_action_due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <div className="text-amber-200 text-xs font-medium truncate">
+                      {alertItem.next_action}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetCt = alertItem.contact || { id: alertItem.contact_id, name: alertItem.client_name, phone: alertItem.phone };
+                        handleQuickCall(targetCt);
+                      }}
+                      className="flex-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                    >
+                      <PhoneCall className="w-3 h-3" />
+                      <span>Call Now</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSnoozeAlert(alertItem.contact_id, 10)}
+                      className="py-1.5 px-2.5 bg-white/10 hover:bg-white/20 text-amber-300 font-medium text-xs rounded border border-amber-500/30 flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                      title="Postpone / Snooze follow-up by 10 minutes"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Snooze 10m</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDismissedAlertIds((prev) => [...prev, alertItem.id])}
+                      className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-white/5 rounded transition-colors cursor-pointer"
+                      title="Dismiss from list"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer Summary */}
+            <div className="p-2.5 bg-black/50 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400">
+              <span>{activeAlerts.length} total pending {activeAlerts.length === 1 ? 'contact' : 'contacts'}</span>
+              <button
+                type="button"
+                onClick={() => setIsAlertsExpanded(false)}
+                className="text-xs font-semibold text-[#C8A147] hover:underline cursor-pointer"
+              >
+                Minimize Window
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

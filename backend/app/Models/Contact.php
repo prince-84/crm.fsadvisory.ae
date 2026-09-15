@@ -15,6 +15,7 @@ class Contact extends Model
     protected $casts = [
         'last_activity_at' => 'datetime',
         'assigned_at' => 'datetime',
+        'next_action_due_at' => 'datetime',
         'is_imported' => 'boolean',
     ];
 
@@ -22,7 +23,56 @@ class Contact extends Model
         'campaign_url',
         'inquiry_specs',
         'sub_source',
+        'is_contacted',
+        'latest_call_outcome',
     ];
+
+    public function getLatestCallOutcomeAttribute()
+    {
+        if ($this->relationLoaded('activities')) {
+            $call = $this->activities->first(function ($act) {
+                return $act->type === 'call' || !empty($act->call_outcome);
+            });
+            if ($call && !empty($call->call_outcome)) return $call->call_outcome;
+        }
+
+        if ($this->relationLoaded('opportunities')) {
+            foreach ($this->opportunities as $opp) {
+                if ($opp->relationLoaded('activities')) {
+                    $call = $opp->activities->first(function ($act) {
+                        return $act->type === 'call' || !empty($act->call_outcome);
+                    });
+                    if ($call && !empty($call->call_outcome)) return $call->call_outcome;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public function getIsContactedAttribute()
+    {
+        if ($this->relationLoaded('activities')) {
+            $hasCall = $this->activities->contains(function ($act) {
+                return $act->type === 'call' || !empty($act->call_outcome);
+            });
+            if ($hasCall) return true;
+        }
+
+        if ($this->relationLoaded('opportunities')) {
+            foreach ($this->opportunities as $opp) {
+                if ($opp->relationLoaded('activities')) {
+                    if ($opp->activities->contains(function ($act) {
+                        return $act->type === 'call' || !empty($act->call_outcome);
+                    })) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
 
     public function getCampaignUrlAttribute()
     {

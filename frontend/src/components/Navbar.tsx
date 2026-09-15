@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Swal from 'sweetalert2';
 import {
-  Search,
   Clock,
   CheckCircle2,
   ChevronDown,
@@ -18,12 +17,88 @@ import {
   Crown
 } from 'lucide-react';
 
+const ROUTE_HEADINGS: Record<string, { title: string; subtitle: string }> = {
+  '/': {
+    title: 'Leads',
+    subtitle: 'Unified Leads Hub • Real-time Inbound, Cold Pool & Assigned Pipeline',
+  },
+  '/queue': {
+    title: 'My Queue & Action Center',
+    subtitle: 'Priority Calling & Telesales Follow-up Execution Desk',
+  },
+  '/owner-data': {
+    title: 'Owner Data Pool',
+    subtitle: 'Dubai Property Title Deed Registry & Owner Contacts',
+  },
+  '/opportunities': {
+    title: 'Opportunities',
+    subtitle: 'Sales Deals Pipeline & Revenue Management Workspace',
+  },
+  '/pipeline': {
+    title: 'Pipeline Kanban',
+    subtitle: 'Visual Opportunity Deal Stages & Stage Progression',
+  },
+  '/call-activity': {
+    title: 'Call Activity',
+    subtitle: '3CX Telephony PBX Logs & Call History',
+  },
+  '/calendar': {
+    title: 'Appointments & Calendar',
+    subtitle: 'Client Meetings, Site Viewings & Schedule',
+  },
+  '/appointments': {
+    title: 'Appointments & Calendar',
+    subtitle: 'Client Meetings, Site Viewings & Schedule',
+  },
+  '/recordings': {
+    title: 'Audio Recordings',
+    subtitle: '3CX PBX Customer Call Audio Archive & QA',
+  },
+  '/whatsapp': {
+    title: 'WhatsApp Web',
+    subtitle: 'Multi-Device Direct Client Messaging Suite',
+  },
+  '/users': {
+    title: 'Users & Access Control',
+    subtitle: 'Team Management & Granular Permission Matrix',
+  },
+  '/settings': {
+    title: 'System Settings',
+    subtitle: 'Configuration, Lead Auto-Distribution & SMTP Setup',
+  },
+  '/leads/create': {
+    title: 'Create Lead',
+    subtitle: 'Manually Add Inbound Client Profile',
+  },
+  '/opportunities/create': {
+    title: 'Create Opportunity',
+    subtitle: 'Qualify & Launch New Deal Workspace',
+  },
+  '/team-performance': {
+    title: 'Team Performance',
+    subtitle: 'Sales Advisor Conversion & Activity Leaderboard',
+  },
+  '/reports': {
+    title: 'Reports & Analytics',
+    subtitle: 'Performance, Pipeline & Deal Conversion Reports',
+  },
+  '/overview': {
+    title: 'Executive Overview',
+    subtitle: 'Real Estate Advisory Analytics & Key Metrics',
+  },
+};
+
 interface NavbarProps {
+  title?: string;
+  subtitle?: string;
   onSearch?: (query: string) => void;
+  actions?: React.ReactNode;
+  teamSelector?: React.ReactNode;
 }
 
-export default function Navbar({ onSearch }: NavbarProps) {
+export default function Navbar({ title, subtitle, onSearch, actions, teamSelector }: NavbarProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
@@ -33,6 +108,32 @@ export default function Navbar({ onSearch }: NavbarProps) {
     role: string;
     initials: string;
   } | null>(null);
+
+  // Determine dynamic heading
+  let currentTitle = title;
+  let currentSubtitle = subtitle;
+  if (!currentTitle) {
+    if (pathname && ROUTE_HEADINGS[pathname]) {
+      currentTitle = ROUTE_HEADINGS[pathname].title;
+      currentSubtitle = ROUTE_HEADINGS[pathname].subtitle;
+    } else if (pathname?.startsWith('/opportunities/')) {
+      currentTitle = 'Opportunity Workspace';
+      currentSubtitle = 'Deal Profile, Property Specs & Qualification';
+    } else if (pathname?.startsWith('/leads/') && pathname?.includes('/edit')) {
+      currentTitle = 'Edit Lead Profile';
+      currentSubtitle = 'Update Client Record';
+    } else if (pathname?.startsWith('/leads/')) {
+      currentTitle = 'Lead Profile';
+      currentSubtitle = 'Client Master Profile & Activities';
+    } else if (pathname) {
+      const clean = pathname.replace(/^\//, '').split('/')[0];
+      currentTitle = clean.charAt(0).toUpperCase() + clean.slice(1).replace(/-/g, ' ');
+      currentSubtitle = 'FS Advisory CRM';
+    } else {
+      currentTitle = 'Leads';
+      currentSubtitle = 'Unified Leads Hub';
+    }
+  }
 
   useEffect(() => {
     setMounted(true);
@@ -107,27 +208,26 @@ export default function Navbar({ onSearch }: NavbarProps) {
 
   return (
     <header className="h-16 bg-white border-b border-[#E8E2D9] px-6 lg:px-8 flex items-center justify-between sticky top-0 z-20 shadow-2xs">
-      {/* 1. Global Search */}
-      <div className="relative w-72 sm:w-96">
-        <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7A7A7A]" />
-        <input
-          type="text"
-          placeholder="Search Lead Bank (Name, Phone, Email)..."
-          onChange={(e) => onSearch && onSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 bg-[#FAF8F4] border border-[#E8E2D9] rounded-md text-xs text-[#2C2C2C] placeholder-[#7A7A7A] focus:outline-none focus:ring-1 focus:ring-[#C9A84C] focus:border-[#C9A84C] transition-all"
-        />
+      {/* 1. Page Main Heading (Replaces Search Input in Top Bar) */}
+      <div className="flex flex-col justify-center min-w-0 pr-4">
+        <h1 className="font-heading font-bold text-lg sm:text-xl text-[#081428] tracking-tight leading-tight truncate">
+          {currentTitle}
+        </h1>
+        {currentSubtitle && (
+          <p className="text-[11px] text-[#6E6E6E] font-medium leading-tight truncate mt-0.5 hidden sm:block">
+            {currentSubtitle}
+          </p>
+        )}
       </div>
 
       {/* 2. Header Info & Right Profile */}
-      <div className="flex items-center gap-5">
-        {/* SLA Status Indicator */}
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-[#FAF8F4] border border-[#E8E2D9] rounded-md text-xs">
-          <Clock className="w-3.5 h-3.5 text-[#C9A84C]" />
-          <span className="text-[#2C2C2C] font-medium">SLA Engine:</span>
-          <span className="font-semibold text-emerald-700 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Active (Auto-Escalation)
-          </span>
-        </div>
+      <div className="flex items-center gap-3 sm:gap-5">
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
+
+        {/* Team / Advisor Selector (Replaced SLA Engine) */}
+        {teamSelector ? (
+          <div className="flex items-center">{teamSelector}</div>
+        ) : null}
 
         {/* 3. User Profile Widget with Dropdown on the Right Side End */}
         <div className="relative" ref={dropdownRef}>

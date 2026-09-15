@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\LeadDistributionController;
 use App\Http\Controllers\Api\EmailSettingsController;
+use App\Http\Controllers\Api\AppointmentController;
 
 // Public Auth routes
 Route::post('/auth/login', [AuthController::class, 'login']);
@@ -57,6 +58,7 @@ Route::middleware(['crm.auth'])->group(function () {
 
     // Lead Pool Contacts CRUD & Assignment
     Route::get('/contacts', [ContactController::class, 'index']);
+    Route::get('/contacts/upcoming-alerts', [ContactController::class, 'upcomingAlerts']);
     Route::post('/contacts', [ContactController::class, 'store']);
     Route::post('/contacts/bulk-assign', [ContactController::class, 'bulkAssign']);
     Route::post('/contacts/bulk-delete', [ContactController::class, 'bulkDelete']);
@@ -66,6 +68,8 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::post('/contacts/import-execute', [ImportController::class, 'execute']);
     Route::get('/contacts/{id}', [ContactController::class, 'show']);
     Route::put('/contacts/{id}', [ContactController::class, 'update']);
+    Route::post('/contacts/{id}/reassign', [ContactController::class, 'reassign']);
+    Route::post('/contacts/{id}/snooze-followup', [ContactController::class, 'snoozeFollowUp']);
     Route::delete('/contacts/{id}', [ContactController::class, 'destroy']);
     Route::post('/contacts/{id}/restore', [ContactController::class, 'restore']);
     Route::delete('/contacts/{id}/force', [ContactController::class, 'forceDelete']);
@@ -92,6 +96,14 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::post('/opportunities/{id}/release-to-bank', [OpportunityController::class, 'releaseToBank']);
     Route::post('/opportunities/{id}/send-email', [OpportunityController::class, 'sendEmail']);
 
+    // Appointments & Viewings
+    Route::get('/appointments', [AppointmentController::class, 'index']);
+    Route::post('/appointments', [AppointmentController::class, 'store']);
+    Route::get('/appointments/{id}', [AppointmentController::class, 'show']);
+    Route::put('/appointments/{id}', [AppointmentController::class, 'update']);
+    Route::patch('/appointments/{id}/status', [AppointmentController::class, 'updateStatus']);
+    Route::delete('/appointments/{id}', [AppointmentController::class, 'destroy']);
+
     // Activity Logs
     Route::get('/activities', [ActivityController::class, 'index']);
     Route::post('/activities', [ActivityController::class, 'store']);
@@ -101,6 +113,8 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::delete('/recordings/clear-all', [CallRecordingController::class, 'clearAll']);
     Route::post('/recordings/clear-all', [CallRecordingController::class, 'clearAll']);
     Route::post('/recordings/sync-3cx', [CallRecordingController::class, 'sync3cx']);
+    Route::post('/recordings/scan-server', [CallRecordingController::class, 'scanServerRecordings']);
+    Route::post('/recordings/reseed', [CallRecordingController::class, 'reseedRecordings']);
     Route::post('/recordings/{id}/attach-audio', [CallRecordingController::class, 'attachAudio']);
     Route::post('/3cx/import-csv', [CallRecordingController::class, 'import3cxCsv']);
 

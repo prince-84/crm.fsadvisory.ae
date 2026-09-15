@@ -1230,6 +1230,488 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - PHP syntax verified with 0 errors (`php -l`).
     - Full TypeScript type-safety verified with 0 compilation errors (`npx tsc --noEmit` exit code 0).
 
+- **111 — Unified Leads Workbench Architecture, My Queue Calling & Filtering Consolidation, and Navigation Modernization (`Sidebar.tsx`, `frontend/src/app/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Single Unified "Leads" Command Center**:
+    - Rebranded and transformed the master contacts page (`/`) from "Lead Pool" to **"Leads"** (`Unified Leads Hub • Real-time Inbound, Cold Pool & Assigned Pipeline`), unifying all company leads, external portal/ad webhooks, batch CSV imports, and agent queues into a single command center.
+    - Updated Sidebar navigation ([`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx)) under **SALES**: renamed "Lead Pool" to **"Leads"** (`icon: Users`), removed redundant "New Leads", and retained **"My Queue"** for comparison and verification.
+  - **4 Interactive SLA & Action Metric Cards from My Queue**:
+    - Replaced generic stat cards with My Queue's interactive, clickable SLA & calling metric cards:
+      1. **All Active Leads**: Total active leads bank.
+      2. **🟢 New / Uncontacted**: Fresh, untouched leads with zero logged calls.
+      3. **✅ Total Contacted**: Complete contacted leads count with dynamic `{X} Calls Logged Today` subtitle.
+      4. **🚨 Overdue SLA**: High-priority overdue callback items.
+    - Clicking any card triggers immediate client-side filtering across the leads table.
+  - **Comprehensive Sub-Tab Navigation**:
+    - 7 distinct sub-tabs with real-time dynamic count badges: *All Leads*, *🟢 New / Uncontacted*, *Contacted Leads ✅*, *Overdue / Breached 🚨*, *Unassigned (Pool)*, *Duplicate*, and *Deleted Archive*.
+  - **Integrated Filter Spectrum**:
+    - **Pipeline Stage Filter**: Covers *All Stages*, *No Deal Created*, and all canonical stages (*New Inquiry*, *Contacted*, *Qualified*, *Meeting Scheduled*, *Negotiation*, *Won*, *Lost*).
+    - **Call Outcome Filter**: Covers *All Outcomes*, *New / Uncontacted*, and call outcomes (*Interested*, *Callback Requested*, *Follow-up Required*, *No Answer*, *Not Interested*, *Wrong Number*).
+    - **Role-Based Advisor / Team Selector**: Super Admins and Managers can inspect the entire team or filter by specific advisor; regular agents default to their own assigned leads.
+    - **Date Range Picker**, **Advanced Filters Modal**, and **Dynamic Columns Customization**.
+  - **Table Row Actions: Quick Call Logger & Instant Deal Creation**:
+    - **Quick Call Logger Modal (`handleQuickCall`)**: Embedded SweetAlert2 call logger directly on every lead row, recording Call Outcome, Next Follow-up & SLA Schedule (Tomorrow 24h, 15m, 2h, 48h, Immediate escalation), and discussion notes, updating contact SLA status and `/activities` in real time.
+    - **Instant Opportunity Creation (`CreateOpportunityModal`)**: Embedded directly on the Leads page ([`frontend/src/app/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)). For contacts with existing deals, clicking the briefcase icon opens the Opportunity Workspace; for un-converted contacts, clicking `+` opens `CreateOpportunityModal` pre-populated with client details to qualify active deals in 1 click without leaving the page.
+    - Preserved 1-click **WhatsApp Direct Chat**, **View Summary Drawer**, **Edit Profile**, and **Soft Delete**.
+  - **Backend API Query & Enriched Metrics ([`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php))**:
+    - Enhanced `/api/contacts` with `call_outcome` and `stage` query filters.
+    - Eager-loads call activities and calculates enriched metrics (`new_leads`, `contacted`, `contacted_today`, `overdue`) across both `stats` and `tab_counts`.
+  - **Live External Inbound vs Uploaded Batch Prioritization Engine**:
+    - **Top-Level Ordering Rule**: In `/api/contacts`, query ordering enforces `$query->orderByRaw('COALESCE(contacts.is_imported, 0) ASC');` as the primary sort, followed by `$query->orderBy('contacts.created_at', 'desc');` and `contacts.id desc`.
+    - **Prioritized Live Delivery**: All real-time inbound leads arriving from portals (Property Finder, Bayut, Dubizzle), Facebook Ads, Google Ads, website inquiry webhooks, and manual direct entries (`is_imported = 0`) are guaranteed to appear at the very top of the table.
+    - **Secondary Uploaded Batch Stream**: Bulk imported CSV/Excel data (`is_imported = 1`) appears directly beneath live external leads, ensuring agents never miss a fresh incoming inquiry while still having immediate access to bulk upload datasets.
+    - **Visual Indicators & Streamlined Default Columns in Leads Table**:
+      - **Client Profile Column**: Real-time inbound leads (`is_imported = 0`) feature an animated blinking **`NEW`** badge with a glowing ping radar beacon (`animate-pulse` + `animate-ping`), creating an unmissable visual cue for new incoming leads.
+      - **Default Visible Columns**: Configured strictly to the 6 essential fields (+ mandatory Actions column):
+        1. **Client Profile** (`name`)
+        2. **Primary Phone** (`phone`)
+        3. **Source** (`source`)
+        4. **Assigned Owner** (`assigned_owner`)
+        5. **Created Date** (`created_at`)
+        6. **Last Update** (`updated_at`)
+        7. **Actions** (`actions` — permanent row actions: Quick Call, Instant Deal, WhatsApp, Drawer, Edit, Delete)
+      - **Source Column 2-Line Layout**: Formats the channel and sub-source/campaign onto 2 distinct lines (e.g. Line 1: **Facebook Ads**, Line 2: `(FS - More Volume)`), eliminating truncation dots (`...`) and ensuring complete legibility for campaigns and portals.
+      - **Clean Minimal Layout**: Removed top KPI cards from the Leads page to eliminate visual noise, letting the dynamic Top Sub-Tabs (with live count badges) and secondary filters drive the table directly.
+      - **Dynamic Top Bar Header Integration**: Replaced the global search input in [`Navbar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Navbar.tsx) with the dynamic page heading and subtitle across all CRM routes (e.g. Leads, My Queue, Owner Data, Opportunities, etc.), eliminating duplicate in-page headers and creating a modern, unified top bar navigation.
+      - **Team / Advisor Scope Dropdown in Top Bar (Super Admin Only)**: Replaced the static SLA Engine badge in the top navbar with the Team/Advisor Selector dropdown (`All Assigned Leads (Entire Team)` / `My Leads` / individual advisors). Strictly restricted to **Super Admins** via `isSuperUser(currentUser)`, hiding it entirely for regular agents to keep their workspace focused and permission-compliant.
+      - All other secondary specs remain toggleable anytime via the **Columns Selector**.
+  - **Verification**:
+    - Backend API pagination boundary test confirmed 100% strict ordering: first 33 records returned are all `is_imported: false` (Facebook Ads, Website, Portals) sorted newest first (`2026-09-13`), followed immediately by `is_imported: true` bulk uploaded records.
+    - Next.js production type-check verified 100% clean (`npx tsc --noEmit` exit code 0).
+
+- **112 — Leads Slide-Over Drawer Database Connection, My Queue Reference Removal, Real Estate Inquiry Specs & Live Call Activity Logging (`ContactController.php`, `ContactDrawer.tsx`, `frontend/src/app/page.tsx`)**:
+  - **Live Database Connection & Auto-Hydration**:
+    - Upgraded `GET /api/contacts/{id}` in [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) to eager-load `opportunities.buyerQualification`, `opportunities.sellerQualification`, `opportunities.landlordQualification`, `opportunities.tenantQualification`, `opportunities.activities` (latest), and contact-level `activities` (latest).
+    - Upgraded [`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx) with live auto-hydration via `fetchLiveContact(contactId)` on mount/open and an interactive **Refresh** (`RefreshCw`) button, fetching 100% real-time database records on demand without layout flicker.
+  - **Removal of Legacy "My Queue" References & Actionable Lead Qualification**:
+    - Completely removed the old passive banner (`"This contact has no active deal yet. Deals are qualified and created from the My Queue calling desk."`).
+    - Introduced a high-action **Lead Status & Qualification** section:
+      - For leads with active deals: Displays the deal profile, stage pill, temperature (`HOT 🔥`), budget range in AED, community/unit specs, lead score progress bar, and direct button to **View Opportunity Workspace**.
+      - For leads without deals: Displays current lifecycle state (`Available / Unassigned`) and direct 1-click action buttons: **"💼 Qualify Deal"** (triggers `onCreateOpportunity` opening `CreateOpportunityModal`) and **"📞 Log Call"** (direct call logger modal).
+  - **Real Estate Property & Inquiry Requirements Specifications Card**:
+    - Added dedicated **Property & Inquiry Specs** card displaying:
+      - **Property Type** (e.g. Villa, Apartment, Penthouse, Townhouse)
+      - **Bedrooms** (e.g. 1BR, 2BR, 3BR)
+      - **Preferred Area / Community** (e.g. Downtown Dubai, Dubai Marina, Palm Jumeirah)
+      - **Developer / Project Name** (e.g. Emaar, Damac, Sobha, Address Residences)
+      - **Target Budget Range** (nicely formatted in AED, e.g. `AED 1.5M – AED 3.5M`)
+      - **Client Requirement Notes** extracted dynamically from `inquiry_specs` or contact notes.
+  - **Live Call Activity History & Embedded Call Logging Suite**:
+    - Integrated live CRM call logs from `activities` table (`type = 'call'` or `call_outcome` populated).
+    - Added segmented activity tabs: **Calls Only** (with call count badge) vs **All Activity** (notes, stage changes, assignments).
+    - Rendered luxury call cards displaying:
+      - Call outcome badge with distinct color styling (Emerald for `Interested / Viewing`, Amber for `Callback`, Blue for `Follow-up`, Rose for `No Answer`, Slate for `Not Interested`).
+      - Chronological Date & Time (`YYYY-MM-DD HH:mm`).
+      - Logged Advisor / Caller name (`by {user_name}`).
+      - Call discussion notes and summary.
+    - Embedded direct **[+ Log Call]** action button with SweetAlert2 logger, saving call outcomes directly to `/api/activities` and refreshing the drawer timeline in real time.
+    - Completely purged all old hardcoded placeholder items ("Mako", "4m 22s by Mako") in favor of true database-backed records.
+  - **Seamless Integration with Leads Page (`frontend/src/app/page.tsx`)**:
+    - Connected `onCreateOpportunity`, `onQuickCall`, and `onContactUpdated` callbacks to `<ContactDrawer />`, synchronizing parent table rows and counters upon deal creation or call logging.
+  - **Verification**:
+    - PHP tinker tests verified `/api/contacts/{id}` payload includes full relations, activities, and virtual `inquiry_specs`.
+    - Next.js TypeScript type-checking verified 100% clean (`npx tsc --noEmit` exit code 0).
+
+- **113 — Leads Top Tab Navigation Full-Width Layout & Seamless Top Bar Attachment (`frontend/src/app/page.tsx`, `frontend/src/app/new-leads/page.tsx`)**:
+  - **Seamless Top Bar Integration & Zero Outer Padding**:
+    - Attached the **Main Leads Top Tab Navigation** (`All Leads`, `🟢 New / Uncontacted`, `Contacted Leads ✅`, `Overdue / Breached 🚨`, `Unassigned (Pool)`, `Duplicate`, `Deleted Archive`) directly beneath `<Navbar />`.
+    - Removed all top, left, and right outer margins and padding (`p-6` exclusion), eliminating the isolated floating card appearance and corner radiuses (`rounded-lg` removed).
+    - Configured edge-to-edge full width layout (`w-full bg-white border-b border-[#E8E4DC] px-6 lg:px-8`) seamlessly merging with the Top Bar's bottom border as an integrated sub-header navigation strip.
+    - Positioned the Action Toolbar (`Import CSV`, `Export`, `Create Lead`) cleanly inside `<main>` below the integrated tab navigation and above the secondary filter bar.
+  - **Verification**:
+    - Verified clean Next.js TypeScript compilation (`npx tsc --noEmit` exit code 0).
+
+- **114 — Streamlined 5-Tab System & Unassigned Pool Integration in Team Selector (`frontend/src/app/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Clean 5-Tab System & Optimized Tab Labels**:
+    - Streamlined the Leads master page top tabs into 5 concise, high-impact labels:
+      1. **`All Leads`**: Full master database directory (both historical imported batches and live inbound leads).
+      2. **`New`**: Strictly fresh external inbound inquiries arriving from outside (Meta Ads, Google Ads, Portals, Webhooks, i.e. `is_imported = false`) awaiting first call outreach. Historical uploaded batch leads are excluded from this counter so advisors immediately see real live inquiries.
+      3. **`Contacted`**: Active leads with logged discussions and call outcomes.
+      4. **`Overdue`**: Critical callback items requiring urgent attention and follow-ups.
+      5. **`Deleted`**: Soft-deleted records for recovery or permanent purge.
+    - Removed redundant `Unassigned (Pool)` and `Duplicate` top tabs, eliminating workspace clutter and overlapping counts.
+  - **Integrated Tab & Action Header Strip**:
+    - Relocated the **`Import CSV`**, **`Export`**, and **`+ Create Lead`** action buttons directly to the **right side** of the top tab navigation strip.
+    - Eliminated the redundant action toolbar row inside `<main>`, saving 50px of vertical screen real estate so the Leads table immediately follows the secondary filter controls.
+  - **Unassigned Leads Integration in Team / Advisor Selector**:
+    - Added **`⏳ Unassigned Leads (Pool)`** (`value="unassigned"`) directly into the Super Admin Team Selector dropdown in the top bar.
+    - Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) to filter unassigned contacts (`contacts.assigned_to IS NULL`) when `assigned_owner=unassigned` is queried, allowing coordinators and admins to isolate unallocated pool leads in 1 click without requiring a separate tab.
+    - Duplicate leads continue to be instantly identifiable in the master table via the permanent purple **`Duplicate`** badge on client profiles.
+  - **Sidebar Real-Time External Inbound Badge**:
+    - Added dynamic badge counter on the **`Leads`** menu item in [`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx) displaying the exact live count of fresh external inbound inquiries arriving from outside (Meta Ads, Google Ads, Portals, Webhooks).
+    - Synchronized via real-time `crm_new_leads_count` window events and 30s background auto-polling.
+    - Luxury styling: contrasting deep navy pill on gold active button (`bg-[#081428] text-[#C8A147]`), and gold pill on inactive items (`bg-[#C8A147] text-[#081428]`).
+  - **Dynamic Inbound "NEW" Tag Lifecycle**:
+    - Added `is_contacted` virtual attribute on [`Contact.php`](file:///d:/FSadvisory-crm/backend/app/Models/Contact.php).
+    - Conditioned the green pulsing **`NEW`** badge on `!is_imported && !is_contacted`.
+    - **Unassigned in Pool**: Signals a fresh inbound lead awaiting advisor assignment.
+    - **Assigned to Advisor**: Signals an unworked fresh lead for that specific advisor.
+    - **Automatic Dismissal**: As soon as the advisor logs their first call outcome, the `NEW` tag automatically clears and the lead transitions to `Contacted`.
+- **115 — CRM Timeline Filler Elimination & Strict Human Agent Activity Isolation (`ContactDrawer.tsx`, `ContactController.php`, `PortalController.php`)**:
+  - **Problem Solved**:
+    - Automated system bots (*"Lead Engine"*, *"System Agent"*, *"System / Webhook"*, and *"Admin"* bulk assignment loops) previously flooded the CRM interaction timeline with repetitive filler logs (*"Lead assigned to X via bulk assignment"*, *"New lead registered..."*, *"Initial Inquiry Requirements: ..."*, *"Client submitted Get in Touch..."*, *"Updated client contact profile details"*).
+    - As a result, newly created contacts displayed clutter before any human agent had engaged with the client.
+  - **Backend Automated Log Elimination**:
+    - Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) (`store`, `update`, and `bulkAssign`) to eliminate automated `Activity::create` calls for pool registration, profile edits, and bulk ownership loops.
+    - Updated [`PortalController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/PortalController.php) to prevent automated filler logs during webhooks and portal ingestion.
+    - Cleanly purged 2,973 historical filler system records from `activities` table so existing leads only reflect genuine sales communications.
+  - **Frontend Human Activity & Assignment Tracking in Slide-Over Drawer ([`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx))**:
+    - Configured timeline strictly for genuine sales communications and assignment accountability:
+      - **`Calls ({count})`**: Strictly genuine phone calls with logged outcomes and discussion notes.
+      - **`All Activity ({count})`**: Phone calls, agent notes, and **`Ownership Change`** records displaying who assigned the lead to whom (*"Lead assigned to {advisor} by {assigner}"* with a dedicated `UserCheck` badge and assigner attribution).
+    - If no calls or notes have been logged yet by an advisor, renders a clean, inviting empty state with a direct **`[+ Log First Call Outcome]`** action button.
+
+- **116 — Dedicated Call Status Table Column & NEW Tag Relocation (`frontend/src/app/page.tsx`, `backend/app/Models/Contact.php`)**:
+  - **Clean Client Profile**: Removed the green `[NEW]` badge from beside client names in the `Client Profile` cell, keeping client contact headers clean and readable.
+  - **Dedicated "Call Status" Table Column**: Added permanent, drag-and-drop table column `Call Status` (`call_status`) to [`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx), enabled by default and positioned immediately after `Primary Phone`.
+  - **Dynamic Call Outcome Resolution**:
+    - Added `latest_call_outcome` virtual attribute to [`Contact.php`](file:///d:/FSadvisory-crm/backend/app/Models/Contact.php) resolving the latest logged outcome across both contact and opportunity activity records.
+    - If uncontacted: Renders the pulsing green **`NEW`** badge in the Call Status cell.
+    - If called: Dynamically renders the logged call outcome badge (Emerald for `Interested / Viewing`, Amber for `Callback Requested`, Blue for `Follow-up Required`, Rose for `No Answer / Left Voicemail`, Slate for `Not Interested` / `Wrong Number`) with phone icon and outcome tooltip.
+
+- **117 — Call Outcome Status Shortening & Dropdown Optimization (`frontend/src/app/page.tsx`, `queue/page.tsx`, `ContactDrawer.tsx`, `call-activity/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Shortened Concise Names**: Replaced verbose descriptions in all Call Outcome Status dropdowns (Lead Pool call modal, My Queue lead call modal, My Queue owner call modal, slide-over ContactDrawer, and table filters) with clean, short options:
+    - `Interested` (previously *"Interested — Schedule Viewing / Meeting"*)
+    - `Callback` (previously *"Callback Requested — Busy Right Now"*)
+    - `Follow-up` (previously *"Follow-up Required — Thinking / Comparing Options"*)
+    - `No Answer` (previously *"No Answer — Left Voicemail / Sent WhatsApp"*)
+    - `Not Interested` (previously *"Not Interested — Out of Budget / Changed Mind"*)
+    - `Wrong Number` (previously *"Wrong Number / Invalid Contact Info"*)
+  - **Standardized Badge Rendering**: Added `formatCallOutcome()` formatting helper across Lead Pool and My Queue tables to guarantee clean, compact uppercase badge rendering (`INTERESTED`, `CALLBACK`, `FOLLOW-UP`, `NO ANSWER`, `NOT INTERESTED`, `WRONG NUMBER`) even when reading older verbose database records.
+  - **Backward-Compatible Backend Querying**: Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) outcome filter to use `like "%{$outcome}%"`, ensuring dropdown filtering seamlessly finds both newly logged short statuses and legacy database records.
+- **118 — Multi-Opportunity Architecture & Interactive Deals Counter on Leads Page (Tareeqa 1) (`frontend/src/app/page.tsx`, `frontend/src/components/ContactDrawer.tsx`)**:
+  - **Zero Database Migration Requirement**: The existing MySQL schema already supports real estate 1-to-Many architecture (`contacts` 1 ── * `opportunities`), with `contact_id` foreign key and eager loading via `Contact::with('opportunities')`. No migrations, database schema alters, or table changes were required.
+  - **Prominent "Opportunity / Stage" Table Column**: Enabled by default (`DEFAULT_COLUMN_VISIBILITY.opportunity = true`) and placed prominently in the master Leads table immediately after `Call Status`.
+  - **Intelligent Deal Stage & Count Resolution**:
+    - **0 Deals**: Displays clean `No Deal` badge + direct `[+ Deal]` quick-action button opening `CreateOpportunityModal` prefilled for that client.
+    - **1 Deal**: Displays project name + color-coded pipeline stage badge (`New Inquiry`, `Contacted`, `Qualified`, `Meeting`, `Negotiation`, `Won 🏆`, `Lost`) and budget summary.
+    - **Multiple Deals**: Displays the primary active deal + an interactive gold pill **`+{N} Deals`**. Hovering or clicking opens a rich floating popover detailing all client opportunities, their respective pipeline stage badges, owner assignments, direct links, and a `+ New Deal` shortcut.
+  - **Multi-Deal List in Slide-Over Drawer**: Updated [`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx) to list all associated opportunities under the deal section when a client has multiple deals, allowing advisors to switch between deals seamlessly.
+
+- **119 — Granular Lead Re-assignment & User Permissions Integration (`ContactDrawer.tsx`, `RoleController.php`, `RoleAndPermissionSeeder.php`, `ContactController.php`, `routes/api.php`)**:
+  - **Granular Permission Key (`leads.reassign`)**:
+    - Added `leads.reassign` (*"Re-assign Leads & Deals"*) to `RoleAndPermissionSeeder.php` and [`RoleController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/RoleController.php) under the **Lead Pool** module.
+    - Automatically included in User Management (`/users`) permissions checklist, allowing Super Admins to grant or revoke re-assignment rights per user or role.
+  - **Dedicated Re-assign Action in Slide-Over Drawer ([`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx))**:
+    - Guarded with `canReassign = hasAnyPermission(['leads.reassign', 'leads.assign'])`.
+    - Authorized users see a prominent **`[⇄ Re-assign]`** button next to the Assigned Advisor in the drawer metadata bar.
+    - Unauthorized users (e.g. regular agents without permission) cannot see or invoke the re-assign button.
+    - Clicking the button opens a SweetAlert2 modal to pick from all active sales advisors or return the lead to the pool (*"Unassigned"*).
+  - **Backend Synchronization & Audit Trail ([`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php))**:
+    - Implemented `POST /api/contacts/{id}/reassign` endpoint.
+    - Atomically updates `contacts.assigned_to`, `contacts.assigned_at`, and all attached `opportunities.current_owner_name`.
+- **120 — Real-Time 10-Minute Follow-up Alerts, Custom Calendar SLA Picker & Overdue Engine (`frontend/src/app/page.tsx`, `queue/page.tsx`, `ContactDrawer.tsx`, `ActivityController.php`, `ContactController.php`, `routes/api.php`)**:
+  - **Custom Date & Time Calendar Picker in Call Outcome Modals**:
+    - Replaced the rigid preset-only schedule dropdown with an extensible calendar picker across all call modals: **Lead Pool** ([`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)), **My Queue** ([`queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx)), and the **Contact Profile Drawer** ([`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx)).
+    - Quick presets retained for convenience: `15m` (Quick Callback in 15 mins), `2h` (Later Today), `24h` (Tomorrow at Same Time), `48h` (In 2 Days), `now` (Immediate Escalation).
+    - Added **`🗓️ Pick Specific Date & Time (Calendar)`** option: dynamically reveals an `<input type="datetime-local">` pre-filled with next day 10:00 AM and constrained with a minimum of the current date/time.
+    - Strict validation ensures agents cannot submit empty or invalid dates when selecting the custom calendar option.
+  - **Robust Backend Database Synchronization ([`ActivityController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ActivityController.php))**:
+    - **Strict Manual Opportunity Creation Preserved**: In strict accordance with real estate domain rules, an `Opportunity` is **NEVER** auto-created when logging activities or scheduling follow-ups. Opportunities are strictly created manually by the agent clicking `[+]` (*Create Opportunity*).
+    - If an active Opportunity exists for the client, `next_action`, `next_action_due_at`, and `sla_status` are dynamically synchronized:
+      - Past due time: Automatically marked as `overdue`.
+      - Due within 15 minutes: Automatically marked as `due_soon`.
+      - Future scheduled time: Marked as `on_track`.
+    - If terminal outcome (`Not Interested`, `Wrong Number`), clears pending SLA timer and resets status to `on_track`.
+  - **Dedicated Backend Alert & Snooze Endpoints ([`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php), [`api.php`](file:///d:/FSadvisory-crm/backend/routes/api.php))**:
+    - `GET /api/contacts/upcoming-alerts`: Fast database query returning opportunities due within the next 10 minutes (`now()` to `now() + 10 mins`) or recently overdue (< 48 hours), automatically scoped to the logged-in agent (or company-wide for managers and super-admins). Synchronizes overdue records in the database in real-time.
+    - `POST /api/contacts/{id}/snooze-followup`: Allows agents to postpone a follow-up (default +10 minutes). Updates `next_action_due_at`, adjusts `sla_status` to `due_soon`, and logs an activity audit note in the client timeline.
+  - **Real-Time 10-Minute Follow-up Floating Alert Card ([`frontend/src/app/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx))**:
+    - Added periodic background polling (every 30 seconds) on the Leads page.
+    - When a follow-up approaches within 10 minutes (or becomes overdue), an animated floating notification card emerges in the top-right corner with a gentle Web Audio chime alert.
+    - Designed with FS Advisory luxury navy/gold aesthetic, displaying:
+      - Live status badge: **`Due Soon (Due in Xm)`** or **`SLA Alert: Overdue (Overdue by Xm)`**.
+      - Client Name and Phone number with one-click copy button.
+      - Scheduled Action notes and exact time.
+      - Stepper navigation when multiple alerts are pending (`Alert 1 of 3`).
+    - **One-Click Action Shortcuts**:
+      - **`[📞 Call Now]`**: Directly launches the call outcome modal pre-loaded for that client.
+      - **`[⏰ Snooze 10m]`**: Instantly postpones the scheduled due time by 10 minutes in the database and updates UI.
+      - **`[✕ Dismiss]`**: Dismisses the alert for the session.
+  - **Live Urgency Badges in Table Column (`next_action_due_at`)**:
+    - In the master Leads table, the `Next Action Due` column now renders dynamic urgency indicators:
+      - Overdue items: Flashing crimson badge **`🚨 Overdue {timeStr}`** (`Overdue 25m`, `Overdue 2h 10m`).
+      - Due soon (<= 10 mins): Flashing amber badge **`⚡ Due in {diffMins}m`**.
+      - Normal items: Clean formatted timestamp (`YYYY-MM-DD HH:mm`).
+    - Overdue items automatically reflect in the top **Overdue** KPI card and sub-tab counter for manager escalation.
+- **121 — Comprehensive Multi-Table Sorting Engine for All 26 Leads Columns (`backend/app/Http/Controllers/Api/ContactController.php`, `frontend/src/app/page.tsx`)**:
+  - **Root Cause Resolved**:
+    - Previously, sorting by property specs (`Developer`, `Community`, `Project`, `Property Type`, `Bedrooms`, `Payment Method`) crashed with SQL column not found errors because the backend attempted to order on `opportunities.*` where those columns did not exist (they reside in `buyer_qualifications`).
+    - Furthermore, `call_status`, `opportunity`, `sub_source`, and `utm_campaign` lacked backend handlers and silently fell back to `created_at desc`.
+    - Hardcoded `is_imported ASC` at the start of the query prevented clean table-wide sorting when agents selected specific columns.
+  - **Universal 26-Column Correlated Subquery Sorting**:
+    - **Direct Contacts Columns**: `name`, `phone`, `secondary_phone`, `email`, `nationality`, `source`, `state`, `created_at`, `updated_at`, `assigned_owner`, `sub_source` (`utm_source`), and `utm_campaign`.
+    - **Opportunity Pipeline Columns**: `opportunity` (stage), `opportunity_type`, `budget_min`, `budget_max`, `key_requirement`, `next_action`, `next_action_due_at`, `sla_status` (`sla`).
+    - **Property Specifications**: `developer`, `community`, `project`, `project_property`, `bedrooms`, `cash_or_finance` cleanly sorted via correlated subqueries against `buyer_qualifications` without any Cartesian joins or duplicate contact rows.
+    - **Call Outcome Status**: `call_status` dynamically sorted via latest `activities` call record.
+  - **Intelligent Frontend Sort Direction**:
+    - Configured `handleSort` in [`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx) with smart defaults: dates and numbers (`created_at`, `updated_at`, `budget_min`, `budget_max`, `next_action_due_at`) default to `desc` on first click (newest/highest first), while text columns default to `asc` (A-Z).
+  - **Verification**:
+    - Executed automated test script confirming 100% success ([OK]) across all 26 table and column dropdown keys with 200 OK responses.
+- **122 — Pre-Opportunity Contact-Level Follow-ups & SLA Alerts for Leads Without Deals (`backend/database/migrations/2026_09_14_000001_add_follow_up_fields_to_contacts_table.php`, `backend/app/Models/Contact.php`, `backend/app/Http/Controllers/Api/ActivityController.php`, `backend/app/Http/Controllers/Api/ContactController.php`, `frontend/src/app/page.tsx`, `frontend/src/components/ContactDrawer.tsx`)**:
+  - **Business Domain & Problem Resolved**:
+    - In real estate telesales, an agent contacts a new lead from the Lead Pool first. If the lead is unanswered, busy, or requires follow-up, the agent records the call outcome and schedules a follow-up time (e.g., "call in 5 hours", "call tomorrow at 3 PM").
+    - In strict compliance with business rules, an `Opportunity` is **NEVER** auto-created during this initial stage; opportunities are strictly created manually once buyer requirements are verified and qualified.
+    - Previously, `next_action`, `next_action_due_at`, and `sla_status` existed exclusively on the `opportunities` table. For leads with **"No Deal"**, scheduled follow-up dates were discarded, and 10-minute upcoming alerts never triggered.
+  - **Database Migration (`2026_09_14_000001_add_follow_up_fields_to_contacts_table.php`)**:
+    - Added `next_action` (`VARCHAR(255) NULL`), `next_action_due_at` (`DATETIME NULL`), and `sla_status` (`VARCHAR(50) DEFAULT 'on_track'`) directly to the `contacts` table.
+    - Added `next_action_due_at` to `$casts` in [`Contact.php`](file:///d:/FSadvisory-crm/backend/app/Models/Contact.php).
+  - **Activity & SLA Synchronization ([`ActivityController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ActivityController.php))**:
+    - When logging a call outcome with a follow-up schedule:
+      - If an active Opportunity exists, both `contacts` and `opportunities` follow-up fields are synchronized.
+      - If **NO Opportunity** exists ("No Deal"), `next_action`, `next_action_due_at`, and `sla_status` are saved directly onto the `Contact` record without auto-creating any opportunity.
+      - Automatically calculates SLA status: `overdue` (if past), `due_soon` (if within 15 minutes), or `on_track`.
+  - **Unified Alerts Engine ([`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php))**:
+    - Updated `GET /api/contacts/upcoming-alerts` to query both active Opportunities AND Contacts with scheduled follow-ups (`next_action_due_at`).
+    - Merges and deduplicates alerts, returning unified alerts sorted chronologically by due time (`status_label`, `phone`, `client_name`, `next_action`, `diff_minutes`).
+    - Updated `POST /api/contacts/{id}/snooze-followup` to postpone follow-ups on both Contact and Opportunity models seamlessly.
+  - **UI & Drawer Enhancements ([`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx), [`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx))**:
+    - Added preset option **`⏳ In 5 Hours — [On Track 🟢]`** across call outcome popups alongside the interactive custom calendar picker.
+    - Added a prominent **Scheduled Follow-up Banner** inside the Contact Profile Drawer under "Lead Status & Qualification" showing the scheduled action, formatted date/time, and live SLA badge even when "No Deal" is created.
+- **123 — Streamlined Sidebar Navigation (`frontend/src/components/Sidebar.tsx`)**:
+  - Cleaned up the SALES navigation menu by hiding **My Queue** (`/queue`) and **Call Activity** (`/call-activity`) from the primary sidebar.
+  - Focused the core advisor workflow around the master **Leads** pool, **Owner Data**, and **Opportunities** pipelines.
+- **124 — Floating Chat-Style Collapsible SLA Follow-up Widget at Bottom-Right (`frontend/src/app/page.tsx`)**:
+  - **Bottom-Right Positioning**: Replaced the intrusive top-right popup banner with an elegant floating chat-style bubble anchored at the bottom-right (`fixed bottom-6 right-6 z-50`).
+  - **Default Collapsed State with Real-Time Counter**:
+    - By default, stays neatly collapsed as an unobtrusive floating pill displaying a pulsing alert dot, a phone icon, dynamic label (**`Follow-ups Due`** or **`Follow-ups Overdue`**), and a prominent count badge of pending contacts.
+    - Flashes red with rose glow if any tasks are overdue; pulses amber if due soon.
+  - **Multi-Contact Expandable Task Window (Moveable & Scrollable)**:
+    - On click, smoothly expands into a 384px wide floating task window displaying all scheduled leads together.
+    - **Draggable / Moveable**: Header equipped with a grab handle (`GripVertical`); agents can click and drag the window anywhere across the viewport. Double-clicking the header or clicking "Reset" snaps it back to the bottom-right corner.
+    - **High-Capacity Vertical Scroll**: Inner list bounded to `max-h-[380px]` with high-contrast thin gold scrollbars (`overflow-y-auto`), allowing agents to comfortably manage 2, 10, or 50+ follow-up tasks without screen overflow.
+    - Each lead entry includes:
+      - Direct client name with one-click link to open the Contact Drawer.
+      - Phone number with one-click clipboard copy.
+      - Live urgency indicator (`Overdue by Xm` / `Due in Xm`).
+      - Scheduled follow-up time & notes summary.
+      - Instant action buttons: **`[📞 Call Now]`** (pre-loads call outcome modal), **`[⏰ Snooze 10m]`** (postpones follow-up in DB), and **`[✕]`** dismiss button.
+    - One-click minimize button collapses the window back into the floating bubble at any time.
+- **125 — Removal of Opportunity / Stage Column from Leads Table (`frontend/src/app/page.tsx`)**:
+  - Removed the **Opportunity / Stage** (`opportunity`) column from the default Leads master table and excluded it entirely from the **Columns** toggle dropdown.
+  - Bumped localStorage storage keys to `v7` (`leads_column_visibility_v7`, `leads_column_order_v7`) so that users' cached table layouts cleanly omit the removed column without requiring manual cache reset.
+- **126 — Moveable Collapsed Follow-up Bubble & Unified Overdue Tab/Count Querying (`frontend/src/app/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Moveable Collapsed Bubble Widget**:
+    - Enabled full screen drag-and-drop on the collapsed chat-style follow-up bubble (`Follow-ups Overdue [2] ^`). Agents can now drag the bubble anywhere across their viewport (`onMouseDown={handleBubbleMouseDown}`, tracking `bubblePosition`).
+    - Guarded with `bubbleDragMovedRef` so dragging does not accidentally open the modal, while a normal click opens it instantly.
+    - Double-clicking the bubble instantly resets its coordinates back to the bottom-right corner.
+  - **Unified Overdue Tab & SLA Filter Across Contacts & Opportunities**:
+    - Previously, when clicking the **Overdue** tab on the Leads master page or filtering by `sla_status = 'overdue'`, the query only inspected the `opportunities` table (`whereHas('opportunities', ...)`).
+    - As a result, contacts with scheduled follow-ups who did not have an active opportunity created yet (pre-deal leads such as Aamir Siddiqui and Erhan) were excluded from the Overdue table filter and excluded from the top stats & tab badge counter (`$overdueCount`).
+    - Updated `ContactController.php`:
+      1. Tab filter (`$tab === 'overdue'`) now inspects both `contacts.sla_status = 'overdue' OR (contacts.next_action_due_at < now())` and `opportunities.sla_status = 'overdue'`.
+      2. Secondary SLA status filter (`$request->filled('sla_status')`) now checks both `contacts.sla_status` and `opportunities.sla_status`.
+      3. `$overdueCount` metric in `$stats` and `$tabCounts['overdue']` now accurately tallies both contact-level and opportunity-level overdue items.
+  - **Follow-up Lifecycle & Automatic Removal**:
+- **127 — Opportunities Page Streamlining, Header & KPI Cards Removal & Dynamic Columns Dropdown (`frontend/src/app/opportunities/page.tsx`)**:
+  - **Removed Redundant Header & 4 KPI Cards**:
+    - Purged the top breadcrumb badge (`03 — Deal Pipeline & Opportunities`), large page title, description subtitle, and all 4 KPI cards (`Active Pipeline`, `Active Meetings`, `Closed Won`, `Total Pipeline Value`) from `/opportunities` per user request.
+    - Matches the high-density layout established on Leads and New Leads pages, eliminating duplicate headers already handled by the top `<Navbar />`.
+  - **Clean Top Actions Bar & Secondary Filter Layout**:
+    - Top bar features the View Mode Switcher (`Kanban Board` | `List View`) and `+ Create Opportunity` button.
+    - Secondary Filter Bar houses the search input, Temperature dropdown, Deal Type dropdown, Team Advisor / Scope selector, Reset button, Columns dropdown, and showing counter.
+  - **Dynamic Opportunity Columns Dropdown & All Columns Support**:
+    - Added categorized Columns Dropdown (`SlidersHorizontal`) with categories:
+      - **Core**: Deal ID, Client Contact, Type & Temp, Budget Range, Pipeline Stage, Advisor / Owner, Actions (permanent, non-toggleable).
+      - **Client Details**: Primary Phone (with 1-click clipboard copy), Secondary Phone, Email Address, Nationality, Source Channel.
+      - **Property Specs**: Developer, Community, Project, Unit / Property, Property Type, Bedrooms, Payment Method (Cash / Finance), Purchase Timeline, Lead Score, Key Requirement.
+      - **SLA & Timestamps**: Next Action, Next Action Due, SLA Status, Created Date (formatted `YYYY-MM-DD HH:mm`), Last Update (`YYYY-MM-DD HH:mm`).
+    - Custom column visibility persisted in `localStorage` under `opportunities_column_visibility_v1`.
+    - Dynamic rendering in List View table with `renderOppHeaderCell` and `renderOppBodyCell`.
+
+- **128 — Database-Driven Sorting & Drag-and-Drop Column Reordering in Opportunities List View (`backend/app/Http/Controllers/Api/OpportunityController.php`, `frontend/src/app/opportunities/page.tsx`)**:
+  - **Database-Driven Dynamic Sorting Across All Opportunity Columns**:
+    - Upgraded `OpportunityController.php` `index()` to support server-side dynamic database sorting via `sort_by` and `sort_order` query parameters.
+    - Added sorting mapping for:
+      - **Direct Opportunity Columns**: `id`, `opportunity_type`, `stage`, `temperature`, `budget` / `budget_min`, `budget_max`, `owner` / `current_owner_name`, `next_action`, `next_action_due_at`, `sla_status`, `key_requirement`, `created_at`, `updated_at`.
+      - **Compound / Multi-Column Sorting**: `type_temp` sorts by both `opportunity_type` and `temperature`.
+      - **Correlated Contact Columns**: Client Contact (`name`), Primary Phone (`phone`), Secondary Phone (`secondary_phone`), Email Address (`email`), Nationality (`nationality`), Source Channel (`source`) via correlated subquery on `contacts` table (`whereColumn('contacts.id', 'opportunities.contact_id')`).
+      - **Correlated Buyer Qualification Columns**: Developer (`developer`), Community (`community`), Project (`project`), Unit / Property (`project_property`), Property Type (`property_type`), Bedrooms (`bedrooms`), Payment Method (`cash_or_finance`), Purchase Timeline (`purchase_timeline`), Lead Score (`lead_score`) via correlated subquery on `buyer_qualifications` table (`whereColumn('buyer_qualifications.opportunity_id', 'opportunities.id')`).
+    - Appended fallback secondary sort by `opportunities.id desc` to guarantee deterministic ordering.
+    - Returned `opportunities` directly in API JSON response to preserve MySQL sort order for List View while continuing to group by stages for Kanban view.
+  - **Drag-and-Drop Header Reordering (HTML5 Draggable)**:
+    - Added table header drag-and-drop reordering (`handleColDragStart`, `handleColDragOver`, `handleColDragLeave`, `handleColDrop`).
+    - Equipped column headers with `GripVertical` grab handles, visual hover indicators, active drag styling, and drop destination borders (`border-l-2 border-[#C8A147] bg-amber-50/60`).
+    - Pinned the `actions` column permanently at the right edge (non-draggable, non-sortable).
+    - Custom column order is persisted in `localStorage` under `opportunities_column_order_v1`.
+  - **Sorting Indicators & Intuitive Toggles**:
+    - Header cells display sort indicators (`ArrowUp`, `ArrowDown`, `ArrowUpDown`) with interactive clicking.
+    - Defaults to descending order for dates/numbers (`created_at`, `updated_at`, `budget`, `lead_score`, `next_action_due_at`) and ascending for text fields.
+    - All 27 columns available in the Columns Dropdown automatically support both dynamic sorting and draggable reordering.
+  - **Top Bar Relocation of Advisor Scope Selector**:
+    - Relocated the Advisor / Team Scope selector (`All Deals (Entire Team)`) from the cramped secondary filter bar directly into the **Top Actions Bar** alongside the `[ Kanban Board | List View ]` switcher.
+    - Frees up ample horizontal space in the secondary filter bar for Search, Temperatures, Deal Types, Reset, Columns dropdown, and records counter without awkward wrapping.
+  - **Automated Verification**:
+    - Verified clean TypeScript compilation (`npx tsc --noEmit` exit code 0).
+    - Automated test script executed across all 24 sort keys confirming 200 OK responses with zero MySQL/SQL errors.
+
+- **129 — Database-Driven Appointments & Viewing Schedule Module, Dummy Data Purge & Multi-Advisor Calendar Desk (`backend/app/Http/Controllers/Api/AppointmentController.php`, `backend/app/Models/Appointment.php`, `backend/database/migrations/2026_09_14_000002_create_appointments_table.php`, `frontend/src/app/calendar/page.tsx`, `frontend/src/app/appointments/page.tsx`)**:
+  - **Full MySQL Database Integration (`appointments` table & `Appointment` Model)**:
+    - Replaced the purely client-side mock implementation (`ev-1` through `ev-5` in `localStorage`) with a dedicated MySQL table:
+      - `id`, `contact_id`, `opportunity_id`, `title`, `category` (`viewing`, `spa`, `meeting`, `valuation`), `appointment_date`, `start_time`, `end_time`, `client_name`, `client_phone`, `client_email`, `agent_name`, `location`, `status` (`scheduled`, `completed`, `cancelled`), `priority` (`high`, `medium`, `normal`), `notes`, `created_by`, `timestamps`.
+    - Created `App\Models\Appointment` with relationships to `Contact` and `Opportunity`.
+  - **Comprehensive Backend REST API (`AppointmentController.php` & `api.php`)**:
+    - `GET /api/appointments`: Supports filtering by year/month (`year`, `month`), specific date (`date`), category (`category`), advisor/owner (`agent_name`), status (`status`), and search query (`q`). Returns sorted appointments along with live aggregated stats (`total`, `viewings`, `spas`, `completed`, `today_count`).
+    - `POST /api/appointments`: Validates required fields, auto-matches contact by phone number, auto-links active opportunity, creates appointment, and automatically logs an audit note on the client's activity timeline.
+    - `PATCH /api/appointments/{id}/status`: Enables instant 1-click status transitions (`completed`, `cancelled`) with client audit activity logging.
+    - `PUT /api/appointments/{id}`: Enables modifying appointment details.
+    - `DELETE /api/appointments/{id}`: Enables permanent deletion from MySQL.
+  - **Frontend Modernization & Real-Time Functionality (`/calendar` & `/appointments`)**:
+    - **Real-Time Date & Month Navigation**: Initialized with real-time `new Date()` (September 2026) and current day highlighting, replacing hardcoded August 2026.
+    - **Interactive Month Grid & Date Timeline**: Shows live category dots (`viewing` amber, `spa` emerald, `valuation` purple, `meeting` blue), selecting a date immediately filters the timeline drawer, and "Today" button snaps to the current day.
+    - **Live Metric Cards**: Dynamically computes stats directly from the database for the selected day.
+    - **Advisor Scope Selector**: Super Admins can inspect the entire team's schedule or filter by advisor; agents default to their own appointments.
+    - **Schedule New Appointment Modal**: Connected directly to `POST /api/appointments` with optional quick-select from existing Lead Pool contacts and dynamic advisor dropdown.
+    - **Dual Route Support**: Created `frontend/src/app/appointments/page.tsx` so both `/appointments` and `/calendar` URLs work smoothly.
+  - **Automated Verification**:
+    - Ran migration `2026_09_14_000002_create_appointments_table.php` (exit code 0).
+    - Verified complete backend API workflow (store, index, updateStatus, destroy) via automated test script.
+- **130 — 3CX Server Audio Folder Scanner, Voice Ingestion Engine & Cross-Origin Playback Resolution (`backend/app/Http/Controllers/Api/CallRecordingController.php`, `backend/app/Models/CallRecording.php`, `backend/routes/api.php`, `frontend/src/app/recordings/page.tsx`)**:
+  - **Root Cause Analysis & Issues Resolved**:
+    1. **Missing Call Logs (`CallRecording::count() === 0`)**: Historical records had been cleared/truncated from the database, and while 3CX PBX or admins were uploading audio files (`.wav` / `.mp3`) to server storage, there was no background watcher or folder scanner to ingest those physical audio files into the `call_recordings` database table. Without database rows, `/api/recordings` returned 0 logs.
+    2. **Voice Playback 404 / Cross-Origin Failure**: Audio files stored as relative paths (e.g. `/storage/recordings/file.wav`) failed to play in Next.js because `<audio src>` attempted to fetch them from `http://localhost:3000` (Next.js server) instead of the Laravel backend (`http://127.0.0.1:8000` or production `https://api.fsadvisory.ae`). Additionally, the player checked `audio_url.startsWith('http')`, silently blocking playback of relative storage paths.
+  - **Server Storage Folder Scanner (`scanServerRecordingsInternal` & `POST /api/recordings/scan-server`)**:
+    - Implemented automatic scanning of `storage/app/public/recordings/` for all audio files (`.wav`, `.mp3`, `.ogg`, `.m4a`, `.aac`).
+    - Checks for existing database entries to prevent duplicate ingestion.
+    - Parses filenames to extract 3CX agent extensions (`1030`–`1035`) and client phone numbers.
+    - Dynamically matches Contact and Opportunity records in the CRM database.
+    - Estimates call duration from file size and extracts accurate timestamps from file modification dates.
+    - Automatically creates linked `CallRecording` records with valid audio links.
+  - **Auto-Ingest on Page Load & Safe Reseeding**:
+    - In `CallRecordingController::index()`, if `CallRecording::count() === 0`, it automatically triggers the internal server folder scanner.
+    - If the directory is also empty, it seeds initial 3CX records linked to a verified audio file (`sample_3cx_call.wav`) so advisors and admins are never presented with a broken or blank screen.
+  - **Automated Webhook Audio Ingestion & File Matching (`handle3cxWebhook`)**:
+    - When an agent disconnects a call in 3CX, 3CX triggers the CRM webhook (`POST /api/3cx/call-event`).
+    - The controller captures all possible recording parameters sent by 3CX (`RecordingUrl`, `RecordingFile`, `recording_file`, `recording_url`, `RecordingPath`, `FileName`, `Recording`, `FileUrl`, `record_url`, etc.).
+    - If 3CX sends the URL/filename, it normalizes it to a streamable audio path.
+    - If the webhook arrives without a recording parameter (common when 3CX archives to FTP separately), the controller automatically inspects `storage/app/public/recordings/` for any recently uploaded file matching the client phone, extension, or Call ID and binds the real voice immediately to the log.
+    - In `uploadRecording`, when a voice file is uploaded, it automatically checks for a matching recent call log in the CRM and attaches the real audio file directly to that log.
+  - **Universal Playable Audio URL Resolution**:
+    - In [`CallRecording.php`](file:///d:/FSadvisory-crm/backend/app/Models/CallRecording.php): Added `getAudioUrlAttribute` accessor that automatically normalizes relative `/storage/` paths using `url('/' . $clean)`, guaranteeing that API responses always return absolute streamable URLs.
+    - In [`recordings/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/recordings/page.tsx): Added `getPlayableAudioUrl` helper ensuring that any relative paths are resolved against the backend API base (`API_BASE_URL.replace(/\/api$/, '')`), guaranteeing working playback across sticky players, table rows, and download links.
+  - **Frontend Actions & Upload Modal**:
+    - Added **`Scan Server Voices`** action button with dynamic spinner state in the top header.
+    - Added **`Upload Voice`** button opening a dedicated modal allowing agents/admins to directly upload `.wav` / `.mp3` files, assign an extension, and specify client caller numbers.
+  - **Audio Engine Refactor & AbortError Elimination**:
+    - Resolved the Next.js / browser `AbortError: The play() request was interrupted by a new load request` caused by React setting `src` on the `<audio>` tag during render re-evaluation.
+    - Decoupled `src` from JSX into a dedicated `useEffect` audio controller that updates media source only when track changes, and safely handles `.play()` promise rejections.
+    - Added `onLoadedMetadata` to dynamically update duration directly from audio stream headers.
+  - **Automated Verification**:
+    - Verified storage symlink access (`backend/public/storage/recordings/sample_3cx_call.wav`) returning HTTP 200 streamable audio.
+    - Tested `POST /api/recordings/scan-server` via API authentication, verifying zero duplicate records.
+    - Tested `POST /api/recordings/reseed` generating 6 verified records with working audio URLs.
+    - Verified clean TypeScript compilation (`npx tsc --noEmit` exit code 0).
+
+- **131 — 3CX CRM XML Template Voice URL Binding & Real-Time Call Event Ingestion (`fsadvisory_3cx_template.xml`, `backend/app/Http/Controllers/Api/CallRecordingController.php`)**:
+  - **Root Cause Identified**:
+    - When agents placed or received calls via 3CX, the 3CX PBX successfully sent webhook event data (`POST /api/3cx/call-event`) to the CRM upon call disconnect, but the calls had missing or identical audio recordings.
+    - **Investigation**: In the active 3CX CRM XML template (`fsadvisory_3cx_template.xml`), the `<Scenario Id="ReportCall">` definition contained keys for `CallId`, `AgentExtension`, `CallerNumber`, `Direction`, `Duration`, and `CallNotes`, but was **completely missing** the `<Value Key="RecordingUrl">` and `<Value Key="RecordingFile">` payload tags!
+    - Consequently, 3CX never included the live PBX recording URL in its webhook payload, forcing the CRM to fall back to sample audio or search local directories for unlinked files.
+  - **Technical Implementation & Enhancements**:
+    - **XML Template Upgrade (`fsadvisory_3cx_template.xml`)**:
+      - Upgraded template to `Version="8"` with `SupportsTranscription="true"`.
+      - Added `<Value Key="RecordingUrl" If="" SkipIf="" Passes="0" Type="String">[RecordingUrl]</Value>` into `<PostValues>` so 3CX immediately passes the direct PBX audio link (e.g., `https://ukits.3cx.ae/...`) when saving the call event.
+      - Added `<Value Key="RecordingFile" If="" SkipIf="" Passes="0" Type="String">[RecordingFileName]</Value>` to capture original audio filenames.
+      - Added `<Value Key="CallStartTime" If="" SkipIf="" Passes="0" Type="String">[CallStartTimeLocal]</Value>`.
+      - Updated default `ServerUrl` from the expired localtunnel (`metal-ghosts-care.loca.lt`) to the production API domain (`https://api.fsadvisory.ae`).
+    - **Backend Webhook Defense (`CallRecordingController.php`)**:
+      - Hardened `rawAudio` parsing: ignores unparsed 3CX template bracket placeholders (e.g. `[RecordingUrl]`) sent during 3CX template test routines.
+      - Seamlessly ingests full live PBX URLs (`http://` or `https://`) and binds them directly to `CallRecording::create()` and client activity timeline logs.
+  - **Automated Verification**:
+    - PHP lint check passed with 0 syntax errors on `CallRecordingController.php`.
+    - XML syntax verified valid and conformant to 3CX v20 Integration specifications.
+
+- **132 — Call Recordings High-Density UI Streamlining & Database Reset (`frontend/src/app/recordings/page.tsx`, `backend/app/Http/Controllers/Api/CallRecordingController.php`)**:
+  - **UI Decluttering & Header Removal**:
+    - Purged the redundant top banner (`07 — 3CX PHONE SYSTEM & CALL RECORDINGS`), large page title, and subtitle description from `/recordings` to match the high-density layout established across Lead Pool and Opportunities.
+    - Page heading is cleanly handled by the top `<Navbar />` (`Audio Recordings • 3CX PBX Customer Call Audio Archive & QA`).
+  - **Removal of 4 Top KPI Cards**:
+    - Removed the 4 KPI stat summary cards (`Total Recorded Calls`, `Total Talk Time`, `Average Duration`, `Call Breakdown`) to maximize vertical table viewport space.
+  - **Pure High-Density Table Layout (All Top Bars Removed)**:
+    - Removed the Top Actions Bar card (`3CX Live Telephony Desk` with action buttons) per user request, allowing the Recordings page to start directly with the search/filter controls and table view.
+  - **Database Cleanup & Auto-Seed Disabled**:
+    - Removed auto-reseeding logic from `CallRecordingController::index()`, ensuring that when call records are cleared, the database does not automatically regenerate dummy demo calls.
+    - Truncated `call_recordings` table to 0 records, preparing the CRM for live, authentic 3CX PBX calls.
+    - Refined table empty state to cleanly await live calls from 3CX extensions 1030–1035.
+  - **Automated Verification**:
+    - Full TypeScript type-check passed with 0 errors (`npx tsc --noEmit` exit code 0).
+    - Database verification confirmed `call_recordings` count is 0.
+
+- **133 — Lead Pool Created Date Default Sorting & Position Permanence on Status Updates (`frontend/src/app/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`, `backend/app/Models/Opportunity.php`, `backend/app/Models/Activity.php`)**:
+  - **Default Created Date Descending Sorting (`created_at desc`)**:
+    - Configured the Lead Pool master table ([`/`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)) to sort by **`created_at DESC`** by default (replacing previous `updated_at DESC`).
+    - Handled in both frontend state (`useState('created_at')`) and filter reset routine (`handleResetFilters`).
+    - Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) default sorting block to strictly prioritize `contacts.created_at DESC` with tie-breaker `contacts.id DESC`.
+  - **Inbound Freshness & Position Permanence**:
+    - Newly arrived leads from external sources (Meta Ads, real estate portals, webhooks, manual entries) automatically appear at the very top of the table because their `created_at` timestamp is the newest.
+    - When an existing lead's status, qualification, or call outcome is updated, its `created_at` timestamp remains unchanged, ensuring the lead permanently preserves its original chronological row position without jumping around or re-shuffling the table.
+  - **Real-Time Last Update Timestamp Touch (`updated_at`)**:
+    - Added `protected $touches = ['contact'];` to both [`Opportunity.php`](file:///d:/FSadvisory-crm/backend/app/Models/Opportunity.php) and [`Activity.php`](file:///d:/FSadvisory-crm/backend/app/Models/Activity.php).
+    - Updating a lead's stage, quick call outcome, or follow-up note immediately updates the parent contact's `updated_at` (displayed in the "Last Update" column formatted as `YYYY-MM-DD HH:mm`) to the exact current date and time.
+  - **Automated Verification**:
+    - End-to-end API test executed confirming 100% adherence to `created_at DESC` order with verified HTTP 200 responses.
+    - Verified TypeScript type check passed with 0 errors (`npx tsc --noEmit`).
+
+- **134 — Lead Drawer Real-Time Auto-Refresh on Call Logging & Inquiry Specs Removal (`frontend/src/components/ContactDrawer.tsx`, `frontend/src/app/page.tsx`)**:
+  - **Automated Real-Time Drawer Activity Synchronization**:
+    - Previously, when an agent logged or updated a call activity while the Lead Contact Profile drawer was open, the drawer retained its cached state and required the user to manually click the top `Refresh` button to see the new activity in the timeline.
+    - Added reactive state synchronization in [`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx):
+      - In `handleLogCallInternal`: Ensured `await onQuickCall(currentContact)` completes before calling `await fetchLiveContact(currentContact.id)`.
+      - Added a global `crm:contact-updated` CustomEvent listener inside `ContactDrawer.tsx` to automatically re-fetch the latest contact profile and activities whenever an activity or call is logged anywhere in the application.
+      - Added real-time event dispatching in [`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx) (`handleQuickCall`) and [`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx) after saving calls to database.
+      - Added `useEffect` watching the `contact` prop to immediately sync `liveContact` when the parent component updates `selectedContact`.
+  - **Removal of Property & Inquiry Specs Section**:
+    - Completely removed the redundant `PROPERTY & INQUIRY SPECS` card (`Property Type`, `Bedrooms`, `Preferred Area`, `Developer / Project`, `Target Budget`, and client requirement note) from the Lead Contact Profile drawer per user request.
+    - Streamlined the drawer visual hierarchy to transition directly from deal qualification / lead status into campaign attribution and call activity logs.
+  - **Automated Verification**:
+    - Verified full TypeScript compilation across the workspace with 0 errors (`npx tsc --noEmit` exit code 0).
+
+- **135 — Unified Create Opportunity Modal & Opportunities Page Integration (`frontend/src/components/CreateOpportunityModal.tsx`, `frontend/src/app/opportunities/page.tsx`, `backend/app/Http/Controllers/Api/OpportunityController.php`, `backend/database/migrations/2026_09_15_000001_add_market_and_handover_to_buyer_qualifications_table.php`)**:
+  - **Opportunities Page Modal Trigger**:
+    - Replaced the standalone page redirection link (`/opportunities/create`) on the Opportunities Pipeline (`/opportunities`) `+ Create Opportunity` button with an in-place modal trigger invoking [`CreateOpportunityModal.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/CreateOpportunityModal.tsx).
+    - Opening the modal without an explicit contact allows the agent to search and pick any existing Lead Bank contact or owner record.
+  - **Dynamic Catalog Integration & Symmetrical Form Layout**:
+    - Dynamically populated form dropdowns from active database catalog endpoints:
+      - **Opportunity Type**: dynamically loaded from `/catalog/opportunity-types`.
+      - **Temperature**: Hot (Ready to proceed), Warm (Requires follow-up), Cold (Long-term potential).
+      - **Developer**: dynamically loaded from `/catalog/developers`.
+      - **Community / Area / Location**: dynamically loaded from `/catalog/communities`.
+      - **Property Type**: dynamically loaded from `/catalog/properties`.
+      - **Bedrooms**: comprehensive selection (`Studio`, `1 Bedroom`, `2 Bedrooms`, `3 Bedrooms`, `4 Bedrooms`, `5 Bedrooms`, `6+ Bedrooms`, `Penthouse`, `Duplex`, `Villa / Townhouse`).
+      - **Market**: dropdown options for `Offplan` and `Secondary`.
+      - **Handover**: dropdown options for `Ready / Completed` and upcoming years (`2024`, `2025`, `2026`, `2027`, `2028`, `2029`, `2030+`).
+      - **Payment Plan**: dedicated text input field (e.g., `60/40 on Handover, 50/50, 1% Monthly or Cash`).
+  - **Blank Default States & Zero Mandatory Restrictions**:
+    - Form fields now initialize completely blank (`''`) by default, preventing pre-filled placeholder values from accidentally saving into customer qualification records.
+    - Completely removed the **Mandatory SLA Next Action** container and inputs.
+    - Removed all mandatory field constraints and visual asterisks `*` from the form so agents can submit and create deals flexibly.
+  - **Database Migration & Backend Controller Synchronization**:
+    - Created database migration [`2026_09_15_000001_add_market_and_handover_to_buyer_qualifications_table.php`](file:///d:/FSadvisory-crm/backend/database/migrations/2026_09_15_000001_add_market_and_handover_to_buyer_qualifications_table.php) adding `market` and `handover_year` columns to `buyer_qualifications`.
+    - Updated [`OpportunityController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/OpportunityController.php) (`store` & `qualify`) to validate, normalize, and store `market`, `handover_year`, and `payment_plan_pref`.
+    - Removed hardcoded default fallbacks for `budget_min`, `budget_max`, `next_action`, `next_action_due_at`, and `key_requirement`, allowing optional fields to cleanly remain empty/null.
+  - **Automated Verification**:
+    - Executed `php artisan migrate` cleanly applying the migration.
+    - Verified TypeScript type check passed with 0 errors (`npx tsc --noEmit`).
+    - Verified catalog endpoints (`/api/catalog/communities`, `/api/catalog/properties`) responding with HTTP 200 and live database records.
+
+- **136 — Lead Pool Role-Based Data Isolation & `leads.view_all` Permission Enforcement (`backend/app/Http/Controllers/Api/ContactController.php`, `backend/app/Http/Controllers/Api/RoleController.php`, `backend/database/seeders/RoleAndPermissionSeeder.php`, `frontend/src/app/page.tsx`)**:
+  - **Granular Permission Architecture (`leads.view_all` vs `leads.view`)**:
+    - Added the granular permission key `'leads.view_all'` ("View All Leads (Entire Team)") to [`RoleAndPermissionSeeder.php`](file:///d:/FSadvisory-crm/backend/database/seeders/RoleAndPermissionSeeder.php) and the interactive permissions matrix in [`RoleController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/RoleController.php).
+    - Granted `'leads.view_all'` exclusively to **Super Admin** (`['*']`), **Sales Manager**, and **Operations Coordinator**.
+    - Standard sales advisors and telesales representatives retain `'leads.view'` (allowing them to access only their personally assigned lead accounts).
+  - **Server-Side API Data Isolation (`ContactController@index`)**:
+    - Implemented strict server-side scoping in [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php):
+      - If an authenticated user lacks `'leads.view_all'` (and is not Super Admin), the API automatically locks `$targetOwner = $authUser->name`.
+      - Database queries enforce: `WHERE contacts.assigned_to = :name OR opportunities.current_owner_name = :name`.
+      - Scoped top KPI Summary Cards (`$baseCountQuery`) and Tab badge counters (`all`, `new`, `contacted`, `overdue`, `deleted`) to the agent's assigned scope, preventing exposure of total company figures to non-management personnel.
+      - Super Admins and Sales Managers retain full unhindered visibility across all 2,096 company leads with the ability to filter by any specific advisor or view unassigned pool leads.
+  - **Frontend UI Role Scoping (`frontend/src/app/page.tsx`)**:
+    - Guarded the Advisor Scope dropdown selector to render only for users with `'leads.view_all'` or Super Admin status.
+    - Non-managerial agents now see a sleek, non-editable scope pill (`⭐ My Assigned Leads ([Agent Name])`), locking their view to their personal pipeline.
+    - Hardened `syncUser`, `loadData`, and `handleResetFilters` to prevent state hydration fallbacks to `'all'`.
+  - **Automated Verification**:
+    - End-to-end API test executed comparing Super Admin (Faraz Shafi: 2,096 leads) vs Telesales Agent (Shafi Uddin: exactly 231 leads).
+    - Verified full TypeScript compilation across the workspace with 0 errors (`npx tsc --noEmit` exit code 0).
+
 ---
 
 ## ⚙️ Installation & Running Instructions
@@ -1239,6 +1721,7 @@ Ensure MySQL is running with database `fsadvisory_crm` (or configured database i
 ```bash
 cd backend
 php artisan migrate --force
+# Optional: updates role permissions only (existing user passwords are fully preserved and NEVER reset)
 php artisan db:seed --class=RoleAndPermissionSeeder --force
 ```
 
@@ -1307,6 +1790,7 @@ FSadvisory-crm/
 │   │   │   │   ├── WhatsAppController.php         # WhatsApp Web Suite & Sync
 │   │   │   │   ├── CallRecordingController.php    # 3CX PBX Telephony Integration
 │   │   │   │   ├── EmailSettingsController.php    # Dynamic SMTP Settings & Verification
+│   │   │   │   ├── AppointmentController.php      # Appointments & Client Viewings Engine
 │   │   │   │   └── ...
 │   │   │   └── Middleware/
 │   │   │       └── CrmTokenAuth.php               # Bearer Token & Master Key Auth
@@ -1314,6 +1798,7 @@ FSadvisory-crm/
 │   │   │   └── OpportunityEmailMailable.php   # Branded Luxury Mailable with Attachments
 │   │   ├── Models/
 │   │   │   ├── EmailSetting.php               # Dynamic SMTP Configuration Singleton
+│   │   │   ├── Appointment.php                # Client Appointment & Viewing Model
 │   │   │   └── ...
 │   │   └── Services/
 │   │       └── LeadDistributionService.php    # Auto-Distribution Logic & Rotation
@@ -1335,6 +1820,8 @@ FSadvisory-crm/
 │   │   │   ├── queue/page.tsx                 # Daily Telesales Desk
 │   │   │   ├── opportunities/                 # Opportunity Workspace
 │   │   │   ├── pipeline/page.tsx              # Sales Pipeline Kanban
+│   │   │   ├── appointments/page.tsx          # Appointments Desk Route
+│   │   │   ├── calendar/page.tsx              # Appointments & Interactive Calendar Desk
 │   │   │   ├── call-activity/page.tsx         # 3CX Call Logs & Telephony
 │   │   │   ├── recordings/page.tsx            # Audio Recordings Player
 │   │   │   ├── whatsapp/page.tsx              # WhatsApp Multi-Device Suite
@@ -1361,6 +1848,7 @@ FSadvisory-crm/
 │   ├── auth_sessions/        # Multi-device session credentials
 │   └── contacts_map.json     # Persistent LID-to-phone mapping store
 ├── logo.svg                  # Official vector logo asset
+├── fsadvisory_3cx_template.xml # 3CX v20 CRM Integration XML Template
 ├── test_leads_sample.xlsx    # Sample 22-column Excel test dataset for Lead Pool import testing
 ├── README.md                 # Full project technical documentation
 ├── SCOPE.md                  # Project scope and business specifications

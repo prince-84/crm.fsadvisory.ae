@@ -15,11 +15,13 @@ class RoleAndPermissionSeeder extends Seeder
         $allPermissions = [
             // 1. Lead Pool
             'leads.view',
+            'leads.view_all',
             'leads.create',
             'leads.edit',
             'leads.delete',
             'leads.restore',
             'leads.assign',
+            'leads.reassign',
             'leads.export',
             'leads.import',
 
@@ -85,7 +87,7 @@ class RoleAndPermissionSeeder extends Seeder
                 'name' => 'Sales Manager',
                 'description' => 'Full control over sales pipeline, agent queue routing, lead assignment, call monitoring and performance reports.',
                 'permissions' => [
-                    'leads.view', 'leads.create', 'leads.edit', 'leads.delete', 'leads.assign', 'leads.export', 'leads.import',
+                    'leads.view', 'leads.view_all', 'leads.create', 'leads.edit', 'leads.delete', 'leads.assign', 'leads.reassign', 'leads.export', 'leads.import',
                     'owner_data.view', 'owner_data.create', 'owner_data.edit', 'owner_data.export',
                     'queue.view', 'queue.update_status', 'queue.calendar', 'queue.bulk_delete',
                     'deals.view', 'deals.create', 'deals.edit', 'deals.delete', 'deals.bulk_delete',
@@ -141,7 +143,7 @@ class RoleAndPermissionSeeder extends Seeder
                 'name' => 'Operations Coordinator',
                 'description' => 'Responsible for data hygiene, lead imports, owner database verification and CSV reports.',
                 'permissions' => [
-                    'leads.view', 'leads.create', 'leads.edit', 'leads.assign', 'leads.export', 'leads.import',
+                    'leads.view', 'leads.view_all', 'leads.create', 'leads.edit', 'leads.assign', 'leads.export', 'leads.import',
                     'owner_data.view', 'owner_data.create', 'owner_data.edit', 'owner_data.export', 'owner_data.import',
                     'reports.view_team', 'reports.export',
                 ],
@@ -271,20 +273,26 @@ class RoleAndPermissionSeeder extends Seeder
         ];
 
         foreach ($teamUsers as $u) {
-            User::updateOrCreate(
-                ['email' => $u['email']],
-                [
-                    'name' => $u['name'],
-                    'phone' => $u['phone'],
-                    'role' => $u['role'],
-                    'department' => $u['department'],
-                    'role_id' => $u['role_id'],
-                    'permissions' => $u['permissions'],
-                    'initials' => $u['initials'],
-                    'is_active' => $u['is_active'],
-                    'password' => Hash::make('password123'),
-                ]
-            );
+            $existingUser = User::where('email', $u['email'])->first();
+            $userData = [
+                'name' => $u['name'],
+                'phone' => $u['phone'],
+                'role' => $u['role'],
+                'department' => $u['department'],
+                'role_id' => $u['role_id'],
+                'permissions' => $u['permissions'],
+                'initials' => $u['initials'],
+                'is_active' => $u['is_active'],
+            ];
+
+            if (!$existingUser) {
+                $userData['email'] = $u['email'];
+                $userData['password'] = Hash::make('password123');
+                User::create($userData);
+            } else {
+                // Keep the user's current password intact so live logins never get reset
+                $existingUser->update($userData);
+            }
         }
     }
 }

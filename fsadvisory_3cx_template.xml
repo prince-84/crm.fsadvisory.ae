@@ -1,40 +1,26 @@
 <?xml version="1.0"?>
-<Crm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Country="AE" Name="FS Advisory AutoSync" Version="7" SupportsEmojis="false">
+<Crm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Country="AE" Name="FS Advisory AutoSync" Version="8" SupportsEmojis="false" SupportsTranscription="true" ListPageSize="0">
   <Number Prefix="Zeros" MaxLength="15" />
   <Connection MaxConcurrentRequests="8" />
   <Parameters>
-    <Parameter Name="ServerUrl" Type="String" Parent="Settings" Editor="String" Title="CRM Base URL:" Default="https://metal-ghosts-care.loca.lt" />
-    <Parameter Name="ReportCallEnabled" Type="Boolean" Parent="Call Reporting" Editor="String" Title="Enable Call Journaling?" Default="True" />
+    <Parameter Name="ServerUrl" Type="String" Parent="Settings" Editor="String" Title="CRM Base URL:" Validation="" Default="https://api.fsadvisory.ae" ListValues="" RequestUrl="" RequestUrlParameters="" ResponseScenario="" />
+    <Parameter Name="ReportCallEnabled" Type="Boolean" Parent="Call Reporting" Editor="String" Title="Enable Call Journaling?" Validation="" Default="True" ListValues="" RequestUrl="" RequestUrlParameters="" ResponseScenario="" />
   </Parameters>
   <Authentication Type="No" />
   <Scenarios>
-    <Scenario Id="" Type="REST">
-      <Request Url="[ServerUrl]/api/3cx/lookup?Number=[Number]" MessagePasses="0" RequestEncoding="UrlEncoded" RequestType="Get" ResponseType="Json" />
+    <Scenario Id="" Type="REST" EntityId="" EntityOrder="">
+      <Request SkipIf="" Url="[ServerUrl]/api/3cx/lookup?Number=[Number]" MessagePasses="0" Message="" RequestContentType="" RequestEncoding="UrlEncoded" RequestType="Get" ResponseType="Json" />
       <Rules>
-        <Rule Type="Any">contact.id</Rule>
+        <Rule Type="Any" Ethalon="">contact.id</Rule>
       </Rules>
       <Variables>
-        <Variable Name="ContactID" Path="contact.id">
-          <Filter />
-        </Variable>
-        <Variable Name="FirstName" Path="contact.first_name">
-          <Filter />
-        </Variable>
-        <Variable Name="LastName" Path="contact.last_name">
-          <Filter />
-        </Variable>
-        <Variable Name="CompanyName" Path="contact.company">
-          <Filter />
-        </Variable>
-        <Variable Name="Phone" Path="contact.phone">
-          <Filter />
-        </Variable>
-        <Variable Name="Email" Path="contact.email">
-          <Filter />
-        </Variable>
-        <Variable Name="ContactUrl" Path="contact.url">
-          <Filter />
-        </Variable>
+        <Variable Name="ContactID" LookupValue="" Path="contact.id"><Filter /></Variable>
+        <Variable Name="FirstName" LookupValue="" Path="contact.first_name"><Filter /></Variable>
+        <Variable Name="LastName" LookupValue="" Path="contact.last_name"><Filter /></Variable>
+        <Variable Name="CompanyName" LookupValue="" Path="contact.company"><Filter /></Variable>
+        <Variable Name="Phone" LookupValue="" Path="contact.phone"><Filter /></Variable>
+        <Variable Name="Email" LookupValue="" Path="contact.email"><Filter /></Variable>
+        <Variable Name="ContactUrl" LookupValue="" Path="contact.url"><Filter /></Variable>
       </Variables>
       <Outputs AllowEmpty="false">
         <Output Type="FirstName" Passes="0" Value="[FirstName]" />
@@ -48,15 +34,18 @@
         <Output Type="ContactUrl" Passes="0" Value="[ContactUrl]" />
       </Outputs>
     </Scenario>
-    <Scenario Id="ReportCall" Type="REST">
-      <Request SkipIf="[ReportCallEnabled]!=True" Url="[ServerUrl]/api/3cx/call-event" MessagePasses="0" RequestEncoding="Json" RequestType="Post" ResponseType="Json">
-        <PostValues>
-          <Value Key="CallId" Passes="1" Type="String">[CallId]</Value>
-          <Value Key="AgentExtension" Passes="1" Type="String">[Agent]</Value>
-          <Value Key="CallerNumber" Passes="1" Type="String">[Number]</Value>
-          <Value Key="Direction" Passes="1" Type="String">[CallType]</Value>
-          <Value Key="Duration" Passes="1" Type="Integer">[Duration]</Value>
-          <Value Key="CallNotes" Passes="1" Type="String">3CX Call logged automatically from extension [Agent]</Value>
+    <Scenario Id="ReportCall" Type="REST" EntityId="" EntityOrder="">
+      <Request SkipIf="[ReportCallEnabled]!=True" Url="[ServerUrl]/api/3cx/call-event" MessagePasses="0" Message="" RequestContentType="" RequestEncoding="Json" RequestType="Post" ResponseType="Json">
+        <PostValues Key="" If="" SkipIf="">
+          <Value Key="CallId" If="" SkipIf="" Passes="0" Type="String">[CallId]</Value>
+          <Value Key="AgentExtension" If="" SkipIf="" Passes="0" Type="String">[Agent]</Value>
+          <Value Key="CallerNumber" If="" SkipIf="" Passes="0" Type="String">[Number]</Value>
+          <Value Key="Direction" If="" SkipIf="" Passes="0" Type="String">[CallType]</Value>
+          <Value Key="Duration" If="" SkipIf="" Passes="0" Type="Integer">[Duration]</Value>
+          <Value Key="RecordingUrl" If="" SkipIf="" Passes="0" Type="String">[RecordingUrl]</Value>
+          <Value Key="RecordingFile" If="" SkipIf="" Passes="0" Type="String">[RecordingFileName]</Value>
+          <Value Key="CallStartTime" If="" SkipIf="" Passes="0" Type="String">[CallStartTimeLocal]</Value>
+          <Value Key="CallNotes" If="" SkipIf="" Passes="0" Type="String">3CX Call logged automatically from extension [Agent]</Value>
         </PostValues>
       </Request>
       <Variables />
@@ -64,3 +53,4 @@
     </Scenario>
   </Scenarios>
 </Crm>
+

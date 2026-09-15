@@ -16,6 +16,8 @@ class Opportunity extends Model
         'is_orphaned' => 'boolean',
     ];
 
+    protected $touches = ['contact'];
+
     public function contact()
     {
         return $this->belongsTo(Contact::class);

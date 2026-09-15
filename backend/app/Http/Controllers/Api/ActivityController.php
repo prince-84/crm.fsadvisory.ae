@@ -54,37 +54,65 @@ class ActivityController extends Controller
             'description' => $validated['description'],
         ]);
 
-        // Update contact last activity
-        Contact::where('id', $validated['contact_id'])->update([
-            'last_activity_at' => now(),
-        ]);
+        $outcome = $validated['call_outcome'] ?? '';
+        $isTerminal = str_contains($outcome, 'Not Interested') || str_contains($outcome, 'Wrong Number');
 
-        // If opportunity and next action provided, update opportunity
-        if (!empty($validated['opportunity_id']) && !empty($validated['next_action'])) {
-            $opp = Opportunity::find($validated['opportunity_id']);
-            if ($opp) {
-                $outcome = $validated['call_outcome'] ?? '';
-                $isTerminal = str_contains($outcome, 'Not Interested') || str_contains($outcome, 'Wrong Number');
+        $nextAction = $validated['next_action'] ?? null;
+        $dueAt = null;
+        $slaStatus = 'on_track';
 
-                if ($isTerminal || empty($validated['next_action_due_at'])) {
-                    $opp->next_action = $validated['next_action'];
-                    $opp->next_action_due_at = null;
-                    $opp->sla_status = 'on_track';
-                    $opp->is_orphaned = false;
+        if (!empty($nextAction)) {
+            if (!$isTerminal && !empty($validated['next_action_due_at'])) {
+                $dueAt = Carbon::parse($validated['next_action_due_at']);
+                if ($dueAt->isPast()) {
+                    $slaStatus = 'overdue';
+                } elseif ($dueAt->diffInMinutes(Carbon::now()) <= 15) {
+                    $slaStatus = 'due_soon';
                 } else {
-                    $dueAt = Carbon::parse($validated['next_action_due_at']);
-                    $opp->next_action = $validated['next_action'];
-                    $opp->next_action_due_at = $dueAt;
-                    $opp->is_orphaned = false;
-                    
-                    // SLA check
-                    if ($dueAt->isPast()) {
-                        $opp->sla_status = 'overdue';
-                    } elseif ($dueAt->diffInMinutes(Carbon::now()) <= 30) {
-                        $opp->sla_status = 'due_soon';
-                    } else {
-                        $opp->sla_status = 'on_track';
-                    }
+                    $slaStatus = 'on_track';
+                }
+            }
+        }
+
+        // Update contact last activity, next follow-up and SLA status
+        $contact = Contact::find($validated['contact_id']);
+        if ($contact) {
+            $contactUpdates = [
+                'last_activity_at' => now(),
+            ];
+            if (!empty($nextAction)) {
+                $contactUpdates['next_action'] = $nextAction;
+                $contactUpdates['next_action_due_at'] = $dueAt;
+                $contactUpdates['sla_status'] = $slaStatus;
+            }
+            $contact->update($contactUpdates);
+        }
+
+        // If opportunity exists or was provided, update opportunity
+        $opp = null;
+        if (!empty($validated['opportunity_id'])) {
+            $opp = Opportunity::find($validated['opportunity_id']);
+        }
+        if (!$opp && !empty($validated['contact_id'])) {
+            $opp = Opportunity::where('contact_id', $validated['contact_id'])->latest()->first();
+        }
+
+        if ($opp) {
+            // Associate activity with opportunity if not already set
+            if (!$activity->opportunity_id) {
+                $activity->opportunity_id = $opp->id;
+                $activity->save();
+            }
+
+            if (!empty($nextAction)) {
+                $opp->next_action = $nextAction;
+                $opp->next_action_due_at = $dueAt;
+                $opp->sla_status = $slaStatus;
+                $opp->is_orphaned = false;
+
+                // If stage was still 'new' or 'new_inquiry', advance to contacted
+                if (in_array($opp->stage, ['new', 'new_inquiry'])) {
+                    $opp->stage = 'contacted';
                 }
 
                 $opp->save();

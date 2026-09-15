@@ -32,4 +32,17 @@ class CallRecording extends Model
         $secs = $this->duration_seconds % 60;
         return sprintf('%02d:%02d', $mins, $secs);
     }
+
+    public function getAudioUrlAttribute($value)
+    {
+        if (empty($value)) {
+            return null;
+        }
+        if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
+            return $value;
+        }
+        $clean = ltrim($value, '/');
+        // Prepend current app URL if relative
+        return url('/' . $clean);
+    }
 }

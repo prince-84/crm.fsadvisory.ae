@@ -31,11 +31,84 @@ class OpportunityController extends Controller
             'landlordQualification',
             'tenantQualification',
             'activities',
-        ])->latest();
+        ]);
 
         if ($request->filled('owner') && $request->owner !== 'all') {
             $query->where('current_owner_name', $request->owner);
         }
+
+        // Dynamic Database Sorting handling
+        $sortBy = $request->get('sort_by', 'created_at');
+        $sortOrder = strtolower($request->get('sort_order', 'desc')) === 'asc' ? 'asc' : 'desc';
+
+        $oppDirectMap = [
+            'id' => 'id',
+            'opportunity_type' => 'opportunity_type',
+            'stage' => 'stage',
+            'temperature' => 'temperature',
+            'budget' => 'budget_min',
+            'budget_min' => 'budget_min',
+            'budget_max' => 'budget_max',
+            'owner' => 'current_owner_name',
+            'current_owner_name' => 'current_owner_name',
+            'next_action' => 'next_action',
+            'next_action_due_at' => 'next_action_due_at',
+            'sla_status' => 'sla_status',
+            'key_requirement' => 'key_requirement',
+            'created_at' => 'created_at',
+            'updated_at' => 'updated_at',
+        ];
+
+        $contactCorrelatedMap = [
+            'client' => 'name',
+            'name' => 'name',
+            'phone' => 'phone',
+            'secondary_phone' => 'secondary_phone',
+            'email' => 'email',
+            'nationality' => 'nationality',
+            'source' => 'source',
+        ];
+
+        $buyerQualMap = [
+            'developer' => 'developer',
+            'community' => 'community',
+            'project' => 'project',
+            'project_property' => 'project_property',
+            'property_type' => 'property_type',
+            'bedrooms' => 'bedrooms',
+            'cash_or_finance' => 'cash_or_finance',
+            'purchase_timeline' => 'purchase_timeline',
+            'lead_score' => 'lead_score',
+        ];
+
+        if (!empty($sortBy) && isset($oppDirectMap[$sortBy])) {
+            $col = $oppDirectMap[$sortBy];
+            $query->orderBy("opportunities.{$col}", $sortOrder);
+        } elseif ($sortBy === 'type_temp') {
+            $query->orderBy('opportunities.opportunity_type', $sortOrder)
+                  ->orderBy('opportunities.temperature', $sortOrder);
+        } elseif (!empty($sortBy) && isset($contactCorrelatedMap[$sortBy])) {
+            $cCol = $contactCorrelatedMap[$sortBy];
+            $query->orderBy(
+                Contact::select("contacts.{$cCol}")
+                    ->whereColumn('contacts.id', 'opportunities.contact_id')
+                    ->limit(1),
+                $sortOrder
+            );
+        } elseif (!empty($sortBy) && isset($buyerQualMap[$sortBy])) {
+            $bqCol = $buyerQualMap[$sortBy];
+            $query->orderBy(
+                BuyerQualification::select("buyer_qualifications.{$bqCol}")
+                    ->whereColumn('buyer_qualifications.opportunity_id', 'opportunities.id')
+                    ->latest('buyer_qualifications.id')
+                    ->limit(1),
+                $sortOrder
+            );
+        } else {
+            $query->orderBy('opportunities.created_at', 'desc');
+        }
+
+        $query->orderBy('opportunities.id', 'desc');
 
         $opportunities = $query->get();
 
@@ -51,6 +124,7 @@ class OpportunityController extends Controller
 
         return response()->json([
             'pipeline' => $pipeline,
+            'opportunities' => $opportunities,
             'total' => $opportunities->count(),
         ]);
     }
@@ -146,6 +220,11 @@ class OpportunityController extends Controller
             'client_intent' => 'nullable|string',
             'project' => 'nullable|string',
             'project_property' => 'nullable|string',
+            'market' => 'nullable|string',
+            'handover' => 'nullable|string',
+            'handover_year' => 'nullable|string',
+            'payment_plan' => 'nullable|string',
+            'payment_plan_pref' => 'nullable|string',
         ]);
 
         $ownerRecord = null;
@@ -176,22 +255,22 @@ class OpportunityController extends Controller
             'state' => 'active',
             'assigned_to' => $owner ?: ($contact->assigned_to ?: 'Unassigned'),
         ]);
-        $oppType = $validated['opportunity_type'] ?? ($ownerRecord ? 'seller' : 'buyer');
+        $oppType = !empty($validated['opportunity_type']) ? $validated['opportunity_type'] : ($ownerRecord ? 'seller' : 'buyer');
 
         $opportunity = Opportunity::create([
             'contact_id' => $contact->id,
             'opportunity_type' => $oppType,
             'stage' => $validated['stage'] ?? 'contacted',
-            'temperature' => $validated['temperature'] ?? 'hot',
+            'temperature' => !empty($validated['temperature']) ? $validated['temperature'] : 'hot',
             'current_owner_name' => $owner ?: 'Unassigned',
             'originating_agent_name' => $owner ?: ($ownerRecord ? 'Owner Data Bank' : 'System Ingest'),
             'department' => 'telesales',
-            'budget_min' => $validated['budget_min'] ?? 1800000,
-            'budget_max' => $validated['budget_max'] ?? 2200000,
-            'next_action' => $validated['next_action'] ?? 'Contact owner/lead — confirm requirement details',
-            'next_action_due_at' => $validated['next_action_due_at'] ?? now()->addHours(2),
+            'budget_min' => isset($validated['budget_min']) && $validated['budget_min'] !== '' ? $validated['budget_min'] : null,
+            'budget_max' => isset($validated['budget_max']) && $validated['budget_max'] !== '' ? $validated['budget_max'] : null,
+            'next_action' => !empty($validated['next_action']) ? $validated['next_action'] : null,
+            'next_action_due_at' => !empty($validated['next_action_due_at']) ? $validated['next_action_due_at'] : null,
             'sla_status' => 'on_track',
-            'key_requirement' => $validated['key_requirement'] ?? 'New Inquiry',
+            'key_requirement' => !empty($validated['key_requirement']) ? $validated['key_requirement'] : null,
         ]);
 
         if (empty($owner) || $owner === 'auto' || $owner === 'Mako' || $owner === 'Unassigned') {
@@ -217,19 +296,25 @@ class OpportunityController extends Controller
             ]);
         }
 
+        $paymentPlanValue = $validated['payment_plan'] ?? ($validated['payment_plan_pref'] ?? null);
+        $handoverYearValue = $validated['handover_year'] ?? ($validated['handover'] ?? null);
+
         BuyerQualification::create([
             'opportunity_id' => $opportunity->id,
             'client_intent' => $validated['client_intent'] ?? ($isSeller ? 'investor' : 'end_user'),
             'purchase_timeline' => '1-3 months',
             'is_first_time_buyer' => false,
             'cash_or_finance' => $validated['cash_or_finance'] ?? 'cash',
+            'payment_plan_pref' => $paymentPlanValue,
+            'market' => $validated['market'] ?? null,
+            'handover_year' => $handoverYearValue,
             'community' => $validated['community'] ?? ($ownerRecord ? $ownerRecord->area : null),
             'developer' => $validated['developer'] ?? null,
             'project' => $validated['project'] ?? ($ownerRecord ? $ownerRecord->building_name : null),
             'project_property' => $validated['project_property'] ?? ($ownerRecord ? $ownerRecord->property_number : null),
             'property_type' => $validated['property_type'] ?? ($ownerRecord ? $ownerRecord->property_type : null),
             'bedrooms' => $validated['bedrooms'] ?? ($ownerRecord ? $ownerRecord->bedrooms : null),
-            'lead_score' => $validated['temperature'] === 'hot' ? 84 : 65,
+            'lead_score' => ($validated['temperature'] ?? '') === 'hot' ? 84 : 65,
             'qualification_notes' => $isSeller ? 'Newly created Seller opportunity from Owner Data' : 'Newly created Buyer opportunity',
         ]);
 
@@ -262,6 +347,11 @@ class OpportunityController extends Controller
             'property_type' => 'nullable|string',
             'bedrooms' => 'nullable|string',
             'cash_or_finance' => 'nullable|string',
+            'market' => 'nullable|string',
+            'handover' => 'nullable|string',
+            'handover_year' => 'nullable|string',
+            'payment_plan' => 'nullable|string',
+            'payment_plan_pref' => 'nullable|string',
             'next_action' => 'nullable|string',
             'next_action_due_at' => 'nullable|date',
             'sla_status' => 'nullable|string',
@@ -357,6 +447,9 @@ class OpportunityController extends Controller
             'property_type' => $validated['property_type'] ?? null,
             'bedrooms' => $validated['bedrooms'] ?? null,
             'cash_or_finance' => $validated['cash_or_finance'] ?? null,
+            'payment_plan_pref' => $validated['payment_plan'] ?? ($validated['payment_plan_pref'] ?? null),
+            'market' => $validated['market'] ?? null,
+            'handover_year' => $validated['handover_year'] ?? ($validated['handover'] ?? null),
         ], function ($val) { return !is_null($val); });
 
         if ($opportunity->buyerQualification) {

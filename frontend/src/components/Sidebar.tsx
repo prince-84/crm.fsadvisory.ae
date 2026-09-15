@@ -104,12 +104,9 @@ function SidebarInner() {
     {
       title: 'SALES',
       items: [
-        { key: 'new_leads', name: 'New Leads', href: '/new-leads', icon: Flame, permission: 'leads.view' },
-        { key: 'lead_pool', name: 'Lead Pool', href: '/', icon: Users, permission: 'leads.view' },
+        { key: 'lead_pool', name: 'Leads', href: '/', icon: Users, permission: 'leads.view' },
         { key: 'owner_data', name: 'Owner Data', href: '/owner-data', icon: Building2, permission: 'owner_data.view' },
-        { key: 'queue', name: 'My Queue', href: '/queue', icon: ListOrdered, permission: 'queue.view' },
         { key: 'opportunities', name: 'Opportunities', href: '/opportunities', icon: Briefcase, permission: 'deals.view' },
-        { key: 'call_activity', name: 'Call Activity', href: '/call-activity', icon: PhoneCall, permission: 'calls.view_logs' },
         { key: 'appointments', name: 'Appointments', href: '/calendar', icon: CalendarDays, permission: 'queue.calendar' },
         { key: 'recordings', name: 'Recordings', href: '/recordings', icon: Mic, permission: 'calls.listen_recordings' },
         { key: 'whatsapp', name: 'WhatsApp Web', href: '/whatsapp', icon: MessageSquare, badge: 'Live', permission: 'whatsapp.view' },
@@ -183,13 +180,14 @@ function SidebarInner() {
                   >
                     <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#081428]' : 'text-[#8A9AB5]'}`} />
                     <span className="flex-1">{item.name}</span>
-                    {item.key === 'new_leads' ? (
+                    {(item.key === 'lead_pool' || item.key === 'new_leads') && newLeadsCount > 0 ? (
                       <span
                         className={`min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center transition-colors shadow-xs ${
                           isActive
                             ? 'bg-[#081428] text-[#C8A147]'
                             : 'bg-[#C8A147] text-[#081428]'
                         }`}
+                        title={`${newLeadsCount} fresh inbound leads`}
                       >
                         {newLeadsCount}
                       </span>

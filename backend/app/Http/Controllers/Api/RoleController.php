@@ -94,12 +94,14 @@ class RoleController extends Controller
                 'module' => 'Lead Pool',
                 'description' => 'Master client directory, inbound allocations and lead qualification',
                 'permissions' => [
-                    ['key' => 'leads.view', 'label' => 'View Leads Pool', 'desc' => 'Access and browse client database and filter tabs'],
+                    ['key' => 'leads.view', 'label' => 'View Assigned Leads', 'desc' => 'Access and browse personal assigned client leads'],
+                    ['key' => 'leads.view_all', 'label' => 'View All Leads (Entire Team)', 'desc' => 'Unrestricted access to browse all team leads and company lead pool'],
                     ['key' => 'leads.create', 'label' => 'Create New Lead', 'desc' => 'Manually add new inbound lead profiles'],
                     ['key' => 'leads.edit', 'label' => 'Edit Lead Profiles', 'desc' => 'Modify client details, budgets and requirements'],
                     ['key' => 'leads.delete', 'label' => 'Trash Leads', 'desc' => 'Soft-delete leads to trash archive'],
                     ['key' => 'leads.restore', 'label' => 'Restore / Purge Leads', 'desc' => 'Restore from trash or permanently purge records'],
                     ['key' => 'leads.assign', 'label' => 'Bulk Lead Assignment', 'desc' => 'Reallocate leads between advisors and agents'],
+                    ['key' => 'leads.reassign', 'label' => 'Re-assign Leads & Deals', 'desc' => 'Re-assign and transfer individual lead ownership to another advisor in Drawer & Table'],
                     ['key' => 'leads.export', 'label' => 'Export CSV Data', 'desc' => 'Download client spreadsheets'],
                     ['key' => 'leads.import', 'label' => 'Bulk CSV Import', 'desc' => 'Upload and ingest external lead sheets'],
                 ]
