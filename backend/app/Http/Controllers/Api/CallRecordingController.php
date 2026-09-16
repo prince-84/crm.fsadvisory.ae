@@ -177,6 +177,8 @@ class CallRecordingController extends Controller
 
     /**
      * 3CX Contact Lookup Endpoint (Called by 3CX on incoming/outgoing calls)
+     * If contact exists in CRM, returns their real name and company for softphone caller ID.
+     * If not found, returns 404 so 3CX shows the natural phone number instead of fake dummy text.
      */
     public function contactLookup(Request $request)
     {
@@ -184,7 +186,7 @@ class CallRecordingController extends Controller
         \Log::info('3CX Live Call Lookup for Number: ' . $number);
 
         $cleanNumber = preg_replace('/[^0-9]/', '', $number);
-        $last7Digits = substr($cleanNumber, -7);
+        $last7Digits = strlen($cleanNumber) >= 7 ? substr($cleanNumber, -7) : '';
 
         $contact = null;
         if (!empty($last7Digits)) {
@@ -193,34 +195,52 @@ class CallRecordingController extends Controller
                 ->first();
         }
 
-        $contactId = $contact ? (string) $contact->id : ('lead-' . ($cleanNumber ?: time()));
-        $firstName = 'Client';
-        $lastName = $number ?: 'Caller';
-        $company = 'FS Advisory Client';
-
         if ($contact) {
-            $nameParts = explode(' ', $contact->name, 2);
+            $nameParts = explode(' ', trim($contact->name ?: 'Client'), 2);
             $firstName = $nameParts[0] ?? 'Client';
-            $lastName = $nameParts[1] ?? ($contact->phone ?? $number);
-            $company = $contact->company_name ?? 'FS Advisory Client';
+            $lastName = $nameParts[1] ?? '';
+            $company = $contact->company_name ?: 'FS Advisory Client';
+
+            return response()->json([
+                'contact' => [
+                    'id' => (string) $contact->id,
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'company' => $company,
+                    'phone' => $contact->phone ?: $number,
+                    'email' => $contact->email ?: '',
+                    'url' => url('/contacts/' . $contact->id),
+                ]
+            ]);
         }
 
-        $opp = $contact ? Opportunity::where('contact_id', $contact->id)->latest()->first() : null;
+        // Secondary check: Owner Data registry
+        if (!empty($last7Digits)) {
+            $owner = \App\Models\OwnerRecord::where('mobile_number', 'like', "%{$last7Digits}%")
+                ->orWhere('phone_number', 'like', "%{$last7Digits}%")
+                ->first();
 
-        // NOTE: contactLookup only returns contact data for 3CX softphone display.
-        // Call recording logs are ONLY created when the call ends via handle3cxWebhook or when voice files are scanned.
+            if ($owner) {
+                $nameParts = explode(' ', trim($owner->owner_name ?: 'Property Owner'), 2);
+                return response()->json([
+                    'contact' => [
+                        'id' => 'owner-' . $owner->id,
+                        'first_name' => $nameParts[0] ?? 'Owner',
+                        'last_name' => $nameParts[1] ?? '',
+                        'company' => $owner->property_name ?: ($owner->building_name ?: 'Owner Data'),
+                        'phone' => $owner->mobile_number ?: ($owner->phone_number ?: $number),
+                        'email' => $owner->email ?: '',
+                        'url' => url('/owner-data'),
+                    ]
+                ]);
+            }
+        }
 
+        // If number is unknown in CRM, return 404 so 3CX displays the natural phone number / phone address book
+        // instead of overriding it with "Client 00971... FS Advisory Client CRM"
         return response()->json([
-            'contact' => [
-                'id' => $contactId,
-                'first_name' => $firstName,
-                'last_name' => $lastName,
-                'company' => $company,
-                'phone' => $number ?: '+971 50 000 0000',
-                'email' => $contact->email ?? 'client@fsadvisory.ae',
-                'url' => url($contact ? ('/contacts/' . $contact->id) : '/recordings'),
-            ]
-        ]);
+            'message' => 'Contact not found in CRM'
+        ], 404);
     }
 
     /**

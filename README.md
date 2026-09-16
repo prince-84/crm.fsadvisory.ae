@@ -1795,9 +1795,18 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Seamless Webhook & Audio File Synchronization**:
     - Enhanced server storage scanner (`scanServerRecordingsInternal`) to check if a call was already ingested via live 3CX webhook (`handle3cxWebhook`). If a record exists matching the PBX Call ID, it automatically links the `.wav` audio recording without duplicating records or altering the verified direction and talk-time duration.
     - If a recording is ingested directly from server storage folders, it parses the 3CX filename `[AgentName]_[Extension]-[PhoneNumber]` to accurately attribute outbound calls dialed by advisors to client phone numbers.
-    - Verified audio playback for all extensions (1030, 1031, 1033, 1034, 1035, 1036, 1038) across both inbound and outbound directions.
+- **144 — 3CX Caller ID & Contact Lookup Sanitization (`backend/app/Http/Controllers/Api/CallRecordingController.php`)**:
+  - **Issue Investigated**:
+    - Incoming and Outgoing calls in the 3CX mobile/desktop app were displaying `Client 00971... FS Advisory Client CRM` with email `client@fsadvisory.ae`.
+  - **Root Cause & Resolution**:
+    - During call ringing/dialing, 3CX executes `GET /api/3cx/lookup?Number=...` to query contact identity. Previously, if the caller number was unknown in the CRM, the controller generated a fallback object (`first_name: 'Client'`, `last_name: $number`, `company: 'FS Advisory Client'`, `email: 'client@fsadvisory.ae'`).
+    - 3CX interpreted this fallback as an authentic matched CRM contact, displaying `Client [Number] • FS Advisory Client CRM` on softphones.
+    - Updated `contactLookup()`:
+      1. If the number matches an existing client in `contacts` or property owner in `owner_records`, it returns their authentic name, company, email, and CRM profile URL.
+      2. If the number is not registered in the CRM, it returns HTTP 404 (`{"message": "Contact not found in CRM"}`), instructing 3CX to display the natural dialed/incoming phone number and native mobile address book name without dummy CRM overrides.
 
 ---
+
 
 
 
