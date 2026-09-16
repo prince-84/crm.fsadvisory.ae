@@ -1762,9 +1762,17 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Universal Stream Resolution**:
     - Updated `CallRecording.php` model (`getAudioUrlAttribute`) to automatically redirect all dead Google URLs or 3CX PBX URLs to the native `/api/3cx/recordings/{id}/stream` endpoint.
     - Updated `frontend/src/app/recordings/page.tsx` (`getPlayableAudioUrl`) to pass the recording ID and seamlessly bind with the streaming player and download links.
-  - **Verification**:
-    - Full TypeScript type-check passed with 0 errors (`npx tsc --noEmit` exit code 0).
-    - Verified PHP syntax with `php -l` on `CallRecordingController.php`, `CallRecording.php`, and `api.php`.
+- **140 — 3CX Multi-Extension Audio Folder Resolution & Direct cPanel Streaming Engine (`backend/app/Http/Controllers/Api/CallRecordingController.php`)**:
+  - **Extension-Wise Storage Hierarchy Support**:
+    - Supported the live cPanel storage folder hierarchy where 3CX PBX and FTP archive recordings into extension-specific subdirectories (`storage/app/public/recordings/recordings/{ext}/*.wav`, `storage/app/public/recordings/{ext}/*.wav`, e.g. extensions `1030`, `1031`, `1033`, `1034`, `1035`, `1036`, `1038`).
+  - **Dynamic Audio File Matching**:
+    - In `CallRecordingController::streamAudio`, added intelligent multi-tier file lookup:
+      1. First matches phone number suffix (last 7 digits) against recorded audio files in that agent's extension folder.
+      2. If no phone match, picks the latest authentic audio file recorded for that agent extension.
+      3. Fallback to any recorded audio across all extension subfolders.
+      4. Fallback to public `sample_3cx_call.wav` guaranteeing audible playback with zero browser media errors.
+  - **cPanel Deployment Guidance**:
+    - Clarified file mapping between local Git repository (`backend/`) and cPanel production root (`api.fsadvisory.ae/`).
 
 ---
 

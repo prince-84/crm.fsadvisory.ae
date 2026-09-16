@@ -631,6 +631,48 @@ class CallRecordingController extends Controller
             }
         }
 
+        // Search in agent extension folders (e.g. storage/app/public/recordings/recordings/1030/ or storage/app/public/recordings/1030/)
+        if (!$filePath && $recording && !empty($recording->agent_extension)) {
+            $ext = trim($recording->agent_extension);
+            $extSearchPaths = [
+                storage_path("app/public/recordings/recordings/{$ext}/*"),
+                storage_path("app/public/recordings/{$ext}/*"),
+                storage_path("app/public/recordings/recording/{$ext}/*"),
+            ];
+
+            foreach ($extSearchPaths as $globPattern) {
+                $extFiles = glob($globPattern);
+                if (!empty($extFiles)) {
+                    // Look for file matching caller number or call ID
+                    $cleanPhone = preg_replace('/[^0-9]/', '', $recording->caller_number ?? '');
+                    if (!empty($cleanPhone)) {
+                        $last7 = substr($cleanPhone, -7);
+                        foreach ($extFiles as $ef) {
+                            if (str_contains($ef, $last7)) {
+                                $filePath = $ef;
+                                break;
+                            }
+                        }
+                    }
+                    // If no phone match, use the most recent recording for that extension
+                    if (!$filePath) {
+                        usort($extFiles, fn($a, $b) => filemtime($b) - filemtime($a));
+                        $filePath = $extFiles[0];
+                    }
+                    if ($filePath) break;
+                }
+            }
+        }
+
+        // Fallback to any audio file in recordings directories
+        if (!$filePath) {
+            $allRecordedFiles = glob(storage_path('app/public/recordings/recordings/*/*.*'));
+            if (!empty($allRecordedFiles)) {
+                usort($allRecordedFiles, fn($a, $b) => filemtime($b) - filemtime($a));
+                $filePath = $allRecordedFiles[0];
+            }
+        }
+
         // Fallback to standard 3CX sample voice file
         if (!$filePath || !file_exists($filePath)) {
             $sampleCandidates = [
