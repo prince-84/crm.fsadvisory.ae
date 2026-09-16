@@ -634,6 +634,8 @@ class CallRecordingController extends Controller
         // Fallback to standard 3CX sample voice file
         if (!$filePath || !file_exists($filePath)) {
             $sampleCandidates = [
+                public_path('audio/sample_3cx_call.wav'),
+                resource_path('audio/sample_3cx_call.wav'),
                 storage_path('app/public/recordings/sample_3cx_call.wav'),
                 public_path('storage/recordings/sample_3cx_call.wav'),
                 base_path('storage/app/public/recordings/sample_3cx_call.wav'),
@@ -784,7 +786,7 @@ class CallRecordingController extends Controller
             'direction' => $dir,
             'call_status' => 'answered',
             'duration_seconds' => $duration,
-            'audio_url' => 'https://actions.google.com/sounds/v1/ambiences/office_murmur.ogg',
+            'audio_url' => null, // streamAudio endpoint serves sample_3cx_call.wav as fallback
             'audio_format' => 'wav',
             'call_outcome' => $selectedOutcome,
             'notes' => "3CX call with {$contact->name}: Discussed property requirements in Dubai Hills & Palm Jumeirah. Budget confirmed AED 3.5M - 5M.",
@@ -879,9 +881,8 @@ class CallRecordingController extends Controller
             $opp = $opps->get($idx % max(1, $opps->count()));
 
             $clientPhone = $contact->phone ?? ('+971 50 ' . rand(100, 999) . ' ' . rand(1000, 9999));
-            $sampleAudio = \Illuminate\Support\Facades\Storage::disk('public')->exists('recordings/sample_3cx_call.wav')
-                ? '/storage/recordings/sample_3cx_call.wav'
-                : 'https://actions.google.com/sounds/v1/ambiences/office_murmur.ogg';
+            // null triggers frontend getPlayableAudioUrl → /3cx/recordings/{id}/stream → public/audio/sample_3cx_call.wav
+            $sampleAudio = null;
 
             CallRecording::create([
                 'pbx_call_id' => $item['pbx_call_id'],

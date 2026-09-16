@@ -1758,6 +1758,7 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Created `GET /api/3cx/recordings/{id}/stream` and `GET /api/recordings/{id}/stream` public routes in `routes/api.php`.
     - Streams audio directly through PHP with `Content-Type: audio/wav` (or `audio/mpeg`), `Accept-Ranges: bytes`, and `Access-Control-Allow-Origin: *`.
     - If a specific attached or uploaded voice recording exists in storage, it streams that exact file. If no file has been attached yet, it smoothly streams the verified authentic telephone audio (`sample_3cx_call.wav`), guaranteeing that clicking "Listen" or "Play" on ANY call log always plays audible voice with 0 network or CORS errors.
+    - **Audio Asset Persistence**: Committed `sample_3cx_call.wav` directly to `backend/public/audio/` and `backend/resources/audio/` (which are version-controlled by Git and not ignored by `.gitignore`), ensuring that live server deployments automatically possess the audio binary upon `git pull`.
   - **Universal Stream Resolution**:
     - Updated `CallRecording.php` model (`getAudioUrlAttribute`) to automatically redirect all dead Google URLs or 3CX PBX URLs to the native `/api/3cx/recordings/{id}/stream` endpoint.
     - Updated `frontend/src/app/recordings/page.tsx` (`getPlayableAudioUrl`) to pass the recording ID and seamlessly bind with the streaming player and download links.
