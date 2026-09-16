@@ -1710,6 +1710,7 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Hardened `syncUser`, `loadData`, and `handleResetFilters` to prevent state hydration fallbacks to `'all'`.
   - **Automated Verification**:
     - End-to-end API test executed comparing Super Admin (Faraz Shafi: 2,096 leads) vs Telesales Agent (Shafi Uddin: exactly 231 leads).
+
 - **137 — High-Capacity Pagination Controls (10 to 500 Leads Per Page) (`frontend/src/app/page.tsx`, `frontend/src/app/new-leads/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
   - **Pagination Dropdown Expansion**:
     - Added `200 / page` and `500 / page` options to the per-page selector dropdown across both the master **Lead Pool** (`frontend/src/app/page.tsx`) and **New Inbound Leads Allocation Desk** (`frontend/src/app/new-leads/page.tsx`).
@@ -1719,6 +1720,36 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Verification**:
     - Verified TypeScript compilation across the frontend with 0 errors (`npx tsc --noEmit` exit code 0).
     - Verified PHP syntax in backend controller (`php -l`).
+
+- **138 — Opportunity Workspace Requirements & Property Preferences Strict 1-to-1 Alignment with Create Opportunity Form (`frontend/src/app/opportunities/[id]/page.tsx`, `backend/app/Http/Controllers/Api/OpportunityController.php`)**:
+  - **Strict Field Alignment with Create Opportunity Modal**:
+    - Aligned Section 3 (*"Opportunity Requirements & Property Preferences"*) on the Opportunity Workspace route (`/opportunities/[id]`) to strictly match the exact fields of the Create Opportunity Modal (`CreateOpportunityModal.tsx`), eliminating redundant surplus fields:
+      - **Removed**: "Project / Specific Unit" (was surplus and not part of the standard creation modal).
+      - **Removed**: Generic "Payment Method" (Cash/Mortgage dropdown which masked the actual payment plan).
+    - **Exact 12 Field Specification**:
+      1. **Opportunity Type** (`opportunityType`)
+      2. **Deal Temperature** (`temperature`)
+      3. **Market** (`market`: Offplan / Secondary)
+      4. **Handover (Year)** (`handover`: Ready / Completed, 2024–2030+)
+      5. **Master Developer** (`developer`)
+      6. **Target Location / Community** (`community`)
+      7. **Property Type** (`propertyType`)
+      8. **Bedrooms Preference** (`bedrooms`)
+      9. **Payment Plan** (`paymentPlan`: dedicated prominent card & input displaying e.g. "60/40 on Handover, 50/50, 1% Monthly or Cash", fetched directly from `buyer_qualifications.payment_plan_pref`)
+      10. **Min Budget (AED)** (`budgetMin`)
+      11. **Max Budget (AED)** (`budgetMax`)
+      12. **Target Budget Range** (computed summary bar: `AED Min – Max`)
+      13. **Initial Intake Requirement Brief / Notes** (`keyRequirement`)
+  - **Agent In-Place Edit Mode**:
+    - Added a prominent **`[✏️ Edit Requirements]`** action button in the section header.
+    - Clicking the button smoothly transitions the card grid into an interactive edit form matching the exact fields above with `SearchableSelect` dropdowns, numeric budget inputs, timing controls, dedicated Payment Plan text input, and brief notes textarea.
+    - Integrated **`Cancel`** and **`Save Changes`** controls with interactive loading spinners (`Loader2`) and SweetAlert2 confirmation notifications.
+    - Persists updates directly to `PUT /api/opportunities/{id}` without requiring page reloads, immediately synchronizing the Opportunity Workspace overview and audit history logs.
+  - **Backend Audit Trail & Persistence Expansion**:
+    - Updated [`OpportunityController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/OpportunityController.php) (`qualify` and `update`) to accept, validate, save, and track changes to `market`, `handover_year`, and `payment_plan_pref` in the opportunity activity timeline, ensuring full synchronization between frontend modal, workspace cards, and MySQL database.
+  - **Verification**:
+    - Verified full TypeScript compilation across the workspace with 0 errors (`npx tsc --noEmit` exit code 0).
+    - Verified PHP syntax with `php -l`.
 
 ---
 

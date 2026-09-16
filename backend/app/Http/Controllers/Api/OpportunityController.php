@@ -411,15 +411,31 @@ class OpportunityController extends Controller
         if (isset($validated['cash_or_finance']) && optional($bQual)->cash_or_finance != $validated['cash_or_finance']) {
             $changes[] = "Payment Method: '" . (optional($bQual)->cash_or_finance ?: 'None') . "' ➔ '" . $validated['cash_or_finance'] . "'";
         }
+        if (array_key_exists('market', $validated) && optional($bQual)->market != $validated['market']) {
+            $changes[] = "Market: '" . (optional($bQual)->market ?: 'None') . "' ➔ '" . ($validated['market'] ?: 'None') . "'";
+        }
+        $newHandover = $validated['handover_year'] ?? ($validated['handover'] ?? null);
+        if ($newHandover !== null && optional($bQual)->handover_year != $newHandover) {
+            $changes[] = "Handover Year: '" . (optional($bQual)->handover_year ?: 'None') . "' ➔ '" . ($newHandover ?: 'None') . "'";
+        }
+        $newPlan = $validated['payment_plan'] ?? ($validated['payment_plan_pref'] ?? null);
+        if ($newPlan !== null && optional($bQual)->payment_plan_pref != $newPlan) {
+            $changes[] = "Payment Plan: '" . (optional($bQual)->payment_plan_pref ?: 'None') . "' ➔ '" . ($newPlan ?: 'None') . "'";
+        }
 
         $opportunityData = [];
-        if (isset($validated['opportunity_type'])) $opportunityData['opportunity_type'] = $validated['opportunity_type'];
-        if (isset($validated['temperature'])) $opportunityData['temperature'] = $validated['temperature'];
-        if (isset($validated['budget_min'])) $opportunityData['budget_min'] = $validated['budget_min'];
-        if (isset($validated['budget_max'])) $opportunityData['budget_max'] = $validated['budget_max'];
-        if (isset($validated['key_requirement'])) $opportunityData['key_requirement'] = $validated['key_requirement'];
-        if (isset($validated['current_owner_name'])) $opportunityData['current_owner_name'] = $validated['current_owner_name'];
-        if (isset($validated['next_action'])) $opportunityData['next_action'] = $validated['next_action'];
+        if (array_key_exists('opportunity_type', $validated)) $opportunityData['opportunity_type'] = $validated['opportunity_type'];
+        if (array_key_exists('temperature', $validated)) $opportunityData['temperature'] = $validated['temperature'];
+        if (array_key_exists('budget_min', $validated)) $opportunityData['budget_min'] = $validated['budget_min'];
+        if (array_key_exists('budget_max', $validated)) {
+            $opportunityData['budget_max'] = $validated['budget_max'];
+            if ($validated['budget_max']) {
+                $opportunityData['deal_value'] = $validated['budget_max'];
+            }
+        }
+        if (array_key_exists('key_requirement', $validated)) $opportunityData['key_requirement'] = $validated['key_requirement'];
+        if (array_key_exists('current_owner_name', $validated)) $opportunityData['current_owner_name'] = $validated['current_owner_name'];
+        if (array_key_exists('next_action', $validated)) $opportunityData['next_action'] = $validated['next_action'];
         
         if (isset($validated['next_action_due_at'])) {
             $opportunityData['next_action_due_at'] = $validated['next_action_due_at'];
@@ -439,23 +455,29 @@ class OpportunityController extends Controller
             $opportunity->update($opportunityData);
         }
 
-        $buyerQualData = array_filter([
-            'developer' => $validated['developer'] ?? null,
-            'community' => $validated['community'] ?? null,
-            'project' => $validated['project'] ?? null,
-            'project_property' => $validated['project_property'] ?? null,
-            'property_type' => $validated['property_type'] ?? null,
-            'bedrooms' => $validated['bedrooms'] ?? null,
-            'cash_or_finance' => $validated['cash_or_finance'] ?? null,
-            'payment_plan_pref' => $validated['payment_plan'] ?? ($validated['payment_plan_pref'] ?? null),
-            'market' => $validated['market'] ?? null,
-            'handover_year' => $validated['handover_year'] ?? ($validated['handover'] ?? null),
-        ], function ($val) { return !is_null($val); });
+        $buyerQualData = [];
+        $qualFields = [
+            'developer', 'community', 'project', 'project_property',
+            'property_type', 'bedrooms', 'cash_or_finance', 'market',
+        ];
+        foreach ($qualFields as $qField) {
+            if (array_key_exists($qField, $validated)) {
+                $buyerQualData[$qField] = $validated[$qField];
+            }
+        }
+        if (array_key_exists('payment_plan', $validated) || array_key_exists('payment_plan_pref', $validated)) {
+            $buyerQualData['payment_plan_pref'] = $validated['payment_plan'] ?? ($validated['payment_plan_pref'] ?? null);
+        }
+        if (array_key_exists('handover_year', $validated) || array_key_exists('handover', $validated)) {
+            $buyerQualData['handover_year'] = $validated['handover_year'] ?? ($validated['handover'] ?? null);
+        }
 
-        if ($opportunity->buyerQualification) {
-            $opportunity->buyerQualification->update($buyerQualData);
-        } else {
-            BuyerQualification::create(array_merge(['opportunity_id' => $opportunity->id], $buyerQualData));
+        if (!empty($buyerQualData)) {
+            if ($opportunity->buyerQualification) {
+                $opportunity->buyerQualification->update($buyerQualData);
+            } else {
+                BuyerQualification::create(array_merge(['opportunity_id' => $opportunity->id], $buyerQualData));
+            }
         }
 
         if (!empty($changes)) {

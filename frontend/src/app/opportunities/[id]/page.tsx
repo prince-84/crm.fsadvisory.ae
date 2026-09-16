@@ -10,7 +10,7 @@ import { fetchApi } from '@/lib/api';
 import { 
   Building2, User, Phone, Mail, Clock, ShieldCheck, Flame, 
   CheckCircle2, ArrowRight, Activity as ActivityIcon, MessageSquare, Plus, FileText, Sparkles, RotateCcw, Loader2,
-  DollarSign, MapPin, Compass, Layers, Globe, Tag, Award, Wallet, Building, Save, Briefcase, Edit3, History, X
+  DollarSign, MapPin, Compass, Layers, Globe, Tag, Award, Wallet, Building, Save, Briefcase, Edit3, History, X, Home, Bed
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -33,6 +33,35 @@ const PAYMENT_METHODS = [
   { value: 'cash', label: 'Ready Cash / Equity' },
   { value: 'mortgage', label: 'Bank Mortgage Approved' },
   { value: 'offplan_plan', label: 'Off-Plan Payment Plan' },
+];
+
+const MARKET_OPTIONS = [
+  { value: 'Offplan', label: 'Offplan' },
+  { value: 'Secondary', label: 'Secondary' },
+];
+
+const HANDOVER_YEARS = [
+  { value: 'Ready / Completed', label: 'Ready / Completed' },
+  { value: '2024', label: '2024' },
+  { value: '2025', label: '2025' },
+  { value: '2026', label: '2026' },
+  { value: '2027', label: '2027' },
+  { value: '2028', label: '2028' },
+  { value: '2029', label: '2029' },
+  { value: '2030+', label: '2030+' },
+];
+
+const BEDROOM_OPTIONS = [
+  'Studio',
+  '1 Bedroom',
+  '2 Bedrooms',
+  '3 Bedrooms',
+  '4 Bedrooms',
+  '5 Bedrooms',
+  '6+ Bedrooms',
+  'Penthouse',
+  'Duplex',
+  'Villa / Townhouse',
 ];
 
 const INITIAL_DEVELOPERS = [
@@ -162,19 +191,167 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
   // Section 3: Opportunity Requirements & Deal Specs (matching Lead Pool form)
   const [opportunityType, setOpportunityType] = useState('buyer');
   const [temperature, setTemperature] = useState('hot');
+  const [market, setMarket] = useState('');
+  const [handover, setHandover] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
-  const [developer, setDeveloper] = useState('Emaar Properties');
-  const [community, setCommunity] = useState('Downtown Dubai');
+  const [paymentPlan, setPaymentPlan] = useState('');
+  const [developer, setDeveloper] = useState('');
+  const [community, setCommunity] = useState('');
   const [project, setProject] = useState('');
-  const [propertyType, setPropertyType] = useState('Apartment');
-  const [bedrooms, setBedrooms] = useState('2 BR');
+  const [propertyType, setPropertyType] = useState('');
+  const [bedrooms, setBedrooms] = useState('');
   const [projectProperty, setProjectProperty] = useState('');
-  const [budgetMin, setBudgetMin] = useState('1800000');
-  const [budgetMax, setBudgetMax] = useState('2200000');
+  const [budgetMin, setBudgetMin] = useState('');
+  const [budgetMax, setBudgetMax] = useState('');
   const [keyRequirement, setKeyRequirement] = useState('');
   const [assignedOwner, setAssignedOwner] = useState('Faraz Shafi');
   const [summaryNoteText, setSummaryNoteText] = useState('');
   const [savingSummaryNote, setSavingSummaryNote] = useState(false);
+
+  // Edit Mode state for Section 3
+  const [isEditingRequirements, setIsEditingRequirements] = useState(false);
+  const [savingRequirements, setSavingRequirements] = useState(false);
+
+  // Dynamic catalogs loaded from DB
+  const [opportunityTypeOptions, setOpportunityTypeOptions] = useState<any[]>(OPPORTUNITY_TYPES);
+  const [developerOptions, setDeveloperOptions] = useState<string[]>(INITIAL_DEVELOPERS);
+  const [communityOptions, setCommunityOptions] = useState<string[]>(INITIAL_COMMUNITIES);
+  const [propertyTypeOptions, setPropertyTypeOptions] = useState<string[]>(PROPERTY_TYPES);
+
+  useEffect(() => {
+    fetchApi('/catalog/opportunity-types').then((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setOpportunityTypeOptions(
+          data.filter((ot: any) => ot.is_active !== false).map((ot: any) => ({
+            value: ot.slug || ot.value || ot.name,
+            label: ot.name || ot.label || ot.slug,
+          }))
+        );
+      }
+    }).catch(() => {});
+
+    fetchApi('/catalog/developers').then((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        const names = data.filter((d: any) => d.is_active !== false).map((d: any) => d.name || d);
+        if (names.length > 0) setDeveloperOptions(names);
+      }
+    }).catch(() => {});
+
+    fetchApi('/catalog/communities').then((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        const names = data.filter((c: any) => c.is_active !== false).map((c: any) => c.name || c);
+        if (names.length > 0) setCommunityOptions(names);
+      }
+    }).catch(() => {});
+
+    fetchApi('/catalog/properties').then((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        const names = data.filter((p: any) => p.is_active !== false).map((p: any) => p.name || p);
+        if (names.length > 0) setPropertyTypeOptions(names);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Form buffer for editing Section 3
+  const [editForm, setEditForm] = useState({
+    opportunityType: '',
+    temperature: '',
+    market: '',
+    handover: '',
+    developer: '',
+    community: '',
+    propertyType: '',
+    bedrooms: '',
+    paymentPlan: '',
+    budgetMin: '',
+    budgetMax: '',
+    keyRequirement: '',
+  });
+
+  const handleStartEditing = () => {
+    setEditForm({
+      opportunityType: opportunityType || opp?.opportunity_type || 'buyer',
+      temperature: temperature || opp?.temperature || 'hot',
+      market: market || qual.market || '',
+      handover: handover || qual.handover_year || '',
+      developer: developer || qual.developer || opp?.developer || '',
+      community: community || qual.community || opp?.community || '',
+      propertyType: propertyType || qual.property_type || opp?.property_type || '',
+      bedrooms: bedrooms || qual.bedrooms || opp?.bedrooms || '',
+      paymentPlan: paymentPlan || qual.payment_plan_pref || qual.payment_plan || opp?.payment_plan || '',
+      budgetMin: budgetMin || (opp?.budget_min ? String(opp.budget_min) : ''),
+      budgetMax: budgetMax || (opp?.budget_max ? String(opp.budget_max) : ''),
+      keyRequirement: keyRequirement || opp?.key_requirement || '',
+    });
+    setIsEditingRequirements(true);
+  };
+
+  const handleCancelEditing = () => {
+    setIsEditingRequirements(false);
+  };
+
+  const handleSaveRequirements = async () => {
+    setSavingRequirements(true);
+    try {
+      const payload: any = {
+        opportunity_type: editForm.opportunityType,
+        temperature: editForm.temperature,
+        market: editForm.market,
+        handover_year: editForm.handover,
+        handover: editForm.handover,
+        developer: editForm.developer,
+        community: editForm.community,
+        property_type: editForm.propertyType,
+        bedrooms: editForm.bedrooms,
+        payment_plan: editForm.paymentPlan,
+        payment_plan_pref: editForm.paymentPlan,
+        budget_min: editForm.budgetMin ? Number(editForm.budgetMin) : null,
+        budget_max: editForm.budgetMax ? Number(editForm.budgetMax) : null,
+        key_requirement: editForm.keyRequirement,
+      };
+
+      const res = await fetchApi(`/opportunities/${oppId}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+
+      if (res) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Requirements Updated!',
+          text: 'Opportunity requirements & property preferences have been successfully updated.',
+          timer: 2000,
+          showConfirmButton: false,
+        });
+
+        // Update active states
+        setOpportunityType(editForm.opportunityType);
+        setTemperature(editForm.temperature);
+        setMarket(editForm.market);
+        setHandover(editForm.handover);
+        setDeveloper(editForm.developer);
+        setCommunity(editForm.community);
+        setPropertyType(editForm.propertyType);
+        setBedrooms(editForm.bedrooms);
+        setPaymentPlan(editForm.paymentPlan);
+        setBudgetMin(editForm.budgetMin);
+        setBudgetMax(editForm.budgetMax);
+        setKeyRequirement(editForm.keyRequirement);
+
+        setIsEditingRequirements(false);
+        loadOpportunity(true);
+      }
+    } catch (err: any) {
+      console.error('Failed to save requirements:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Save Failed',
+        text: err.message || 'Could not save requirements.',
+      });
+    } finally {
+      setSavingRequirements(false);
+    }
+  };
 
   // Next Action & SLA schedule states
   const [nextAction, setNextAction] = useState('');
@@ -219,15 +396,18 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
 
       setOpportunityType(data.opportunity_type || 'buyer');
       setTemperature(data.temperature || 'hot');
+      setMarket(bQual.market || data.market || '');
+      setHandover(bQual.handover_year || data.handover_year || data.handover || '');
       setPaymentMethod(bQual.cash_or_finance || 'cash');
-      setDeveloper(bQual.developer || data.developer || 'Emaar Properties');
-      setCommunity(bQual.community || sQual.community || lQual.community || data.community || 'Downtown Dubai');
+      setPaymentPlan(bQual.payment_plan_pref || bQual.payment_plan || data.payment_plan || data.payment_plan_pref || '');
+      setDeveloper(bQual.developer || data.developer || '');
+      setCommunity(bQual.community || sQual.community || lQual.community || data.community || '');
       setProject(bQual.project || data.project || '');
-      setPropertyType(bQual.property_type || data.property_type || 'Apartment');
-      setBedrooms(bQual.bedrooms || data.bedrooms || '2 BR');
+      setPropertyType(bQual.property_type || data.property_type || '');
+      setBedrooms(bQual.bedrooms || data.bedrooms || '');
       setProjectProperty(bQual.project_property || data.project_property || '');
-      setBudgetMin(String(data.budget_min ?? 1800000));
-      setBudgetMax(String(data.budget_max ?? 2200000));
+      setBudgetMin(data.budget_min !== null && data.budget_min !== undefined ? String(data.budget_min) : '');
+      setBudgetMax(data.budget_max !== null && data.budget_max !== undefined ? String(data.budget_max) : '');
       setKeyRequirement(data.key_requirement || '');
       setAssignedOwner(data.current_owner_name || 'Faraz Shafi');
 
@@ -574,7 +754,11 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
               </div>
               <div>
                 <div className="text-[10px] text-[#6E6E6E] font-semibold uppercase">Budget / Listing Price</div>
-                <div className="font-bold text-[#081428] mt-0.5">AED {(opp.budget_min/1000000).toFixed(1)}M – {(opp.budget_max/1000000).toFixed(1)}M</div>
+                <div className="font-bold text-[#081428] mt-0.5">
+                  {opp.budget_min || opp.budget_max 
+                    ? `AED ${opp.budget_min ? (Number(opp.budget_min) / 1000000).toFixed(1) + 'M' : '0'} – ${opp.budget_max ? (Number(opp.budget_max) / 1000000).toFixed(1) + 'M' : 'Open'}`
+                    : (budgetMin || budgetMax ? `AED ${budgetMin ? (Number(budgetMin) / 1000000).toFixed(1) + 'M' : '0'} – ${budgetMax ? (Number(budgetMax) / 1000000).toFixed(1) + 'M' : 'Open'}` : 'AED Not Specified')}
+                </div>
               </div>
               <div>
                 <div className="text-[10px] text-[#6E6E6E] font-semibold uppercase">Qualification Score</div>
@@ -674,149 +858,435 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
               {/* Tab 1: Overview & Requirements (Strictly Read-Only from Lead + Summary Notes) */}
               {activeTab === 'overview' && (
                 <div className="space-y-4 text-xs">
-                  {/* SECTION 3: Opportunity Requirements & Deal Specs (Read-Only) */}
+                  {/* SECTION 3: Opportunity Requirements & Deal Specs (View & Edit Modes) */}
                   <div className="bg-white border border-[#E8E4DC] rounded-lg p-5 shadow-2xs space-y-4">
+                    {/* Header Bar */}
                     <div className="flex items-center justify-between border-b border-[#E8E4DC] pb-3 flex-wrap gap-2">
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-lg bg-[#C8A147]/10 flex items-center justify-center text-[#C8A147] shrink-0">
-                          <Briefcase className="w-4 h-4" />
+                          {isEditingRequirements ? <Edit3 className="w-4 h-4" /> : <Briefcase className="w-4 h-4" />}
                         </div>
                         <div>
                           <h3 className="font-heading font-bold text-sm text-[#081428] uppercase tracking-wider">
                             3. Opportunity Requirements & Property Preferences
                           </h3>
-                          <p className="text-[10px] text-[#6E6E6E]">Client mandate recorded from lead intake (Read-Only)</p>
+                          <p className="text-[10px] text-[#6E6E6E]">
+                            {isEditingRequirements
+                              ? 'Edit deal specifications, budget, and client preferences'
+                              : 'Client mandate and property specifications (Editable)'}
+                          </p>
                         </div>
                       </div>
-                      <span className="text-[10px] px-2.5 py-1 rounded bg-[#FAF8F5] text-[#6E6E6E] border border-[#E8E4DC] font-semibold">
-                        Lead Ingestion Record
-                      </span>
+
+                      <div className="flex items-center gap-2">
+                        {!isEditingRequirements ? (
+                          <button
+                            type="button"
+                            onClick={handleStartEditing}
+                            className="px-3.5 py-1.5 bg-[#081428] hover:bg-[#122444] text-[#C8A147] border border-[#C8A147]/40 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                            title="Edit opportunity requirements & property preferences"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-[#C8A147]" />
+                            <span>Edit Requirements</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleCancelEditing}
+                              disabled={savingRequirements}
+                              className="px-3 py-1.5 border border-[#E8E4DC] bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              <X className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Cancel</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleSaveRequirements}
+                              disabled={savingRequirements}
+                              className="px-4 py-1.5 bg-[#081428] hover:bg-[#122444] text-[#C8A147] border border-[#C8A147]/60 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              {savingRequirements ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C8A147]" />
+                                  <span>Saving...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Save className="w-3.5 h-3.5 text-[#C8A147]" />
+                                  <span>Save Changes</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Row 1: Commercial Deal Mandate (3 Columns) */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold">Opportunity Type</span>
-                        <div className="font-semibold text-xs text-[#081428] capitalize flex items-center gap-1.5">
-                          <Tag className="w-3.5 h-3.5 text-[#C8A147]" />
-                          <span>{opp.opportunity_type || 'Buyer'} Opportunity</span>
+                    {!isEditingRequirements ? (
+                      /* VIEW MODE: LUXURY INFORMATION CARDS */
+                      <div className="space-y-4">
+                        {/* Row 1: Deal Mandate, Temperature, Market & Handover (4 Columns) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <Tag className="w-3 h-3 text-[#C8A147]" /> Opportunity Type
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428] capitalize truncate">
+                              {opportunityType ? `${opportunityType} Opportunity` : (opp.opportunity_type ? `${opp.opportunity_type} Opportunity` : 'Buyer Opportunity')}
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <Flame className="w-3 h-3 text-red-500" /> Deal Temperature
+                            </span>
+                            <div>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                (temperature || opp.temperature) === 'hot' ? 'bg-red-100 text-red-700 border border-red-200' :
+                                (temperature || opp.temperature) === 'warm' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-blue-100 text-blue-700 border border-blue-200'
+                              }`}>
+                                {(temperature || opp.temperature) === 'hot' ? '🔴 HOT (Immediate / Ready)' : (temperature || opp.temperature) === 'warm' ? '🟠 WARM (1–3 Months)' : '🔵 COLD (Long-Term)'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <Globe className="w-3 h-3 text-[#C8A147]" /> Market
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428] truncate">
+                              {market || qual.market || '—'}
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-[#C8A147]" /> Handover (Year)
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428] truncate">
+                              {handover || qual.handover_year || '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Row 2: Location & Inventory Mandate (4 Columns) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <Building2 className="w-3 h-3 text-[#C8A147]" /> Master Developer
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428] truncate">
+                              {developer || qual.developer || opp.developer || '—'}
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-[#C8A147]" /> Target Location / Community
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428] truncate">
+                              {community || qual.community || opp.community || '—'}
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <Compass className="w-3 h-3 text-[#C8A147]" /> Property Type
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428] truncate">
+                              {propertyType || qual.property_type || opp.property_type || '—'}
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <Bed className="w-3 h-3 text-[#C8A147]" /> Bedrooms Preference
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428] truncate">
+                              {bedrooms || qual.bedrooms || opp.bedrooms || '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Row 3: Payment Plan & Budget (3 Columns) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <Wallet className="w-3 h-3 text-[#C8A147]" /> Payment Plan
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428] truncate" title={paymentPlan || qual.payment_plan_pref || qual.payment_plan || opp.payment_plan || '—'}>
+                              {paymentPlan || qual.payment_plan_pref || qual.payment_plan || opp.payment_plan || '—'}
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <DollarSign className="w-3 h-3 text-[#C8A147]" /> Min Budget (AED)
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428]">
+                              {budgetMin || opp.budget_min ? `AED ${Number(budgetMin || opp.budget_min).toLocaleString()}` : '—'}
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
+                            <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
+                              <DollarSign className="w-3 h-3 text-[#C8A147]" /> Max Budget (AED)
+                            </span>
+                            <div className="font-semibold text-xs text-[#081428]">
+                              {budgetMax || opp.budget_max ? `AED ${Number(budgetMax || opp.budget_max).toLocaleString()}` : '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Row 4: Target Budget Range Highlight */}
+                        {(budgetMin || budgetMax || opp.budget_min || opp.budget_max) && (
+                          <div className="p-3 bg-amber-50/50 border border-amber-200/80 rounded-md flex items-center justify-between flex-wrap gap-2">
+                            <span className="text-[10px] text-amber-900 uppercase font-bold flex items-center gap-1">
+                              <DollarSign className="w-3.5 h-3.5 text-[#C8A147]" /> Target Budget Range
+                            </span>
+                            <span className="font-bold text-xs text-[#081428]">
+                              AED {Number(budgetMin || opp.budget_min || 0).toLocaleString()} – {Number(budgetMax || opp.budget_max || 0).toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Row 5: Initial Intake Requirement Brief & Notes */}
+                        <div className="p-3.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1.5">
+                          <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-[#C8A147]" /> Initial Intake Requirement Brief
+                          </span>
+                          <div className="text-[#1A1A1A] font-medium text-xs leading-relaxed italic">
+                            "{keyRequirement || opp.key_requirement || 'No key requirement brief recorded.'}"
+                          </div>
                         </div>
                       </div>
+                    ) : (
+                      /* EDIT MODE: INTERACTIVE FORM INPUTS */
+                      <div className="space-y-4 pt-1 animate-in fade-in duration-200">
+                        <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-md flex items-center justify-between text-xs text-amber-900">
+                          <span className="font-semibold flex items-center gap-1.5">
+                            <Edit3 className="w-3.5 h-3.5 text-[#C8A147]" /> You are in Edit Mode. Update fields and click Save Changes.
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-700">All fields optional</span>
+                        </div>
 
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold">Deal Temperature</span>
+                        {/* Edit Row 1: Commercial Mandate & Timing */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1">
+                              Opportunity Type
+                            </label>
+                            <select
+                              value={editForm.opportunityType}
+                              onChange={(e) => setEditForm({ ...editForm, opportunityType: e.target.value })}
+                              className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:ring-1 focus:ring-[#C8A147] focus:border-[#C8A147] outline-hidden"
+                            >
+                              {opportunityTypeOptions.map((t, idx) => {
+                                const val = t.value || t.slug || t.name || `ot-${idx}`;
+                                const lbl = t.label || t.name || val;
+                                return (
+                                  <option key={`ot-${val}-${idx}`} value={val}>
+                                    {lbl}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1">
+                              Deal Temperature
+                            </label>
+                            <select
+                              value={editForm.temperature}
+                              onChange={(e) => setEditForm({ ...editForm, temperature: e.target.value })}
+                              className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:ring-1 focus:ring-[#C8A147] focus:border-[#C8A147] outline-hidden"
+                            >
+                              {TEMPERATURES.map((temp, idx) => (
+                                <option key={`temp-${temp.value}-${idx}`} value={temp.value}>{temp.label}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1">
+                              Market
+                            </label>
+                            <select
+                              value={editForm.market}
+                              onChange={(e) => setEditForm({ ...editForm, market: e.target.value })}
+                              className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:ring-1 focus:ring-[#C8A147] focus:border-[#C8A147] outline-hidden"
+                            >
+                              <option value="">Select Market...</option>
+                              {MARKET_OPTIONS.map((m, idx) => (
+                                <option key={`market-${m.value}-${idx}`} value={m.value}>{m.label}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1">
+                              Handover (Year)
+                            </label>
+                            <select
+                              value={editForm.handover}
+                              onChange={(e) => setEditForm({ ...editForm, handover: e.target.value })}
+                              className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:ring-1 focus:ring-[#C8A147] focus:border-[#C8A147] outline-hidden"
+                            >
+                              <option value="">Select Handover Year...</option>
+                              {HANDOVER_YEARS.map((y, idx) => (
+                                <option key={`handover-${y.value}-${idx}`} value={y.value}>{y.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Edit Row 2: Developer, Community, Property Type, Bedrooms */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1">
+                              Master Developer
+                            </label>
+                            <SearchableSelect
+                              options={developerOptions}
+                              value={editForm.developer}
+                              onChange={(val) => setEditForm({ ...editForm, developer: val })}
+                              placeholder="Select or enter developer..."
+                              className="w-full"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1">
+                              Target Community
+                            </label>
+                            <SearchableSelect
+                              options={communityOptions}
+                              value={editForm.community}
+                              onChange={(val) => setEditForm({ ...editForm, community: val })}
+                              placeholder="Select or enter community..."
+                              className="w-full"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1">
+                              Property Type
+                            </label>
+                            <SearchableSelect
+                              options={propertyTypeOptions}
+                              value={editForm.propertyType}
+                              onChange={(val) => setEditForm({ ...editForm, propertyType: val })}
+                              placeholder="Select property type..."
+                              className="w-full"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1">
+                              Bedrooms Preference
+                            </label>
+                            <select
+                              value={editForm.bedrooms}
+                              onChange={(e) => setEditForm({ ...editForm, bedrooms: e.target.value })}
+                              className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:ring-1 focus:ring-[#C8A147] focus:border-[#C8A147] outline-hidden"
+                            >
+                              <option value="">Select Bedrooms...</option>
+                              {BEDROOM_OPTIONS.map((bed, idx) => (
+                                <option key={`bed-${bed}-${idx}`} value={bed}>{bed}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Edit Row 3: Payment Plan & Budget Range (3 Columns) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1 flex items-center gap-1">
+                              <Wallet className="w-3 h-3 text-[#C8A147]" /> Payment Plan
+                            </label>
+                            <input
+                              type="text"
+                              value={editForm.paymentPlan}
+                              onChange={(e) => setEditForm({ ...editForm, paymentPlan: e.target.value })}
+                              placeholder="e.g. 60/40 on Handover, 50/50, 1% Monthly or Cash"
+                              className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:ring-1 focus:ring-[#C8A147] focus:border-[#C8A147] outline-hidden"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1 flex items-center gap-1">
+                              <DollarSign className="w-3 h-3 text-[#C8A147]" /> Min Budget (AED)
+                            </label>
+                            <input
+                              type="number"
+                              value={editForm.budgetMin}
+                              onChange={(e) => setEditForm({ ...editForm, budgetMin: e.target.value })}
+                              placeholder="e.g. 1500000"
+                              className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:ring-1 focus:ring-[#C8A147] focus:border-[#C8A147] outline-hidden"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1 flex items-center gap-1">
+                              <DollarSign className="w-3 h-3 text-[#C8A147]" /> Max Budget (AED)
+                            </label>
+                            <input
+                              type="number"
+                              value={editForm.budgetMax}
+                              onChange={(e) => setEditForm({ ...editForm, budgetMax: e.target.value })}
+                              placeholder="e.g. 2500000"
+                              className="w-full p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:ring-1 focus:ring-[#C8A147] focus:border-[#C8A147] outline-hidden"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Edit Row 4: Notes & Requirements Brief */}
                         <div>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            opp.temperature === 'hot' ? 'bg-red-100 text-red-700 border border-red-200' :
-                            opp.temperature === 'warm' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-blue-100 text-blue-700 border border-blue-200'
-                          }`}>
-                            {opp.temperature === 'hot' ? '🔴 HOT (Immediate / Ready)' : opp.temperature === 'warm' ? '🟠 WARM (1–3 Months)' : '🔵 COLD (Long-Term)'}
-                          </span>
+                          <label className="block text-[10px] font-bold text-[#6E6E6E] uppercase mb-1">
+                            Key Requirement Overview / Brief
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={editForm.keyRequirement}
+                            onChange={(e) => setEditForm({ ...editForm, keyRequirement: e.target.value })}
+                            placeholder="Enter specific client requests, preferred views, payment conditions, or investor criteria..."
+                            className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:ring-1 focus:ring-[#C8A147] focus:border-[#C8A147] outline-hidden"
+                          />
+                        </div>
+
+                        {/* Bottom Action Buttons */}
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E8E4DC]">
+                          <button
+                            type="button"
+                            onClick={handleCancelEditing}
+                            disabled={savingRequirements}
+                            className="px-4 py-2 border border-[#E8E4DC] bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveRequirements}
+                            disabled={savingRequirements}
+                            className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C8A147] border border-[#C8A147]/60 rounded-lg text-xs font-bold flex items-center gap-2 shadow-md transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {savingRequirements ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C8A147]" />
+                                <span>Saving Changes...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Save className="w-3.5 h-3.5 text-[#C8A147]" />
+                                <span>Save Changes</span>
+                              </>
+                            )}
+                          </button>
                         </div>
                       </div>
-
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold">Payment Method</span>
-                        <div className="font-semibold text-xs text-[#081428] flex items-center gap-1.5">
-                          <Wallet className="w-3.5 h-3.5 text-[#C8A147]" />
-                          <span>
-                            {paymentMethod === 'cash' ? '💵 Ready Cash / Equity' :
-                             paymentMethod === 'mortgage' ? '🏦 Bank Mortgage Approved' :
-                             '💳 Off-Plan Payment Plan'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Row 2: Location & Inventory Mandate (3 Columns) */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-[#C8A147]" /> Master Developer
-                        </span>
-                        <div className="font-semibold text-xs text-[#081428] truncate">
-                          {developer || qual.developer || opp.developer || 'Emaar Properties'}
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-[#C8A147]" /> Target Location / Community
-                        </span>
-                        <div className="font-semibold text-xs text-[#081428] truncate">
-                          {community || qual.community || opp.community || 'Downtown Dubai'}
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
-                          <Layers className="w-3 h-3 text-[#C8A147]" /> Project
-                        </span>
-                        <div className="font-semibold text-xs text-[#081428] truncate">
-                          {project || qual.project || opp.project || 'General Portfolio'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Row 3: Architectural Layout Specs (3 Columns) */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1">
-                          <Compass className="w-3 h-3 text-[#C8A147]" /> Property Type
-                        </span>
-                        <div className="font-semibold text-xs text-[#081428] truncate">
-                          {propertyType || qual.property_type || opp.property_type || 'Apartment'}
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold">Bedrooms Preference</span>
-                        <div className="font-semibold text-xs text-[#081428] truncate">
-                          {bedrooms || qual.bedrooms || opp.bedrooms || '2 BR'}
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold">Specific Unit</span>
-                        <div className="font-semibold text-xs text-[#081428] truncate">
-                          {projectProperty || qual.project_property || 'Open Selection'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Row 4: Budget & Financial Range (3 Columns) */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold">Min Budget (AED)</span>
-                        <div className="font-semibold text-xs text-[#081428]">
-                          AED {opp.budget_min ? Number(opp.budget_min).toLocaleString() : Number(budgetMin).toLocaleString()}
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold">Max Budget (AED)</span>
-                        <div className="font-semibold text-xs text-[#081428]">
-                          AED {opp.budget_max ? Number(opp.budget_max).toLocaleString() : Number(budgetMax).toLocaleString()}
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1 flex flex-col justify-center">
-                        <span className="text-[10px] text-[#6E6E6E] uppercase font-bold">Target Budget Range</span>
-                        <div className="font-bold text-xs text-[#C8A147]">
-                          AED {opp.budget_min ? Number(opp.budget_min).toLocaleString() : '1,800,000'} – {opp.budget_max ? Number(opp.budget_max).toLocaleString() : '2,200,000'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Row 5: Key Requirement Overview & Notes */}
-                    <div className="p-3.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md space-y-1.5">
-                      <span className="text-[10px] text-[#6E6E6E] uppercase font-bold flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-[#C8A147]" /> Initial Intake Requirement Brief
-                      </span>
-                      <div className="text-[#1A1A1A] font-medium text-xs leading-relaxed italic">
-                        "{opp.key_requirement || keyRequirement || 'No key requirement brief recorded.'}"
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* SECTION 4: SLA Action & Ownership Governance (Read-Only) */}
