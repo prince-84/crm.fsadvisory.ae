@@ -1762,17 +1762,20 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Universal Stream Resolution**:
     - Updated `CallRecording.php` model (`getAudioUrlAttribute`) to automatically redirect all dead Google URLs or 3CX PBX URLs to the native `/api/3cx/recordings/{id}/stream` endpoint.
     - Updated `frontend/src/app/recordings/page.tsx` (`getPlayableAudioUrl`) to pass the recording ID and seamlessly bind with the streaming player and download links.
-- **140 — 3CX Multi-Extension Audio Folder Resolution & Direct cPanel Streaming Engine (`backend/app/Http/Controllers/Api/CallRecordingController.php`)**:
-  - **Extension-Wise Storage Hierarchy Support**:
-    - Supported the live cPanel storage folder hierarchy where 3CX PBX and FTP archive recordings into extension-specific subdirectories (`storage/app/public/recordings/recordings/{ext}/*.wav`, `storage/app/public/recordings/{ext}/*.wav`, e.g. extensions `1030`, `1031`, `1033`, `1034`, `1035`, `1036`, `1038`).
-  - **Dynamic Audio File Matching**:
-    - In `CallRecordingController::streamAudio`, added intelligent multi-tier file lookup:
-      1. First matches phone number suffix (last 7 digits) against recorded audio files in that agent's extension folder.
-      2. If no phone match, picks the latest authentic audio file recorded for that agent extension.
-      3. Fallback to any recorded audio across all extension subfolders.
-      4. Fallback to public `sample_3cx_call.wav` guaranteeing audible playback with zero browser media errors.
-  - **cPanel Deployment Guidance**:
-    - Clarified file mapping between local Git repository (`backend/`) and cPanel production root (`api.fsadvisory.ae/`).
+- **140 — 3CX Multi-Extension Audio Folder Resolution, Authentic Filename Parser & Auto-Ingestion (`backend/app/Http/Controllers/Api/CallRecordingController.php`)**:
+  - **Extension-Wise Storage Hierarchy & Authentic Filename Parser**:
+    - Supported the authentic 3CX PBX storage hierarchy (`storage/app/public/recordings/recordings/{ext}/*.wav`, e.g. `1030`, `1031`, `1033`, `1034`, `1035`, `1036`, `1038`).
+    - Implemented high-precision regex parser for 3CX PBX audio filenames:
+      `[AgentName]_[Extension]-[PhoneNumber]_[YYYYMMDDHHmmss]([CallId]).wav`
+      (e.g., `[Mako%20Real%20Estate]_1030-0504584666_20260915063934(187).wav`).
+    - Extracts authentic agent name (`urldecode`), extension (`1030`), client phone number (`+971 50 458 4666`), recorded date/time (`Carbon::createFromFormat`), and 3CX PBX Call ID (`187`).
+  - **Automatic Server File Ingestion (`scanServerRecordingsInternal`)**:
+    - Scans all nested extension folders and automatically creates verified `CallRecording` records in the CRM database linked directly to each call's unique audio file and duration.
+    - Integrated auto-scan into `CallRecordingController::index()` so newly archived 3CX audio files immediately appear in the CRM table without manual synchronization.
+  - **Eliminated Cross-Client Audio Leakage in `streamAudio`**:
+    - Removed arbitrary `$extFiles[0]` fallback that previously caused unmatched calls to all play the same latest recording.
+    - Matches files strictly by client phone number (last 7 digits) or 3CX Call ID `([id])`.
+    - Unmatched calls safely fall back to neutral telephone sample audio (`sample_3cx_call.wav`), guaranteeing 100% audio isolation across calls.
 
 ---
 

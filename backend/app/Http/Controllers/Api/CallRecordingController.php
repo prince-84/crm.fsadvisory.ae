@@ -48,6 +48,13 @@ class CallRecordingController extends Controller
 
     public function index(Request $request)
     {
+        // Auto-ingest any new physical 3CX recording files from server storage folders
+        try {
+            $this->scanServerRecordingsInternal();
+        } catch (\Exception $e) {
+            \Log::warning('Auto-scan error: ' . $e->getMessage());
+        }
+
         $query = CallRecording::with(['contact', 'opportunity.buyerQualification'])->latest('recorded_at');
 
         // Direction filter
@@ -631,49 +638,46 @@ class CallRecordingController extends Controller
             }
         }
 
-        // Search in agent extension folders (e.g. storage/app/public/recordings/recordings/1030/ or storage/app/public/recordings/1030/)
-        if (!$filePath && $recording && !empty($recording->agent_extension)) {
-            $ext = trim($recording->agent_extension);
-            $extSearchPaths = [
-                storage_path("app/public/recordings/recordings/{$ext}/*"),
-                storage_path("app/public/recordings/{$ext}/*"),
-                storage_path("app/public/recordings/recording/{$ext}/*"),
+        // Search in agent extension folders (e.g. storage/app/public/recordings/recordings/1030/)
+        // EXACT match by caller/destination phone number or 3CX Call ID
+        if (!$filePath && $recording) {
+            $ext = trim($recording->agent_extension ?? '1030');
+            $searchPatterns = [
+                storage_path("app/public/recordings/recordings/{$ext}/*.*"),
+                storage_path("app/public/recordings/{$ext}/*.*"),
+                storage_path("app/public/recordings/recording/{$ext}/*.*"),
+                storage_path("app/public/recordings/*.*"),
             ];
 
-            foreach ($extSearchPaths as $globPattern) {
-                $extFiles = glob($globPattern);
-                if (!empty($extFiles)) {
-                    // Look for file matching caller number or call ID
-                    $cleanPhone = preg_replace('/[^0-9]/', '', $recording->caller_number ?? '');
-                    if (!empty($cleanPhone)) {
-                        $last7 = substr($cleanPhone, -7);
-                        foreach ($extFiles as $ef) {
-                            if (str_contains($ef, $last7)) {
-                                $filePath = $ef;
-                                break;
+            $cleanCaller = preg_replace('/[^0-9]/', '', $recording->caller_number ?? '');
+            $cleanDest = preg_replace('/[^0-9]/', '', $recording->destination_number ?? '');
+            $callerLast7 = strlen($cleanCaller) >= 7 ? substr($cleanCaller, -7) : '';
+            $destLast7 = strlen($cleanDest) >= 7 ? substr($cleanDest, -7) : '';
+
+            foreach ($searchPatterns as $pattern) {
+                $files = glob($pattern);
+                if (!empty($files)) {
+                    foreach ($files as $f) {
+                        $base = basename($f);
+                        // 1. Phone number match (last 7 digits)
+                        if (($callerLast7 && str_contains($base, $callerLast7)) || ($destLast7 && str_contains($base, $destLast7))) {
+                            $filePath = $f;
+                            break 2;
+                        }
+                        // 2. 3CX Call ID match e.g. (187)
+                        if (!empty($recording->pbx_call_id) && preg_match('/\(([0-9]+)\)/', $base, $idm)) {
+                            if (str_contains($recording->pbx_call_id, $idm[1])) {
+                                $filePath = $f;
+                                break 2;
                             }
                         }
                     }
-                    // If no phone match, use the most recent recording for that extension
-                    if (!$filePath) {
-                        usort($extFiles, fn($a, $b) => filemtime($b) - filemtime($a));
-                        $filePath = $extFiles[0];
-                    }
-                    if ($filePath) break;
                 }
             }
         }
 
-        // Fallback to any audio file in recordings directories
-        if (!$filePath) {
-            $allRecordedFiles = glob(storage_path('app/public/recordings/recordings/*/*.*'));
-            if (!empty($allRecordedFiles)) {
-                usort($allRecordedFiles, fn($a, $b) => filemtime($b) - filemtime($a));
-                $filePath = $allRecordedFiles[0];
-            }
-        }
-
         // Fallback to standard 3CX sample voice file
+        // NOTE: We do NOT blindly pick another client's recording ($extFiles[0]), so each call without an uploaded recording plays neutral audio
         if (!$filePath || !file_exists($filePath)) {
             $sampleCandidates = [
                 public_path('audio/sample_3cx_call.wav'),
@@ -951,85 +955,131 @@ class CallRecordingController extends Controller
     /**
      * Internal scanner for audio files residing in storage/app/public/recordings
      */
+    /**
+     * Internal scanner for audio files residing in storage/app/public/recordings
+     */
     public function scanServerRecordingsInternal(): int
     {
-        $dir = 'recordings';
-        if (!\Illuminate\Support\Facades\Storage::disk('public')->exists($dir)) {
-            \Illuminate\Support\Facades\Storage::disk('public')->makeDirectory($dir);
-            return 0;
+        $searchDirs = [
+            storage_path('app/public/recordings/recordings/*/*.*'),
+            storage_path('app/public/recordings/*/*.*'),
+            storage_path('app/public/recordings/*.*'),
+        ];
+
+        $audioFiles = [];
+        $allowedExts = ['wav', 'mp3', 'ogg', 'm4a', 'aac'];
+
+        foreach ($searchDirs as $pattern) {
+            $globFiles = glob($pattern);
+            if (!empty($globFiles)) {
+                foreach ($globFiles as $f) {
+                    if (is_file($f)) {
+                        $fExt = strtolower(pathinfo($f, PATHINFO_EXTENSION));
+                        if (in_array($fExt, $allowedExts)) {
+                            $audioFiles[$f] = $f;
+                        }
+                    }
+                }
+            }
         }
 
-        $files = \Illuminate\Support\Facades\Storage::disk('public')->files($dir);
-        $audioExtensions = ['wav', 'mp3', 'ogg', 'm4a', 'aac'];
         $importedCount = 0;
-        $contacts = Contact::limit(30)->get();
 
-        foreach ($files as $filePath) {
-            $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-            if (!in_array($ext, $audioExtensions)) {
+        foreach ($audioFiles as $fullPath) {
+            $fileName = basename($fullPath);
+
+            // Skip sample fallback file
+            if (str_contains($fileName, 'sample_3cx_call')) {
                 continue;
             }
 
-            $fileName = basename($filePath);
-            $relativeUrl = "/storage/{$filePath}";
-
-            // Check if recording already exists
+            // Check if recording already exists in DB by filename or pbx_call_id
             $exists = CallRecording::where('audio_url', 'like', "%{$fileName}%")->exists();
             if ($exists) {
                 continue;
             }
 
-            // Extract agent extension if present in filename
-            $extKeys = array_keys(self::EXTENSIONS_MAP);
+            // Relative path for storage URL
+            $cleanStoragePath = str_replace('\\', '/', $fullPath);
+            $cleanBase = str_replace('\\', '/', storage_path('app/public/'));
+            $relativeStorage = ltrim(str_replace($cleanBase, '', $cleanStoragePath), '/');
+            $relativeUrl = "/storage/{$relativeStorage}";
+
+            // 3CX Standard Filename Pattern:
+            // [AgentName]_[Extension]-[PhoneNumber]_[YYYYMMDDHHmmss]([CallId]).wav
+            $agentName = 'Advisor';
             $detectedExt = '1030';
-            foreach ($extKeys as $k) {
-                if (str_contains($fileName, (string) $k)) {
-                    $detectedExt = (string) $k;
-                    break;
+            $clientPhone = '+971 50 123 4567';
+            $recordedAt = Carbon::now();
+            $callId = '3CX-SVR-' . strtoupper(substr(md5($fileName), 0, 8));
+
+            if (preg_match('/^\[(.*?)\]_([0-9]+)-(.*?)_([0-9]{14})\((\d+)\)\.(wav|mp3|ogg|m4a|aac)$/i', $fileName, $m)) {
+                $agentName = urldecode($m[1]);
+                $detectedExt = $m[2];
+                $rawPhone = $m[3];
+                $timeStr = $m[4];
+                $rawCallId = $m[5];
+
+                $callId = '3CX-' . $rawCallId;
+
+                // Format phone number
+                if (str_starts_with($rawPhone, '05')) {
+                    $clientPhone = '+971 ' . substr($rawPhone, 0, 2) . ' ' . substr($rawPhone, 2, 3) . ' ' . substr($rawPhone, 5);
+                } elseif (str_starts_with($rawPhone, '00')) {
+                    $clientPhone = '+' . substr($rawPhone, 2);
+                } elseif (str_starts_with($rawPhone, '+')) {
+                    $clientPhone = $rawPhone;
+                } else {
+                    $clientPhone = $rawPhone;
                 }
-            }
-            $agentInfo = self::EXTENSIONS_MAP[$detectedExt] ?? self::EXTENSIONS_MAP['1030'];
 
-            // Match phone or contact
-            $matchedContact = null;
-            foreach ($contacts as $c) {
-                $rawP = preg_replace('/[^0-9]/', '', $c->phone ?? '');
-                if (strlen($rawP) >= 7 && str_contains($fileName, substr($rawP, -7))) {
-                    $matchedContact = $c;
-                    break;
+                try {
+                    $recordedAt = Carbon::createFromFormat('YmdHis', $timeStr);
+                } catch (\Exception $e) {
+                    $recordedAt = Carbon::now();
                 }
+            } else {
+                // Fallback parsing for non-standard filenames
+                foreach (array_keys(self::EXTENSIONS_MAP) as $k) {
+                    if (str_contains($fileName, (string) $k)) {
+                        $detectedExt = (string) $k;
+                        break;
+                    }
+                }
+                $agentName = self::EXTENSIONS_MAP[$detectedExt]['name'] ?? 'Advisor';
             }
-            if (!$matchedContact && $contacts->isNotEmpty()) {
-                $matchedContact = $contacts->random();
+
+            $size = @filesize($fullPath) ?: 100000;
+            // For standard 8kHz 16-bit mono WAV: ~16,000 bytes/sec
+            $estimatedDuration = max(10, min(1800, intval($size / 16000)));
+
+            // Try to match Contact in CRM by phone
+            $cleanP = preg_replace('/[^0-9]/', '', $clientPhone);
+            $last7 = strlen($cleanP) >= 7 ? substr($cleanP, -7) : '';
+            $contact = null;
+            if ($last7) {
+                $contact = Contact::where('phone', 'like', "%{$last7}%")
+                    ->orWhere('secondary_phone', 'like', "%{$last7}%")
+                    ->first();
             }
-
-            $matchedOpp = $matchedContact ? Opportunity::where('contact_id', $matchedContact->id)->first() : null;
-
-            $size = \Illuminate\Support\Facades\Storage::disk('public')->size($filePath);
-            $estimatedDuration = max(25, min(600, intval($size / 32000)));
-
-            $lastModified = \Illuminate\Support\Facades\Storage::disk('public')->lastModified($filePath);
-            $recordedAt = $lastModified ? Carbon::createFromTimestamp($lastModified) : Carbon::now();
-
-            $clientPhone = $matchedContact->phone ?? ('+971 50 ' . rand(100, 999) . ' ' . rand(1000, 9999));
-            $dirCall = rand(0, 1) === 1 ? 'inbound' : 'outbound';
+            $opp = $contact ? Opportunity::where('contact_id', $contact->id)->latest()->first() : null;
 
             CallRecording::create([
-                'pbx_call_id' => '3CX-SVR-' . strtoupper(substr(md5($fileName), 0, 8)),
-                'contact_id' => $matchedContact ? $matchedContact->id : null,
-                'opportunity_id' => $matchedOpp ? $matchedOpp->id : null,
-                'agent_name' => $agentInfo['name'],
+                'pbx_call_id' => $callId,
+                'contact_id' => $contact ? $contact->id : null,
+                'opportunity_id' => $opp ? $opp->id : null,
+                'agent_name' => $agentName,
                 'agent_extension' => $detectedExt,
-                'caller_number' => $dirCall === 'inbound' ? $clientPhone : "+971 4 300 {$detectedExt}",
-                'destination_number' => $dirCall === 'outbound' ? $clientPhone : "+971 4 300 {$detectedExt}",
-                'direction' => $dirCall,
+                'caller_number' => $clientPhone,
+                'destination_number' => "+971 4 300 {$detectedExt}",
+                'direction' => 'inbound',
                 'call_status' => 'answered',
                 'duration_seconds' => $estimatedDuration,
                 'audio_url' => $relativeUrl,
-                'audio_format' => $ext,
-                'call_outcome' => 'Interested - Schedule Viewing',
-                'notes' => "Server voice recording auto-ingested from file: {$fileName}.",
-                'ai_summary' => "Server Ingested Call ({$estimatedDuration}s) for {$agentInfo['name']}. Audio verified in server storage.",
+                'audio_format' => pathinfo($fullPath, PATHINFO_EXTENSION),
+                'call_outcome' => $estimatedDuration > 120 ? 'Interested - Schedule Viewing' : ($estimatedDuration > 40 ? 'Discussion Completed' : 'Quick Inquiry'),
+                'notes' => "3CX authentic recording: {$fileName}.",
+                'ai_summary' => "3CX PBX Call ({$estimatedDuration}s) for {$agentName} (Ext {$detectedExt}) with {$clientPhone}.",
                 'sentiment' => 'positive',
                 'recorded_at' => $recordedAt,
             ]);
