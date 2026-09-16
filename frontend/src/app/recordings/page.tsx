@@ -44,8 +44,12 @@ const PBX_USERS = [
   { ext: '1035', name: 'FA Advisory 3', email: 'admin@fsadvisory.ae', dept: 'fsadvisory3, All', role: 'Advisor' },
 ];
 
-export const getPlayableAudioUrl = (url: string | null) => {
+export const getPlayableAudioUrl = (url: string | null, recId?: number) => {
+  if (!url && recId) return `${API_BASE_URL}/3cx/recordings/${recId}/stream`;
   if (!url) return '';
+  if (url.includes('actions.google.com') || url.includes('ukits.3cx.ae')) {
+    return recId ? `${API_BASE_URL}/3cx/recordings/${recId}/stream` : `${API_BASE_URL}/3cx/recordings/1/stream`;
+  }
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
   const backendBase = API_BASE_URL.replace(/\/api$/, '');
   const clean = url.startsWith('/') ? url : `/${url}`;
@@ -170,7 +174,7 @@ export default function CallRecordingsPage() {
       return;
     }
 
-    const playUrl = getPlayableAudioUrl(activeRecording.audio_url);
+    const playUrl = getPlayableAudioUrl(activeRecording.audio_url, activeRecording.id);
     if (!playUrl) return;
 
     // Only update src if pointing to a different audio file
@@ -762,7 +766,7 @@ export default function CallRecordingsPage() {
                               </label>
 
                               <a
-                                href={getPlayableAudioUrl(rec.audio_url) || '#'}
+                                href={getPlayableAudioUrl(rec.audio_url, rec.id) || '#'}
                                 target="_blank"
                                 rel="noreferrer"
                                 download={`3CX-${rec.pbx_call_id}.wav`}

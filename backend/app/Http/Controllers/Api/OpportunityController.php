@@ -429,9 +429,6 @@ class OpportunityController extends Controller
         if (array_key_exists('budget_min', $validated)) $opportunityData['budget_min'] = $validated['budget_min'];
         if (array_key_exists('budget_max', $validated)) {
             $opportunityData['budget_max'] = $validated['budget_max'];
-            if ($validated['budget_max']) {
-                $opportunityData['deal_value'] = $validated['budget_max'];
-            }
         }
         if (array_key_exists('key_requirement', $validated)) $opportunityData['key_requirement'] = $validated['key_requirement'];
         if (array_key_exists('current_owner_name', $validated)) $opportunityData['current_owner_name'] = $validated['current_owner_name'];

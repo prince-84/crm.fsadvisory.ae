@@ -33,6 +33,8 @@ Route::any('/3cx/lookup', [CallRecordingController::class, 'contactLookup']);
 Route::post('/3cx/call-event', [CallRecordingController::class, 'handle3cxWebhook']);
 Route::post('/3cx/webhook', [CallRecordingController::class, 'handle3cxWebhook']);
 Route::post('/3cx/upload-recording', [CallRecordingController::class, 'uploadRecording']);
+Route::get('/3cx/recordings/{id}/stream', [CallRecordingController::class, 'streamAudio']);
+Route::get('/recordings/{id}/stream', [CallRecordingController::class, 'streamAudio']);
 Route::post('/whatsapp/webhook', [WhatsAppController::class, 'webhook']);
 
 // ==========================================

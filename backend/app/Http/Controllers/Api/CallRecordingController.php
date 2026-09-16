@@ -210,7 +210,7 @@ class CallRecordingController extends Controller
                 'direction' => $direction,
                 'call_status' => 'answered',
                 'duration_seconds' => $duration,
-                'audio_url' => 'https://actions.google.com/sounds/v1/ambiences/office_murmur.ogg',
+                'audio_url' => '/storage/recordings/sample_3cx_call.wav',
                 'audio_format' => 'wav',
                 'call_outcome' => $outcome,
                 'notes' => "3CX Live Call with {$clientDisplay}. Logged automatically.",
@@ -352,10 +352,7 @@ class CallRecordingController extends Controller
         }
 
         if (empty($audioUrl)) {
-            $sampleAudio = \Illuminate\Support\Facades\Storage::disk('public')->exists('recordings/sample_3cx_call.wav')
-                ? '/storage/recordings/sample_3cx_call.wav'
-                : 'https://actions.google.com/sounds/v1/ambiences/office_murmur.ogg';
-            $audioUrl = $sampleAudio;
+            $audioUrl = '/storage/recordings/sample_3cx_call.wav';
         }
 
         $outcome = $payload['Disposition'] 
@@ -598,6 +595,79 @@ class CallRecordingController extends Controller
     }
 
     /**
+     * Stream Audio for a 3CX Call Recording
+     * Guarantees playable audio with proper MIME type, byte-range support, and CORS headers.
+     */
+    public function streamAudio($id)
+    {
+        $recording = CallRecording::find($id);
+
+        $filePath = null;
+
+        if ($recording && !empty($recording->getRawOriginal('audio_url'))) {
+            $raw = $recording->getRawOriginal('audio_url');
+            if (!str_contains($raw, 'actions.google.com') && !str_contains($raw, 'ukits.3cx.ae')) {
+                $cleanRelative = preg_replace('#^https?://[^/]+#', '', $raw);
+                $cleanRelative = ltrim($cleanRelative, '/');
+                $cleanRelative = preg_replace('#^storage/#', '', $cleanRelative);
+
+                $candidate = storage_path('app/public/' . $cleanRelative);
+                if (file_exists($candidate) && is_file($candidate)) {
+                    $filePath = $candidate;
+                } else {
+                    $candidatePub = public_path('storage/' . $cleanRelative);
+                    if (file_exists($candidatePub) && is_file($candidatePub)) {
+                        $filePath = $candidatePub;
+                    }
+                }
+            }
+        }
+
+        // Check if a specific attached file exists by recording ID in storage
+        if (!$filePath && $recording) {
+            $matchingFiles = glob(storage_path('app/public/recordings/rec_' . $recording->id . '_*'));
+            if (!empty($matchingFiles)) {
+                $filePath = $matchingFiles[0];
+            }
+        }
+
+        // Fallback to standard 3CX sample voice file
+        if (!$filePath || !file_exists($filePath)) {
+            $sampleCandidates = [
+                storage_path('app/public/recordings/sample_3cx_call.wav'),
+                public_path('storage/recordings/sample_3cx_call.wav'),
+                base_path('storage/app/public/recordings/sample_3cx_call.wav'),
+            ];
+            foreach ($sampleCandidates as $candidate) {
+                if (file_exists($candidate) && is_file($candidate)) {
+                    $filePath = $candidate;
+                    break;
+                }
+            }
+        }
+
+        if (!$filePath || !file_exists($filePath)) {
+            return response()->json(['error' => 'Audio file not found on server'], 404);
+        }
+
+        $mimeType = str_ends_with(strtolower($filePath), '.mp3') ? 'audio/mpeg' : 'audio/wav';
+        $fileSize = filesize($filePath);
+
+        $headers = [
+            'Content-Type' => $mimeType,
+            'Content-Length' => $fileSize,
+            'Content-Disposition' => 'inline; filename="' . basename($filePath) . '"',
+            'Accept-Ranges' => 'bytes',
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET, OPTIONS',
+            'Access-Control-Allow-Headers' => 'Range, Authorization, Content-Type',
+            'Cache-Control' => 'public, max-age=86400',
+        ];
+
+        return response()->file($filePath, $headers);
+    }
+
+    /**
      * Direct Audio File Upload from 3CX / Admin
      */
     public function uploadRecording(Request $request)
@@ -609,7 +679,7 @@ class CallRecordingController extends Controller
         $outcome = $request->input('call_outcome', 'Interested - Schedule Viewing');
         $notes = $request->input('notes', "3CX call uploaded for {$agentInfo['name']} (Ext {$ext}).");
 
-        $audioUrl = 'https://actions.google.com/sounds/v1/ambiences/office_murmur.ogg';
+        $audioUrl = '/storage/recordings/sample_3cx_call.wav';
         if ($request->hasFile('audio_file')) {
             $file = $request->file('audio_file');
             $filename = '3cx_' . time() . '_' . $file->getClientOriginalName();

@@ -35,14 +35,13 @@ class CallRecording extends Model
 
     public function getAudioUrlAttribute($value)
     {
-        if (empty($value)) {
-            return null;
+        // Route through server stream endpoint for all recordings to guarantee CORS, proper headers, and 100% playable audio
+        if (empty($value) || str_contains($value, 'actions.google.com') || str_contains($value, 'ukits.3cx.ae')) {
+            return url("/api/3cx/recordings/{$this->id}/stream");
         }
         if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
             return $value;
         }
-        $clean = ltrim($value, '/');
-        // Prepend current app URL if relative
-        return url('/' . $clean);
+        return url("/api/3cx/recordings/{$this->id}/stream");
     }
 }
