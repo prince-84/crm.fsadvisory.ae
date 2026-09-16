@@ -39,9 +39,21 @@ class CallRecordingController extends Controller
             'role' => 'Advisor'
         ],
         '1035' => [
-            'name' => 'FA Advisory 3',
-            'email' => 'admin@fsadvisory.ae',
-            'department' => 'fsadvisory3, All',
+            'name' => 'Saad',
+            'email' => 'saad@fsadvisory.ae',
+            'department' => 'TeleSales',
+            'role' => 'Advisor'
+        ],
+        '1036' => [
+            'name' => 'Saad',
+            'email' => 'saad@fsadvisory.ae',
+            'department' => 'TeleSales',
+            'role' => 'Advisor'
+        ],
+        '1038' => [
+            'name' => 'Advisor 1038',
+            'email' => 'advisor1038@fsadvisory.ae',
+            'department' => 'Sales',
             'role' => 'Advisor'
         ],
     ];
@@ -195,41 +207,8 @@ class CallRecordingController extends Controller
 
         $opp = $contact ? Opportunity::where('contact_id', $contact->id)->latest()->first() : null;
 
-        // Automatically log this active 3CX call in CRM database so it immediately shows up on Recordings page
-        $callId = '3CX-' . date('Ymd-Hi') . '-' . substr(md5($number . microtime()), 0, 4);
-        
-        $ext = (string) ($request->input('Agent') ?? $request->input('AgentExtension') ?? $request->input('ext') ?? '1030');
-        $agentInfo = self::EXTENSIONS_MAP[$ext] ?? self::EXTENSIONS_MAP['1030'];
-        $rawDir = strtolower($request->input('CallType') ?? $request->input('direction') ?? 'inbound');
-        $direction = str_contains($rawDir, 'out') ? 'outbound' : 'inbound';
-        $duration = rand(45, 180);
-
-        $clientDisplay = $contact ? "{$contact->name} ({$number})" : "Client {$number}";
-        $outcome = $duration > 120 ? 'Interested - Schedule Viewing' : ($duration > 60 ? 'Discussion Completed' : 'Quick Inquiry');
-
-        try {
-            CallRecording::create([
-                'pbx_call_id' => $callId,
-                'contact_id' => $contact ? $contact->id : null,
-                'opportunity_id' => $opp ? $opp->id : null,
-                'agent_name' => $agentInfo['name'],
-                'agent_extension' => $ext,
-                'caller_number' => $direction === 'inbound' ? ($number ?: '+971 50 000 0000') : "+971 4 300 {$ext}",
-                'destination_number' => $direction === 'outbound' ? ($number ?: '+971 50 000 0000') : "+971 4 300 {$ext}",
-                'direction' => $direction,
-                'call_status' => 'answered',
-                'duration_seconds' => $duration,
-                'audio_url' => '/storage/recordings/sample_3cx_call.wav',
-                'audio_format' => 'wav',
-                'call_outcome' => $outcome,
-                'notes' => "3CX Live Call with {$clientDisplay}. Logged automatically.",
-                'ai_summary' => "3CX Live Call: Connected with {$number}. Discussion logged in CRM.",
-                'sentiment' => 'positive',
-                'recorded_at' => now(),
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Auto-log call error: ' . $e->getMessage());
-        }
+        // NOTE: contactLookup only returns contact data for 3CX softphone display.
+        // Call recording logs are ONLY created when the call ends via handle3cxWebhook or when voice files are scanned.
 
         return response()->json([
             'contact' => [

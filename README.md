@@ -1780,8 +1780,14 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Added a dedicated red **`[ 🗑️ Clear All Logs ]`** action button in the filter toolbar of the Call Recordings page (`/recordings`).
     - Prompts the user with a SweetAlert2 confirmation modal before triggering `POST /api/recordings/clear-all`.
     - Truncates historical logs in `call_recordings` table to reset the table to a clean 0-record baseline while strictly preserving all physical PBX voice files in storage folders.
-  - **"Sync Server Audio" On-Demand Action**:
-    - Added an on-demand **`[ 🔄 Sync Server Audio ]`** button that executes the recursive folder scanner (`POST /api/recordings/scan-server`) to ingest any newly added or archived `.wav` call recordings from cPanel extension folders.
+- **142 — Elimination of Pre-Call Lookup Dummy Logs & Dynamic Extension Mapping for Saad (`backend/app/Http/Controllers/Api/CallRecordingController.php`, `frontend/src/app/recordings/page.tsx`)**:
+  - **Eliminated Pre-Call Dummy Records**:
+    - Removed erroneous `CallRecording::create()` from `contactLookup()`. Previously, every time a phone rang on 3CX, the lookup query injected a dummy inbound call defaulting to Extension 1030 (Mako) with a random 2m 55s duration and sample audio.
+    - `contactLookup()` now strictly performs read-only contact matching for 3CX softphone caller ID display without modifying or polluting the database.
+    - Real call logs are now exclusively created upon call termination via `POST /api/3cx/call-event` (`handle3cxWebhook`) or on-demand server audio scanning.
+  - **Dynamic Multi-Extension Mapping & Saad Integration**:
+    - Added Telesales Agent `Saad` (`saad@fsadvisory.ae`) to extensions `1035` and `1036` in `EXTENSIONS_MAP` and the frontend Advisor filter dropdown.
+    - Added support for all PBX extensions across 3CX webhook ingestion and storage folder scanning.
 
 ---
 

@@ -35,13 +35,14 @@ import {
 import Link from 'next/link';
 import Swal from 'sweetalert2';
 
-// 5 exact 3CX Users & Extensions from 3CX Console
+// 3CX Users & Extensions from 3CX Console
 const PBX_USERS = [
   { ext: '1030', name: 'Mako Real Estate', email: 'mako@salwaproperties.com', dept: 'Real Estate, All', role: 'Manager' },
   { ext: '1031', name: 'Shafi Core', email: 'shafi@coreunitysolutions.com', dept: 'coreunitysolutions, All', role: 'Advisor' },
   { ext: '1033', name: 'Hiba Alam', email: 'hiba@fsadvisory.ae', dept: 'fs advisory, All', role: 'Advisor' },
   { ext: '1034', name: 'Rayyan', email: 'rayyan@fsadvisory.ae', dept: 'fsadvisory2, All', role: 'Advisor' },
-  { ext: '1035', name: 'FA Advisory 3', email: 'admin@fsadvisory.ae', dept: 'fsadvisory3, All', role: 'Advisor' },
+  { ext: '1035', name: 'Saad', email: 'saad@fsadvisory.ae', dept: 'TeleSales', role: 'Advisor' },
+  { ext: '1036', name: 'Saad', email: 'saad@fsadvisory.ae', dept: 'TeleSales', role: 'Advisor' },
 ];
 
 export const getPlayableAudioUrl = (url: string | null, recId?: number) => {
@@ -511,18 +512,18 @@ export default function CallRecordingsPage() {
                 <option value="inbound">Inbound Calls 📥</option>
               </select>
 
-              {/* Agent Filter (5 3CX Users) */}
+              {/* Agent Filter */}
               <select
                 value={selectedAgent}
                 onChange={(e) => setSelectedAgent(e.target.value)}
                 className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none cursor-pointer"
               >
-                <option value="all">All 5 3CX Advisors</option>
+                <option value="all">All 3CX Advisors</option>
                 <option value="Mako Real Estate">Mako Real Estate (Ext 1030)</option>
                 <option value="Shafi Core">Shafi Core (Ext 1031)</option>
                 <option value="Hiba Alam">Hiba Alam (Ext 1033)</option>
                 <option value="Rayyan">Rayyan (Ext 1034)</option>
-                <option value="FA Advisory 3">FA Advisory 3 (Ext 1035)</option>
+                <option value="Saad">Saad (Ext 1035/1036)</option>
               </select>
 
               {/* Duration Filter */}
