@@ -48,11 +48,13 @@ class CallRecordingController extends Controller
 
     public function index(Request $request)
     {
-        // Auto-ingest any new physical 3CX recording files from server storage folders
-        try {
-            $this->scanServerRecordingsInternal();
-        } catch (\Exception $e) {
-            \Log::warning('Auto-scan error: ' . $e->getMessage());
+        // Scan server storage folders only when requested via ?scan=1
+        if ($request->has('scan')) {
+            try {
+                $this->scanServerRecordingsInternal();
+            } catch (\Exception $e) {
+                \Log::warning('Auto-scan error: ' . $e->getMessage());
+            }
         }
 
         $query = CallRecording::with(['contact', 'opportunity.buyerQualification'])->latest('recorded_at');
@@ -1124,30 +1126,17 @@ class CallRecordingController extends Controller
     }
 
     /**
-     * Permanently delete all call recordings and physical storage audio files
+     * Permanently delete all call recording logs from CRM database
      */
     public function clearAll(Request $request)
     {
         $count = CallRecording::count();
         CallRecording::truncate();
 
-        // Optionally clear physical audio files from storage/app/public/recordings
-        $deletedFiles = 0;
-        try {
-            $files = \Illuminate\Support\Facades\Storage::disk('public')->files('recordings');
-            foreach ($files as $file) {
-                \Illuminate\Support\Facades\Storage::disk('public')->delete($file);
-                $deletedFiles++;
-            }
-        } catch (\Exception $e) {
-            \Log::warning('Could not clear physical recording files: ' . $e->getMessage());
-        }
-
         return response()->json([
             'success' => true,
-            'message' => "Successfully cleared {$count} old call recordings and {$deletedFiles} audio files.",
+            'message' => "Successfully cleared {$count} call recording logs from CRM database.",
             'deleted_count' => $count,
-            'deleted_files' => $deletedFiles,
         ], 200);
     }
 }

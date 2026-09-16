@@ -397,13 +397,13 @@ export default function CallRecordingsPage() {
 
   const handleClearAllRecordings = async () => {
     const result = await Swal.fire({
-      title: 'Clear All Call Recordings?',
-      text: 'This will permanently delete all call recordings and uploaded audio files so fresh calls start with a clean slate. Master Contacts and Opportunities will NOT be affected.',
+      title: 'Clear All Call Recording Logs?',
+      text: 'This will reset the recordings table so newly arriving 3CX calls can be cleanly tested. Master Contacts, Deals, and storage audio files will NOT be affected.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#DC2626',
       cancelButtonColor: '#081428',
-      confirmButtonText: 'Yes, Delete All',
+      confirmButtonText: 'Yes, Clear All Logs',
       cancelButtonText: 'Cancel'
     });
 
@@ -552,9 +552,32 @@ export default function CallRecordingsPage() {
               )}
             </div>
 
-            <div className="text-[11px] font-medium text-[#6E6E6E] flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-[#C8A147]" />
-              <span>Showing {paginationMeta.total} 3CX Recordings</span>
+            <div className="flex items-center gap-2.5">
+              <div className="text-[11px] font-medium text-[#6E6E6E] flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-[#C8A147]" />
+                <span>Showing {paginationMeta.total} Recordings</span>
+              </div>
+
+              {/* Scan Server Audio Button */}
+              <button
+                onClick={handleScanServerRecordings}
+                disabled={scanning}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FAF8F5] hover:bg-[#F3EFEA] text-[#081428] border border-[#E8E4DC] hover:border-[#C8A147] rounded text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
+                title="Scan server storage folders for new recordings"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#C8A147] ${scanning ? 'animate-spin' : ''}`} />
+                <span>{scanning ? 'Scanning...' : 'Sync Server Audio'}</span>
+              </button>
+
+              {/* Clear All Logs Button */}
+              <button
+                onClick={handleClearAllRecordings}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 hover:border-red-300 rounded text-xs font-semibold transition-all cursor-pointer"
+                title="Clear all recording logs from CRM"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                <span>Clear All Logs</span>
+              </button>
             </div>
           </div>
 

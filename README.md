@@ -1775,7 +1775,13 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Eliminated Cross-Client Audio Leakage in `streamAudio`**:
     - Removed arbitrary `$extFiles[0]` fallback that previously caused unmatched calls to all play the same latest recording.
     - Matches files strictly by client phone number (last 7 digits) or 3CX Call ID `([id])`.
-    - Unmatched calls safely fall back to neutral telephone sample audio (`sample_3cx_call.wav`), guaranteeing 100% audio isolation across calls.
+- **141 — Call Recordings Clear All Logs Desk Action & On-Demand Server Sync (`frontend/src/app/recordings/page.tsx`, `backend/app/Http/Controllers/Api/CallRecordingController.php`)**:
+  - **"Clear All Logs" Desk Action**:
+    - Added a dedicated red **`[ 🗑️ Clear All Logs ]`** action button in the filter toolbar of the Call Recordings page (`/recordings`).
+    - Prompts the user with a SweetAlert2 confirmation modal before triggering `POST /api/recordings/clear-all`.
+    - Truncates historical logs in `call_recordings` table to reset the table to a clean 0-record baseline while strictly preserving all physical PBX voice files in storage folders.
+  - **"Sync Server Audio" On-Demand Action**:
+    - Added an on-demand **`[ 🔄 Sync Server Audio ]`** button that executes the recursive folder scanner (`POST /api/recordings/scan-server`) to ingest any newly added or archived `.wav` call recordings from cPanel extension folders.
 
 ---
 
