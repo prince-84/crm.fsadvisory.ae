@@ -975,8 +975,14 @@ class CallRecordingController extends Controller
             }
 
             // Check if recording already exists in DB by filename or pbx_call_id
-            $exists = CallRecording::where('audio_url', 'like', "%{$fileName}%")->exists();
-            if ($exists) {
+            $existing = CallRecording::where('audio_url', 'like', "%{$fileName}%")
+                ->orWhere('pbx_call_id', $callId)
+                ->first();
+
+            if ($existing) {
+                if (empty($existing->audio_url) || str_contains($existing->audio_url, 'sample_3cx_call')) {
+                    $existing->update(['audio_url' => $relativeUrl]);
+                }
                 continue;
             }
 
@@ -992,7 +998,8 @@ class CallRecordingController extends Controller
             $detectedExt = '1030';
             $clientPhone = '+971 50 123 4567';
             $recordedAt = Carbon::now();
-            $callId = '3CX-SVR-' . strtoupper(substr(md5($fileName), 0, 8));
+            $callId = '3CX-' . strtoupper(substr(md5($fileName), 0, 8));
+            $isOutbound = true;
 
             if (preg_match('/^\[(.*?)\]_([0-9]+)-(.*?)_([0-9]{14})\((\d+)\)\.(wav|mp3|ogg|m4a|aac)$/i', $fileName, $m)) {
                 $agentName = urldecode($m[1]);
@@ -1013,6 +1020,9 @@ class CallRecordingController extends Controller
                 } else {
                     $clientPhone = $rawPhone;
                 }
+
+                // In 3CX [Agent]_[Ext]-[Phone] format represents outbound call dialed by agent to client
+                $isOutbound = true;
 
                 try {
                     $recordedAt = Carbon::createFromFormat('YmdHis', $timeStr);
@@ -1045,15 +1055,18 @@ class CallRecordingController extends Controller
             }
             $opp = $contact ? Opportunity::where('contact_id', $contact->id)->latest()->first() : null;
 
+            $callerNum = $isOutbound ? "+971 4 300 {$detectedExt}" : $clientPhone;
+            $destNum = $isOutbound ? $clientPhone : "+971 4 300 {$detectedExt}";
+
             CallRecording::create([
                 'pbx_call_id' => $callId,
                 'contact_id' => $contact ? $contact->id : null,
                 'opportunity_id' => $opp ? $opp->id : null,
                 'agent_name' => $agentName,
                 'agent_extension' => $detectedExt,
-                'caller_number' => $clientPhone,
-                'destination_number' => "+971 4 300 {$detectedExt}",
-                'direction' => 'inbound',
+                'caller_number' => $callerNum,
+                'destination_number' => $destNum,
+                'direction' => $isOutbound ? 'outbound' : 'inbound',
                 'call_status' => 'answered',
                 'duration_seconds' => $estimatedDuration,
                 'audio_url' => $relativeUrl,

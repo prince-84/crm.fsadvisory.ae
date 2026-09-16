@@ -1786,10 +1786,19 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - `contactLookup()` now strictly performs read-only contact matching for 3CX softphone caller ID display without modifying or polluting the database.
     - Real call logs are now exclusively created upon call termination via `POST /api/3cx/call-event` (`handle3cxWebhook`) or on-demand server audio scanning.
   - **Dynamic Multi-Extension Mapping & Saad Integration**:
-    - Added Telesales Agent `Saad` (`saad@fsadvisory.ae`) to extensions `1035` and `1036` in `EXTENSIONS_MAP` and the frontend Advisor filter dropdown.
-    - Added support for all PBX extensions across 3CX webhook ingestion and storage folder scanning.
+- **143 — Bidirectional Telephony Support (Inbound & Outbound) with Dual Voice Matching (`backend/app/Http/Controllers/Api/CallRecordingController.php`)**:
+  - **Full Inbound & Outbound Telephony Support**:
+    - Supports both Inbound (incoming from client to office/agent) and Outbound (outbound call dialed by advisor from 3CX to client) with distinct visual badges (`📥 Inbound` vs `📤 Outbound`).
+    - Accurate Telephony Routing:
+      - **Inbound Calls**: Caller is the client phone number, Destination is the office PBX trunk / agent extension (`+971 4 300 {ext}`).
+      - **Outbound Calls**: Caller is the advisor PBX extension (`+971 4 300 {ext}`), Destination is the client's dialed phone number.
+  - **Seamless Webhook & Audio File Synchronization**:
+    - Enhanced server storage scanner (`scanServerRecordingsInternal`) to check if a call was already ingested via live 3CX webhook (`handle3cxWebhook`). If a record exists matching the PBX Call ID, it automatically links the `.wav` audio recording without duplicating records or altering the verified direction and talk-time duration.
+    - If a recording is ingested directly from server storage folders, it parses the 3CX filename `[AgentName]_[Extension]-[PhoneNumber]` to accurately attribute outbound calls dialed by advisors to client phone numbers.
+    - Verified audio playback for all extensions (1030, 1031, 1033, 1034, 1035, 1036, 1038) across both inbound and outbound directions.
 
 ---
+
 
 
 ## ⚙️ Installation & Running Instructions
