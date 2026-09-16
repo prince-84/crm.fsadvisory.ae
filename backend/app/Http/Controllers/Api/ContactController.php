@@ -446,7 +446,7 @@ class ContactController extends Controller
 
         $query->orderBy('contacts.id', 'desc');
 
-        $perPage = (int) $request->get('per_page', 20);
+        $perPage = max(1, min((int) $request->get('per_page', 20), 500));
         $contacts = $query->paginate($perPage);
 
         // Stats calculation for Top KPI Cards & Tab Badge Counts

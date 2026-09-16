@@ -1710,9 +1710,18 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Hardened `syncUser`, `loadData`, and `handleResetFilters` to prevent state hydration fallbacks to `'all'`.
   - **Automated Verification**:
     - End-to-end API test executed comparing Super Admin (Faraz Shafi: 2,096 leads) vs Telesales Agent (Shafi Uddin: exactly 231 leads).
-    - Verified full TypeScript compilation across the workspace with 0 errors (`npx tsc --noEmit` exit code 0).
+- **137 — High-Capacity Pagination Controls (10 to 500 Leads Per Page) (`frontend/src/app/page.tsx`, `frontend/src/app/new-leads/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Pagination Dropdown Expansion**:
+    - Added `200 / page` and `500 / page` options to the per-page selector dropdown across both the master **Lead Pool** (`frontend/src/app/page.tsx`) and **New Inbound Leads Allocation Desk** (`frontend/src/app/new-leads/page.tsx`).
+    - Supported preset intervals: `10 / page`, `20 / page`, `50 / page`, `100 / page`, `200 / page`, and `500 / page`.
+  - **Backend Safety Bounds**:
+    - Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) to dynamically bind and sanitize `$perPage = max(1, min((int) $request->get('per_page', 20), 500));`, guaranteeing lightning-fast database pagination for high-volume review batches up to 500 leads while preventing memory spikes.
+  - **Verification**:
+    - Verified TypeScript compilation across the frontend with 0 errors (`npx tsc --noEmit` exit code 0).
+    - Verified PHP syntax in backend controller (`php -l`).
 
 ---
+
 
 ## ⚙️ Installation & Running Instructions
 

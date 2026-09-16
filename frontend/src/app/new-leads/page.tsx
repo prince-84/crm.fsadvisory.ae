@@ -1522,12 +1522,14 @@ export default function NewLeadsPage() {
               <select
                 value={perPage}
                 onChange={(e) => handlePerPageChange(Number(e.target.value))}
-                className="p-1.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-medium"
+                className="p-1.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-medium cursor-pointer"
               >
                 <option value={10}>10 / page</option>
                 <option value={20}>20 / page</option>
                 <option value={50}>50 / page</option>
                 <option value={100}>100 / page</option>
+                <option value={200}>200 / page</option>
+                <option value={500}>500 / page</option>
               </select>
             </div>
           </div>
