@@ -1,7 +1,7 @@
 /**
  * FS Advisory CRM — WhatsApp Gateway v2.0
  * Powered by whatsapp-web.js (Puppeteer)
- * Port: 5001
+ * Port: 5003
  */
 
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
@@ -12,7 +12,7 @@ const fs      = require('fs');
 const path    = require('path');
 
 const app  = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5003;
 const LARAVEL_URL = (process.env.LARAVEL_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
 
 app.use(cors());

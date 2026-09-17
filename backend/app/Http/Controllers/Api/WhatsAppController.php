@@ -133,13 +133,18 @@ class WhatsAppController extends Controller
         ]);
     }
 
+    private function gatewayUrl(): string
+    {
+        return rtrim(env('WHATSAPP_GATEWAY_URL', 'http://127.0.0.1:5003'), '/');
+    }
+
     /**
      * Proxy WhatsApp Gateway status for secure HTTPS clients (Vercel)
      */
     public function gatewayStatus()
     {
         try {
-            $res = \Illuminate\Support\Facades\Http::timeout(3)->get('http://127.0.0.1:5001/api/status');
+            $res = \Illuminate\Support\Facades\Http::timeout(3)->get($this->gatewayUrl() . '/api/status');
             return response()->json($res->json(), $res->status());
         } catch (\Exception $e) {
             return response()->json(['status' => 'disconnected', 'user' => null, 'has_qr' => false], 200);
@@ -152,7 +157,7 @@ class WhatsAppController extends Controller
     public function gatewayQr()
     {
         try {
-            $res = \Illuminate\Support\Facades\Http::timeout(5)->get('http://127.0.0.1:5001/api/qr');
+            $res = \Illuminate\Support\Facades\Http::timeout(5)->get($this->gatewayUrl() . '/api/qr');
             return response()->json($res->json(), $res->status());
         } catch (\Exception $e) {
             return response()->json(['status' => 'disconnected', 'qr_image' => null], 200);
@@ -165,7 +170,7 @@ class WhatsAppController extends Controller
     public function gatewaySync()
     {
         try {
-            $res = \Illuminate\Support\Facades\Http::timeout(15)->post('http://127.0.0.1:5001/api/sync');
+            $res = \Illuminate\Support\Facades\Http::timeout(15)->post($this->gatewayUrl() . '/api/sync');
             return response()->json($res->json(), $res->status());
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 200);
@@ -526,7 +531,7 @@ class WhatsAppController extends Controller
 
             // Transmit out over real WhatsApp Gateway
             try {
-                $gwRes = \Illuminate\Support\Facades\Http::timeout(15)->post('http://127.0.0.1:5001/api/send', [
+                $gwRes = \Illuminate\Support\Facades\Http::timeout(15)->post($this->gatewayUrl() . '/api/send', [
                     'phone' => $chat->phone,
                     'jid' => $chat->remote_jid,
                     'text' => $caption ?: '',

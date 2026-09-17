@@ -50,7 +50,7 @@ import { hasPermission } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 import { fetchApi, API_BASE_URL } from '@/lib/api';
 
-const GATEWAY_URL = (process.env.NEXT_PUBLIC_WHATSAPP_GATEWAY_URL || 'http://127.0.0.1:5001').replace(/\/+$/, '');
+const GATEWAY_URL = (process.env.NEXT_PUBLIC_WHATSAPP_GATEWAY_URL || 'http://127.0.0.1:5003').replace(/\/+$/, '');
 
 // Emoji dataset for WhatsApp Real Estate & Chat
 const emojiCategories = {
