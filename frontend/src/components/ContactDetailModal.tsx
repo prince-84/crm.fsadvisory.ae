@@ -83,6 +83,20 @@ export default function ContactDetailModal({
     }
   }, [contact?.id]);
 
+  // Close modal on Escape key press
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   const handleSendModalWhatsApp = async () => {
     if (!newWhatsAppMsg.trim() || !contact) return;
     setSendingWhatsApp(true);
@@ -141,8 +155,14 @@ export default function ContactDetailModal({
   const cleanPhone = (phone?: string) => (phone || '').replace(/[^0-9]/g, '');
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 font-['Poppins',sans-serif]">
-      <div className="bg-white border border-[#E8E4DC] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 font-['Poppins',sans-serif] cursor-pointer"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white border border-[#E8E4DC] rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150 cursor-default"
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Modal Header */}
         <div className="p-5 bg-[#081428] text-white flex items-center justify-between border-b border-[#E8E4DC]/20 shrink-0">

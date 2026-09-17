@@ -1919,6 +1919,9 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - **`Recordings (N)`**: Interactive audio player list displaying inbound/outbound call direction badges, advisor extension, call duration, timestamp, audio streaming controls (`<audio controls>`), and audio download button.
       - **`WhatsApp (N)`**: Authentic WhatsApp Web-style conversation bubble feed showing inbound/outbound messages, timestamps, delivery ticks (`✓✓`), and an inline quick-reply input with instant `Enter` key dispatch.
       - **`All Activity`**: Chronological event timeline including ownership reassignments and deal status transitions.
+    - **Click-Outside & Escape Dismissal**:
+      - Added outside backdrop click handler (`onClick={onClose}`) with event propagation stops on the content panel, allowing advisors to dismiss the drawer by clicking anywhere on the screen outside the drawer panel.
+      - Added global `Escape` keyboard shortcut listener for instant closing.
   - **Contact Detail Modal (`frontend/src/components/ContactDetailModal.tsx`)**:
     - Added an elegant top tab switcher (`Profile & Requirements`, `Call Recordings (N)`, `WhatsApp Chat (N)`).
     - **Call Recordings View**: Displays client-linked phone recordings with full audio player streaming, advisor attribution, call outcome badges, and direct file download options.

@@ -195,6 +195,20 @@ export default function ContactDrawer({
     };
   }, [isOpen, contact?.id, fetchLiveContact, fetchClientRecordings, fetchClientWhatsApp]);
 
+  // Close drawer on Escape key press
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen || !liveContact) return null;
 
   const currentContact = liveContact;
@@ -600,8 +614,14 @@ export default function ContactDrawer({
   const displayedActivities = activeActivityTab === 'calls' ? callActivities : humanActivities;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black/30 backdrop-blur-2xs transition-opacity animate-in fade-in duration-150">
-      <div className="absolute inset-y-0 right-0 max-w-full flex">
+    <div 
+      className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-2xs transition-opacity animate-in fade-in duration-150 cursor-pointer"
+      onClick={onClose}
+    >
+      <div 
+        className="absolute inset-y-0 right-0 max-w-full flex cursor-default"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="w-screen max-w-md bg-white border-l border-[#E8E4DC] shadow-2xl flex flex-col">
           
           {/* Top Contact Profile Header */}
