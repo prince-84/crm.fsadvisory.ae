@@ -258,21 +258,66 @@ async function syncHistoryToLaravel() {
             cleanPhone = lidMap[rawId] || lidMap[rawId.replace('@lid', '')] || (c.contact?.phoneNumber?._serialized ? c.contact.phoneNumber._serialized.replace(/[^0-9]/g, '') : '') || '';
           }
 
+          // If phone is still not resolved, check if formattedTitle is a phone number
+          if (!cleanPhone && c.formattedTitle) {
+            const numOnly = c.formattedTitle.replace(/[^0-9]/g, '');
+            if (numOnly.length >= 8) {
+              cleanPhone = numOnly;
+            }
+          }
+
           if (!cleanPhone) {
             cleanPhone = rawId.split('@')[0].replace(/[^0-9]/g, '');
           }
 
-          const name = c.name || c.formattedTitle || (c.contact?.name || c.contact?.pushname) || phoneMap[cleanPhone] || (cleanPhone ? `+${cleanPhone}` : 'WhatsApp Client');
-          const lastMsg = c.lastReceivedKey?._serialized || (c.msgs?.last ? c.msgs.last()?.body : '') || 'Active chat';
+          let name = c.name || c.contact?.name || c.contact?.pushname || '';
+          if (!name && c.formattedTitle) {
+            name = c.formattedTitle;
+          }
+          if (!name && phoneMap[cleanPhone]) {
+            name = phoneMap[cleanPhone];
+          }
+          if (!name) {
+            name = cleanPhone ? `+${cleanPhone}` : 'WhatsApp Contact';
+          }
+
+          // Extract last message text
+          let lastMsg = 'Active chat';
+          try {
+            if (c.msgs?.last) {
+              const lastM = c.msgs.last();
+              lastMsg = lastM?.body || lastM?.caption || (lastM?.type !== 'chat' ? `[${lastM?.type || 'Media'}]` : 'Active chat');
+            } else if (c.lastReceivedKey?._serialized) {
+              lastMsg = 'Active chat';
+            }
+          } catch (_) {}
+
           const ts = c.t || c.timestamp || Math.floor(Date.now() / 1000);
+
+          // Extract recent messages (last 6)
+          let recentMsgs = [];
+          try {
+            if (c.msgs && typeof c.msgs.getModelsArray === 'function') {
+              const mArr = c.msgs.getModelsArray();
+              recentMsgs = mArr.slice(-6).map(m => ({
+                id: m.id?._serialized || ('WA-' + Math.random().toString(36).substr(2, 9)),
+                text: m.body || m.caption || (m.type !== 'chat' ? `[${m.type || 'Media'}]` : ''),
+                from_me: !!m.id?.fromMe,
+                timestamp: m.t || ts,
+                media_type: m.type === 'chat' ? 'text' : (m.type || 'text'),
+              })).filter(m => m.text && m.text.trim().length > 0);
+            }
+          } catch (_) {}
 
           chatsList.push({
             id: rawId,
             phone: cleanPhone ? `+${cleanPhone}` : '',
+            formattedTitle: c.formattedTitle || '',
             name: name,
             last_message: lastMsg,
             timestamp: ts,
             unread_count: c.unreadCount || 0,
+            messages: recentMsgs,
           });
         });
 
@@ -328,14 +373,17 @@ app.get('/api/test-chats', async (req, res) => {
           const arr = Collections.Chat.getModelsArray();
           out.chatsCount = arr.length;
           if (arr.length > 0) {
-            const c0 = arr[0];
-            out.sampleChat = {
-              id: c0.id?._serialized,
-              name: c0.name,
-              formattedTitle: c0.formattedTitle,
-              t: c0.t,
-              unreadCount: c0.unreadCount
-            };
+            out.sampleChats = arr.slice(0, 5).map(c => ({
+              id: c.id?._serialized,
+              name: c.name,
+              formattedTitle: c.formattedTitle,
+              t: c.t,
+              unreadCount: c.unreadCount,
+              contactName: c.contact?.name,
+              contactPushname: c.contact?.pushname,
+              contactPhone: c.contact?.phoneNumber?._serialized || c.contact?.id?._serialized,
+              lastMsgBody: c.msgs?.last ? c.msgs.last()?.body : (c.lastReceivedKey?._serialized || ''),
+            }));
           }
         }
       } catch (err) {
@@ -346,6 +394,16 @@ app.get('/api/test-chats', async (req, res) => {
     res.json(data);
   } catch (e) {
     res.json({ error: e.message });
+  }
+});
+
+app.all(['/api/sync', '/api/sync-now'], async (req, res) => {
+  try {
+    console.log('🔄 Manual Sync Triggered via API');
+    await syncHistoryToLaravel();
+    res.json({ success: true, syncDone });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

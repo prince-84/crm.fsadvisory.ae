@@ -142,9 +142,21 @@ class WhatsAppController extends Controller
         $chats = $request->input('chats', []);
         $contacts = $request->input('contacts', []);
 
-        \Log::info("WhatsApp syncing " . count($chats) . " chats and " . count($contacts) . " contacts from mobile");
+        \Log::info("WhatsApp syncing " . count($chats) . " chats from mobile gateway");
 
-        // Load persistent LID→Phone map from gateway
+        // When real mobile chats arrive, immediately purge initial demo seed chats
+        $this->purgeSeedChats();
+
+        // Ensure the channel is marked connected
+        $channel = WhatsAppChannel::find($channelId);
+        if ($channel) {
+            $channel->update([
+                'status' => 'connected',
+                'last_sync_at' => now(),
+            ]);
+        }
+
+        // Load persistent LID→Phone map from gateway if present
         $contactsMapPath = 'D:\\FSadvisory-crm\\whatsapp-gateway\\contacts_map.json';
         $lidPhoneMap = [];
         $lidNameMap = [];
@@ -169,7 +181,7 @@ class WhatsAppController extends Controller
         $imported = 0;
         foreach ($chats as $chatData) {
             $rawJid = $chatData['id'] ?? '';
-            // Skip broadcast or status channels and groups
+            // Skip broadcast, status channels, newsletters and group chats
             if (str_contains($rawJid, 'status@broadcast') || str_contains($rawJid, 'newsletter') || str_contains($rawJid, '@g.us')) {
                 continue;
             }
@@ -186,14 +198,34 @@ class WhatsAppController extends Controller
                 $resolvedPhone = $lidPhoneMap[$rawJid] ?? $lidPhoneMap[$cleanLid] ?? null;
             }
 
+            // Fallback: Check if formattedTitle or name has phone digits
+            if (empty($resolvedPhone)) {
+                $titleCandidate = $chatData['formattedTitle'] ?? ($chatData['name'] ?? '');
+                $extracted = preg_replace('/[^0-9]/', '', $titleCandidate);
+                if (strlen($extracted) >= 9) {
+                    $resolvedPhone = $extracted;
+                }
+            }
+
+            // Fallback: Use numeric user portion of rawJid
+            if (empty($resolvedPhone)) {
+                $userPart = explode('@', $rawJid)[0] ?? '';
+                $extracted = preg_replace('/[^0-9]/', '', $userPart);
+                if (!empty($extracted)) {
+                    $resolvedPhone = $extracted;
+                }
+            }
+
             if (empty($resolvedPhone)) continue;
 
             // Resolve display name
             $savedName = $chatData['name'] 
+                ?? ($chatData['formattedTitle'] ?? null)
                 ?? ($contactNames[$rawJid] ?? null)
                 ?? ($lidNameMap[$rawJid] ?? null)
                 ?? ($lidNameMap[str_replace('@lid', '', $rawJid)] ?? null);
-            if (empty($savedName)) {
+
+            if (empty($savedName) || $savedName === $rawJid) {
                 $savedName = '+' . $resolvedPhone;
             }
 
@@ -205,7 +237,7 @@ class WhatsAppController extends Controller
                     ->first();
             }
 
-            $lastMsg = $chatData['last_message'] ?? ($chatData['conversation'] ?? 'Synced from mobile');
+            $lastMsg = $chatData['last_message'] ?? ($chatData['conversation'] ?? 'Active chat');
             $timestamp = isset($chatData['timestamp']) && $chatData['timestamp'] > 0
                 ? Carbon::createFromTimestamp($chatData['timestamp'])
                 : now();
@@ -225,8 +257,32 @@ class WhatsAppController extends Controller
                 ]
             );
 
-            // Add initial message if none exists
-            if ($chat->messages()->count() === 0) {
+            // Ingest recent messages array if provided from browser session
+            if (!empty($chatData['messages']) && is_array($chatData['messages'])) {
+                foreach ($chatData['messages'] as $m) {
+                    $mId = $m['id'] ?? ('WA-HIST-' . Str::random(12));
+                    $mText = $m['text'] ?? '';
+                    if (empty($mText)) continue;
+
+                    $mTs = isset($m['timestamp']) && $m['timestamp'] > 0
+                        ? Carbon::createFromTimestamp($m['timestamp'])
+                        : $timestamp;
+
+                    WhatsAppMessage::updateOrCreate(
+                        ['message_id' => $mId],
+                        [
+                            'chat_id' => $chat->id,
+                            'from_me' => !empty($m['from_me']),
+                            'sender_name' => !empty($m['from_me']) ? 'You' : $chat->contact_name,
+                            'text' => $mText,
+                            'media_type' => $m['media_type'] ?? 'text',
+                            'status' => !empty($m['from_me']) ? 'delivered' : 'read',
+                            'timestamp' => $mTs,
+                        ]
+                    );
+                }
+            } elseif ($chat->messages()->count() === 0) {
+                // Add initial message if none exists
                 WhatsAppMessage::create([
                     'chat_id' => $chat->id,
                     'message_id' => 'WA-SYNC-' . Str::random(10),
@@ -245,6 +301,36 @@ class WhatsAppController extends Controller
             'success' => true,
             'imported_chats' => $imported,
             'message' => "Successfully synced {$imported} real mobile chats into CRM!",
+        ]);
+    }
+
+    /**
+     * Purge dummy initial seed chats
+     */
+    public function purgeSeedChats()
+    {
+        $dummyPhones = [
+            '+971585686896', '971585686896',
+            '+971566511814', '971566511814',
+            '+971506672802', '971506672802',
+            '+971585951314', '971585951314',
+            '+971501612912', '971501612912',
+            '+971 52 987 6543', '+971 55 597 7700', '+971 58 441 2233', '+971 56 946 8277'
+        ];
+
+        $deleted = WhatsAppChat::whereIn('phone', $dummyPhones)
+            ->orWhere('contact_name', 'like', '%Property Finder%')
+            ->orWhere('contact_name', 'Nitin devnani')
+            ->orWhere('contact_name', 'Sarah Jenkins')
+            ->orWhere('contact_name', 'Fahad Al Otaibi')
+            ->orWhere('contact_name', 'Jean-Pierre Dupont')
+            ->orWhere('contact_name', 'Elena Rostova')
+            ->delete();
+
+        return response()->json([
+            'success' => true,
+            'deleted' => $deleted,
+            'message' => "Purged {$deleted} dummy demo chats.",
         ]);
     }
 
@@ -663,6 +749,10 @@ class WhatsAppController extends Controller
      */
     private function seedInitialChats()
     {
+        if (WhatsAppChannel::where('status', 'connected')->exists()) {
+            return;
+        }
+
         $channel = WhatsAppChannel::first();
         if (!$channel) {
             $this->seedInitialChannels();

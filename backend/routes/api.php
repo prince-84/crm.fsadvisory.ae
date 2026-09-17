@@ -34,8 +34,11 @@ Route::post('/3cx/call-event', [CallRecordingController::class, 'handle3cxWebhoo
 Route::post('/3cx/webhook', [CallRecordingController::class, 'handle3cxWebhook']);
 Route::post('/3cx/upload-recording', [CallRecordingController::class, 'uploadRecording']);
 Route::get('/3cx/recordings/{id}/stream', [CallRecordingController::class, 'streamAudio']);
-Route::get('/recordings/{id}/stream', [CallRecordingController::class, 'streamAudio']);
 Route::post('/whatsapp/webhook', [WhatsAppController::class, 'webhook']);
+Route::post('/whatsapp/sync-phone-data', [WhatsAppController::class, 'syncPhoneData']);
+Route::post('/whatsapp/channels/{id}/pair-confirm', [WhatsAppController::class, 'pairConfirm']);
+Route::post('/whatsapp/channels/{id}/disconnect', [WhatsAppController::class, 'disconnect']);
+Route::delete('/whatsapp/chats/purge-seed', [WhatsAppController::class, 'purgeSeedChats']);
 
 // ==========================================
 // PROTECTED CRM ROUTES (Requires Bearer Token or API Key)
@@ -123,9 +126,6 @@ Route::middleware(['crm.auth'])->group(function () {
     // WhatsApp Wazzup-Style Integration Routes
     Route::get('/whatsapp/channels', [WhatsAppController::class, 'channels']);
     Route::post('/whatsapp/channels/generate-qr', [WhatsAppController::class, 'generateQr']);
-    Route::post('/whatsapp/channels/{id}/pair-confirm', [WhatsAppController::class, 'pairConfirm']);
-    Route::post('/whatsapp/channels/{id}/disconnect', [WhatsAppController::class, 'disconnect']);
-    Route::post('/whatsapp/sync-phone-data', [WhatsAppController::class, 'syncPhoneData']);
     Route::get('/whatsapp/chats', [WhatsAppController::class, 'chats']);
     Route::get('/whatsapp/chats/{id}/messages', [WhatsAppController::class, 'getChatMessages']);
     Route::post('/whatsapp/chats/{id}/send', [WhatsAppController::class, 'sendMessage']);

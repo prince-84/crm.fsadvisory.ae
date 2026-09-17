@@ -69,23 +69,29 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - Interactive live call popup toast with direct contact profile drawer trigger.
 
 ### WhatsApp Multi-Device & Live Chat Suite (`/whatsapp`)
-- **32 — WhatsApp Node.js Baileys Gateway Daemon**:
+- **32 — WhatsApp Node.js Baileys / Puppeteer Gateway Daemon**:
   - Independent Node.js service running on port `5001` (`whatsapp-gateway/server.js`).
-  - Native multi-device QR code generation, pairing, and automatic reconnection.
-  - Outbound message sending (`POST /api/send`) and inbound webhook forwarder to Laravel.
+  - Native multi-device QR code generation, fast SVG rendering, pairing, and automatic session restoration via `LocalAuth` (`auth_sessions`).
+  - Outbound message sending (`POST /api/send`), voice note Opus transcoding (`ffmpeg-static`), and inbound webhook forwarder to Laravel.
   - Dedicated WhatsApp Web interface (`/whatsapp`) with channel selector, search, unread filters, and live chat thread.
   - Direct CRM context sidebar displaying linked contact profile and quick opportunity details.
-- **33 — Persistent LID-to-Phone Resolution & Number Attribution**:
+- **33 — Real Mobile WhatsApp Chat Ingestion & Automatic Demo Data Purge**:
+  - Unblocked internal gateway routes (`/api/whatsapp/sync-phone-data`, `/api/whatsapp/channels/{id}/pair-confirm`, `/api/whatsapp/channels/{id}/disconnect`) from session authentication middleware, allowing seamless server-to-server data ingestion.
+  - Automatic purging of dummy demo chats (*Nitin devnani*, *Property Finder*) immediately upon initial mobile synchronization, ensuring the agent's real personal and business WhatsApp inbox is displayed.
+  - High-fidelity contact and phone resolution extracting genuine international numbers from `formattedTitle`, `contact.phoneNumber`, and persistent `contacts_map.json`.
+  - Batch message history synchronization importing recent message threads so genuine conversation bubbles render as soon as a chat is selected.
+  - Dual-endpoint gateway manual sync trigger (`/api/sync` and `/api/sync-now`) wired directly to the frontend "Refresh Chats" action.
+- **34 — Persistent LID-to-Phone Resolution & Number Attribution**:
   - Solved WhatsApp Linked Identity (`@lid`) privacy format masking.
   - Automatic contact book sniffing on `contacts.upsert` and `messaging-history.set`.
   - Persistent disk-backed mapping storage (`contacts_map.json`) preventing memory loss during daemon restarts.
   - Automatic conversion of raw LIDs to real international phone numbers (`+971...`, `+92...`).
   - Manual "Edit Phone Number" override tool in the client context panel.
-- **34 — Chat History Chronological Sorting & Performance Optimization**:
+- **35 — Chat History Chronological Sorting & Performance Optimization**:
   - Extracted and preserved genuine mobile conversation timestamps (`conversationTimestamp`) during history sync, matching exact mobile chat recency.
   - Server-side search & display query optimization (`take(250)`) resolving browser memory freeze on large message syncs (1,400+ chats).
   - Global database text search across all indexed chats before result slicing.
-- **35 — On-Demand Profile Picture (Avatar) Caching & Safe Ingestion**:
+- **36 — On-Demand Profile Picture (Avatar) Caching & Safe Ingestion**:
   - Added `avatar_url` column to `whatsapp_chats` table.
   - On-demand single contact avatar resolution (`GET /api/avatar/:jid`) triggered only when a chat is opened.
   - Avoids bulk-fetch rate limits and prevents WhatsApp spam/bot account bans.
