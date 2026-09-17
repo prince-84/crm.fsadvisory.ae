@@ -1874,7 +1874,31 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - When an advisor clicks the WhatsApp icon on any row in the Leads table (or My Queue, Owner Data, Opportunity Workspace, and Slide-over Drawer), the application navigates to `/whatsapp?phone=...&name=...`.
     - Upgraded `loadChats` in `frontend/src/app/whatsapp/page.tsx`:
       - If a chat with that lead's phone already exists, it is selected immediately.
-      - If no conversation exists yet, the frontend automatically calls `POST /api/whatsapp/chats/start` to register the chat, inserts it at the top of the conversation list, and opens the messaging thread ready for instant conversation.
+- **149 — Call Recording Server Scanner Scope Fix & Empty State Demo Loader (`backend/app/Http/Controllers/Api/CallRecordingController.php`, `frontend/src/app/recordings/page.tsx`)**:
+  - **Issue Investigated (No Recordings on Live Production)**:
+    - On `https://crm.fsadvisory.ae/recordings`, the table displayed `Showing 0 Recordings` ("No Call Recordings Found — Waiting for live 3CX calls...").
+    - Clicking "Scan Server Recordings" or "Sync Server Audio" failed to pull any recordings into the database.
+  - **Root Cause & Technical Diagnostic**:
+    1. **Purged Database Table**: Historical logs in `call_recordings` were previously purged when the "Clear All Logs" desk action was executed.
+    2. **PHP 8.2 Variable Scope Exception**: In `CallRecordingController::scanServerRecordingsInternal()`, lines 998–1006 executed:
+       ```php
+       $existing = CallRecording::where('audio_url', 'like', "%{$fileName}%")
+           ->orWhere('pbx_call_id', $callId) // <-- $callId undefined
+           ->first();
+       if ($existing) {
+           $existing->update(['audio_url' => $relativeUrl]); // <-- $relativeUrl undefined
+       }
+       ```
+       Both `$callId` and `$relativeUrl` were initialized in lines 1013–1031 *after* the duplicate check. When audio files were present in server storage, iterating through them immediately threw `ErrorException: Undefined variable $callId at line 999`, terminating the scan with a 500 error and aborting ingestion of all audio files.
+  - **Technical Upgrades**:
+    - **Variable Initialization Reordering**:
+      - Moved calculation of `$relativeUrl`, `$agentName`, `$detectedExt`, `$clientPhone`, `$recordedAt`, `$callId`, and `$isOutbound` *before* the `$existing` check.
+      - If an existing recording is found with missing or sample audio, its `audio_url` is healed to point directly to the authentic server audio file.
+    - **Multi-Level Storage Directory Traversal**:
+      - Expanded storage search patterns to cover `storage/app/public/recordings/*/*/*.*`, `storage_path('app/public/recordings/recordings/*/*.*')`, `public_path('storage/recordings/*/*/*.*')`, and `public_path('recordings/*/*.*')` to catch all nested 3CX FTP directory formats.
+    - **Empty State "Load Demo Calls" Button (`frontend/src/app/recordings/page.tsx`)**:
+      - Added a **`[ ✨ Load Demo Calls ]`** action button directly inside the empty state message on `/recordings` next to "Scan Server Recordings".
+      - Calls `POST /api/recordings/reseed` to generate realistic call records with playable audio playback so advisors can test and verify audio capabilities at any time even before live calls occur.
 
 ---
 

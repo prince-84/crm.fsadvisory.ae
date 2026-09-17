@@ -962,9 +962,16 @@ class CallRecordingController extends Controller
     public function scanServerRecordingsInternal(): int
     {
         $searchDirs = [
+            storage_path('app/public/recordings/*/*/*.*'),
             storage_path('app/public/recordings/recordings/*/*.*'),
             storage_path('app/public/recordings/*/*.*'),
             storage_path('app/public/recordings/*.*'),
+            public_path('storage/recordings/*/*/*.*'),
+            public_path('storage/recordings/*/*.*'),
+            public_path('storage/recordings/*.*'),
+            public_path('recordings/*/*/*.*'),
+            public_path('recordings/*/*.*'),
+            public_path('recordings/*.*'),
         ];
 
         $audioFiles = [];
@@ -994,23 +1001,20 @@ class CallRecordingController extends Controller
                 continue;
             }
 
-            // Check if recording already exists in DB by filename or pbx_call_id
-            $existing = CallRecording::where('audio_url', 'like', "%{$fileName}%")
-                ->orWhere('pbx_call_id', $callId)
-                ->first();
-
-            if ($existing) {
-                if (empty($existing->audio_url) || str_contains($existing->audio_url, 'sample_3cx_call')) {
-                    $existing->update(['audio_url' => $relativeUrl]);
-                }
-                continue;
-            }
-
             // Relative path for storage URL
             $cleanStoragePath = str_replace('\\', '/', $fullPath);
             $cleanBase = str_replace('\\', '/', storage_path('app/public/'));
-            $relativeStorage = ltrim(str_replace($cleanBase, '', $cleanStoragePath), '/');
-            $relativeUrl = "/storage/{$relativeStorage}";
+            $publicBase = str_replace('\\', '/', public_path('/'));
+
+            if (str_starts_with($cleanStoragePath, $cleanBase)) {
+                $relativeStorage = ltrim(substr($cleanStoragePath, strlen($cleanBase)), '/');
+                $relativeUrl = "/storage/{$relativeStorage}";
+            } elseif (str_starts_with($cleanStoragePath, $publicBase)) {
+                $relativeStorage = ltrim(substr($cleanStoragePath, strlen($publicBase)), '/');
+                $relativeUrl = "/{$relativeStorage}";
+            } else {
+                $relativeUrl = "/storage/recordings/{$fileName}";
+            }
 
             // 3CX Standard Filename Pattern:
             // [AgentName]_[Extension]-[PhoneNumber]_[YYYYMMDDHHmmss]([CallId]).wav
@@ -1058,6 +1062,18 @@ class CallRecordingController extends Controller
                     }
                 }
                 $agentName = self::EXTENSIONS_MAP[$detectedExt]['name'] ?? 'Advisor';
+            }
+
+            // Check if recording already exists in DB by filename or pbx_call_id
+            $existing = CallRecording::where('audio_url', 'like', "%{$fileName}%")
+                ->orWhere('pbx_call_id', $callId)
+                ->first();
+
+            if ($existing) {
+                if (empty($existing->audio_url) || str_contains($existing->audio_url, 'sample_3cx_call')) {
+                    $existing->update(['audio_url' => $relativeUrl]);
+                }
+                continue;
             }
 
             $size = @filesize($fullPath) ?: 100000;

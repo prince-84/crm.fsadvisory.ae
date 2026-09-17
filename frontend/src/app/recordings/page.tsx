@@ -625,6 +625,13 @@ export default function CallRecordingsPage() {
                             <RefreshCw className={`w-3.5 h-3.5 text-[#C8A147] ${scanning ? 'animate-spin' : ''}`} />
                             <span>Scan Server Recordings</span>
                           </button>
+                          <button
+                            onClick={handleReseedRecordings}
+                            className="px-4 py-2 bg-white border border-[#E8E4DC] hover:bg-slate-50 text-[#081428] font-bold text-xs rounded-md shadow-2xs transition-colors flex items-center gap-2 cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-[#C8A147]" />
+                            <span>Load Demo Calls</span>
+                          </button>
                         </div>
                       </td>
                     </tr>
