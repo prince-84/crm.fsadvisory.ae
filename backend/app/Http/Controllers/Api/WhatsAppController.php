@@ -134,6 +134,45 @@ class WhatsAppController extends Controller
     }
 
     /**
+     * Proxy WhatsApp Gateway status for secure HTTPS clients (Vercel)
+     */
+    public function gatewayStatus()
+    {
+        try {
+            $res = \Illuminate\Support\Facades\Http::timeout(3)->get('http://127.0.0.1:5001/api/status');
+            return response()->json($res->json(), $res->status());
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'disconnected', 'user' => null, 'has_qr' => false], 200);
+        }
+    }
+
+    /**
+     * Proxy WhatsApp Gateway QR image for secure HTTPS clients (Vercel)
+     */
+    public function gatewayQr()
+    {
+        try {
+            $res = \Illuminate\Support\Facades\Http::timeout(5)->get('http://127.0.0.1:5001/api/qr');
+            return response()->json($res->json(), $res->status());
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'disconnected', 'qr_image' => null], 200);
+        }
+    }
+
+    /**
+     * Proxy WhatsApp Gateway chat sync trigger
+     */
+    public function gatewaySync()
+    {
+        try {
+            $res = \Illuminate\Support\Facades\Http::timeout(15)->post('http://127.0.0.1:5001/api/sync');
+            return response()->json($res->json(), $res->status());
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 200);
+        }
+    }
+
+    /**
      * Ingest batch of contacts & chats directly from user's connected mobile phone
      */
     public function syncPhoneData(Request $request)

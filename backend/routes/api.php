@@ -131,6 +131,9 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::post('/whatsapp/chats/{id}/send', [WhatsAppController::class, 'sendMessage']);
     Route::post('/whatsapp/chats/{id}/update-contact-info', [WhatsAppController::class, 'updateContactInfo']);
     Route::post('/whatsapp/chats/{id}/simulate-incoming', [WhatsAppController::class, 'simulateIncoming']);
+    Route::get('/whatsapp/gateway/status', [WhatsAppController::class, 'gatewayStatus']);
+    Route::get('/whatsapp/gateway/qr', [WhatsAppController::class, 'gatewayQr']);
+    Route::post('/whatsapp/gateway/sync', [WhatsAppController::class, 'gatewaySync']);
 
     // Reports & Analytics
     Route::get('/reports/team-performance', [ReportController::class, 'teamPerformance']);

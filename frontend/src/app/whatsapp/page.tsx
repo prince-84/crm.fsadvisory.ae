@@ -313,21 +313,19 @@ export default function WhatsAppPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       loadChats(false);
-      // Poll gateway status to immediately catch mobile sign-out when safe
-      const isSafe = typeof window !== 'undefined' && (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
-      if (isSafe) {
-        fetch(`${GATEWAY_URL}/api/status`)
-          .then((r) => r.json())
-          .then((st) => {
+      // Poll gateway status securely (direct on localhost, or via Laravel proxy on Vercel HTTPS)
+      fetchGateway('/api/status')
+        .then((st) => {
+          if (st?.status) {
             setGatewayStatus(st.status);
             if (st.status === 'disconnected' || st.status === 'qr_ready') {
               loadChannels(false);
             }
-          })
-          .catch(() => {
-            setGatewayStatus('disconnected');
-          });
-      }
+          }
+        })
+        .catch(() => {
+          setGatewayStatus('disconnected');
+        });
 
       // Also fetch new messages for current active chat silently
       if (selectedChatIdRef.current) {
@@ -361,31 +359,46 @@ export default function WhatsAppPage() {
     return () => clearInterval(timer);
   }, [isQrModalOpen, qrTimer]);
 
+  // Unified Gateway Caller: Direct on HTTP/Localhost, or via Laravel Proxy on HTTPS/Vercel
+  const fetchGateway = async (path: string, options: any = {}) => {
+    const isSafeDirect = typeof window !== 'undefined' && 
+      (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
+    
+    if (isSafeDirect) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(`${GATEWAY_URL}${path}`, { ...options, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) return await res.json();
+      } catch (_) {}
+    }
+    // Fallback securely through Laravel API proxy (works 100% on Vercel HTTPS without mixed content blocks)
+    try {
+      const proxyPath = `/whatsapp/gateway${path.replace('/api', '')}`;
+      return await fetchApi(proxyPath, options);
+    } catch (_) {
+      return null;
+    }
+  };
+
   const loadChannels = async (checkAutoQr = false) => {
     try {
       const data = await fetchApi('/whatsapp/channels');
       const chList = data.channels || [];
       setChannels(chList);
 
-      // Check Gateway connection state safely with 800ms timeout
-      const isSafe = typeof window !== 'undefined' && 
-        (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
-      
-      if (isSafe) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 800);
-          const gwRes = await fetch(`${GATEWAY_URL}/api/status`, { signal: controller.signal });
-          clearTimeout(timeoutId);
-          const gwData = await gwRes.json();
+      try {
+        const gwData = await fetchGateway('/api/status');
+        if (gwData?.status) {
           setGatewayStatus(gwData.status);
           if (checkAutoQr && gwData.status !== 'connected') {
             handleOpenQrModal();
           }
-        } catch (_) {
+        } else {
           setGatewayStatus(data.total_connected > 0 ? 'connected' : 'disconnected');
         }
-      } else {
+      } catch (_) {
         setGatewayStatus(data.total_connected > 0 ? 'connected' : 'disconnected');
       }
     } catch (e) {
@@ -802,16 +815,11 @@ export default function WhatsAppPage() {
   // Live Gateway Status Polling when QR modal is open
   useEffect(() => {
     let interval: any = null;
-    const isSafe = typeof window !== 'undefined' && (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
-    if (isQrModalOpen && isSafe) {
+    if (isQrModalOpen) {
       interval = setInterval(async () => {
         try {
-          const controller = new AbortController();
-          const tId = setTimeout(() => controller.abort(), 1200);
-          const res = await fetch(`${GATEWAY_URL}/api/status`, { signal: controller.signal });
-          clearTimeout(tId);
-          const data = await res.json();
-          if (data.status === 'connected') {
+          const data = await fetchGateway('/api/status');
+          if (data?.status === 'connected') {
             setIsQrModalOpen(false);
             Swal.fire({
               icon: 'success',
@@ -852,23 +860,14 @@ export default function WhatsAppPage() {
       console.warn('Backend QR fetch failed', err);
     }
 
-    // 2. If a live local Baileys gateway is running and safe to call, attempt to fetch pre-rendered PNG
-    const isSafe = typeof window !== 'undefined' && (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
-    if (isSafe) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1200);
-        const res = await fetch(`${GATEWAY_URL}/api/qr`, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        const data = await res.json();
-        if (data.qr_image) {
-          setQrImageData(data.qr_image);
-          if (data.qr_code) setQrCodeData(data.qr_code);
-        }
-      } catch (e) {
-        // gateway offline, QRCodeSVG renders instantly
+    // 2. Fetch pre-rendered PNG from gateway (direct or via Laravel proxy)
+    try {
+      const data = await fetchGateway('/api/qr');
+      if (data?.qr_image) {
+        setQrImageData(data.qr_image);
+        if (data.qr_code) setQrCodeData(data.qr_code);
       }
-    }
+    } catch (_) {}
   };
 
   const handleRefreshQr = async () => {
@@ -886,23 +885,14 @@ export default function WhatsAppPage() {
       console.warn('Backend QR refresh failed', err);
     }
 
-    // 2. Attempt gateway sync if available
-    const isSafe = typeof window !== 'undefined' && (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
-    if (isSafe) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1200);
-        const res = await fetch(`${GATEWAY_URL}/api/qr`, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        const data = await res.json();
-        if (data.qr_image) {
-          setQrImageData(data.qr_image);
-          if (data.qr_code) setQrCodeData(data.qr_code);
-        }
-      } catch (e) {
-        // gateway offline
+    // 2. Refresh gateway QR
+    try {
+      const data = await fetchGateway('/api/qr');
+      if (data?.qr_image) {
+        setQrImageData(data.qr_image);
+        if (data.qr_code) setQrCodeData(data.qr_code);
       }
-    }
+    } catch (_) {}
   };
 
   const handleConfirmPairing = async () => {
@@ -1086,7 +1076,7 @@ export default function WhatsAppPage() {
               <button
                 onClick={async () => {
                   try {
-                    await fetch(`${GATEWAY_URL}/api/sync`, { method: 'POST' });
+                    await fetchGateway('/api/sync', { method: 'POST' });
                   } catch (_) {}
                   await loadChannels();
                   await loadChats();
