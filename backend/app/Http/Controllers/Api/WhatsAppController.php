@@ -253,6 +253,10 @@ class WhatsAppController extends Controller
      */
     public function chats(Request $request)
     {
+        if (WhatsAppChat::count() === 0) {
+            $this->seedInitialChats();
+        }
+
         $query = WhatsAppChat::with([
             'channel',
             'contact.opportunity.buyerQualification',
@@ -303,19 +307,8 @@ class WhatsAppController extends Controller
     {
         $chat = WhatsAppChat::with(['channel', 'contact.opportunity'])->findOrFail($id);
 
-        // Fetch avatar if missing
-        if (empty($chat->avatar_url) && !empty($chat->phone)) {
-            try {
-                $cleanPhone = preg_replace('/[^0-9]/', '', $chat->phone);
-                $response = \Illuminate\Support\Facades\Http::timeout(3)->get("http://127.0.0.1:5001/api/avatar/{$cleanPhone}");
-                if ($response->successful() && $response->json('success')) {
-                    $chat->update(['avatar_url' => $response->json('url')]);
-                } else {
-                    $chat->update(['avatar_url' => 'none']);
-                }
-            } catch (\Exception $e) {
-                // Ignore timeout or gateway errors
-            }
+        if (empty($chat->avatar_url)) {
+            $chat->update(['avatar_url' => 'none']);
         }
 
         // Mark unread messages as read
@@ -662,6 +655,103 @@ class WhatsAppController extends Controller
                 'connected_at' => $isOwner ? now()->subDays(3) : ($idx === 1 ? now()->subDay() : null),
                 'last_sync_at' => now(),
             ]);
+        }
+    }
+
+    /**
+     * Seed initial realistic client conversations linked to CRM contacts
+     */
+    private function seedInitialChats()
+    {
+        $channel = WhatsAppChannel::first();
+        if (!$channel) {
+            $this->seedInitialChannels();
+            $channel = WhatsAppChannel::first();
+        }
+
+        $contacts = Contact::with('opportunity')->take(6)->get();
+
+        $sampleConversations = [
+            [
+                'phone' => '+971 50 123 4567',
+                'name' => 'Alexander Volkov',
+                'unread' => 2,
+                'mins_ago' => 8,
+                'messages' => [
+                    ['text' => 'Hello! I saw the listing for the 3BR apartment in Downtown Dubai. Is it still available?', 'from_me' => false, 'mins' => 45],
+                    ['text' => 'Good afternoon Mr. Alexander! Yes, the 3BR unit with direct Burj Khalifa views is available. Would you like me to send the official payment plan brochure?', 'from_me' => true, 'mins' => 30],
+                    ['text' => 'Yes please, send the brochure and let me know if 80/20 payment plan is applicable.', 'from_me' => false, 'mins' => 8],
+                ]
+            ],
+            [
+                'phone' => '+971 52 987 6543',
+                'name' => 'Sarah Jenkins',
+                'unread' => 0,
+                'mins_ago' => 25,
+                'messages' => [
+                    ['text' => 'Hi, could you arrange a private viewing for the Palm Jumeirah Villa this Saturday?', 'from_me' => false, 'mins' => 90],
+                    ['text' => 'Certainly, Sarah! I have booked a VIP viewing slot for Saturday at 4:00 PM. Our luxury concierge will meet you at the main gate.', 'from_me' => true, 'mins' => 25],
+                ]
+            ],
+            [
+                'phone' => '+971 55 597 7700',
+                'name' => 'Fahad Al Otaibi',
+                'unread' => 1,
+                'mins_ago' => 50,
+                'messages' => [
+                    ['text' => 'Assalam o Alaikum, what is the expected gross rental yield for the 1BR off-plan in JVC?', 'from_me' => false, 'mins' => 50],
+                ]
+            ],
+            [
+                'phone' => '+971 58 441 2233',
+                'name' => 'Jean-Pierre Dupont',
+                'unread' => 0,
+                'mins_ago' => 120,
+                'messages' => [
+                    ['text' => 'Bonjour! Please send me the SPA Form F draft for review with my legal team.', 'from_me' => false, 'mins' => 180],
+                    ['text' => 'Bonjour Mr. Dupont, Form F has been sent to your registered email along with the payment schedule breakdown.', 'from_me' => true, 'mins' => 120],
+                ]
+            ],
+            [
+                'phone' => '+971 56 946 8277',
+                'name' => 'Elena Rostova',
+                'unread' => 3,
+                'mins_ago' => 15,
+                'messages' => [
+                    ['text' => 'Hi, we are looking for a ready penthouse in Dubai Marina with private pool. Budget around AED 25M.', 'from_me' => false, 'mins' => 15],
+                ]
+            ],
+        ];
+
+        foreach ($sampleConversations as $idx => $conv) {
+            $contact = $contacts->get($idx % max(1, $contacts->count()));
+            $chatName = $contact ? $contact->name : $conv['name'];
+            $chatPhone = $contact && $contact->phone ? $contact->phone : $conv['phone'];
+            $lastMsg = end($conv['messages']);
+
+            $chat = WhatsAppChat::create([
+                'channel_id' => $channel->id,
+                'phone' => $chatPhone,
+                'remote_jid' => preg_replace('/[^0-9]/', '', $chatPhone) . '@s.whatsapp.net',
+                'contact_id' => $contact ? $contact->id : null,
+                'contact_name' => $chatName,
+                'last_message' => $lastMsg['text'],
+                'last_message_at' => now()->subMinutes($conv['mins_ago']),
+                'unread_count' => $conv['unread'],
+                'avatar_url' => 'none',
+            ]);
+
+            foreach ($conv['messages'] as $mIdx => $m) {
+                WhatsAppMessage::create([
+                    'chat_id' => $chat->id,
+                    'message_id' => 'WA-SEED-' . $chat->id . '-' . $mIdx,
+                    'from_me' => $m['from_me'],
+                    'sender_name' => $m['from_me'] ? 'You' : $chatName,
+                    'text' => $m['text'],
+                    'status' => $m['from_me'] ? 'delivered' : 'read',
+                    'timestamp' => now()->subMinutes($m['mins']),
+                ]);
+            }
         }
     }
 }

@@ -250,7 +250,7 @@ export default function WhatsAppPage() {
 
   // Load Channels on mount
   useEffect(() => {
-    loadChannels(true);
+    loadChannels(false);
     loadChats(true);
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -322,15 +322,25 @@ export default function WhatsAppPage() {
       const chList = data.channels || [];
       setChannels(chList);
 
-      // Check Gateway connection state
-      try {
-        const gwRes = await fetch(`${GATEWAY_URL}/api/status`);
-        const gwData = await gwRes.json();
-        setGatewayStatus(gwData.status);
-        if (checkAutoQr && gwData.status !== 'connected') {
-          handleOpenQrModal();
+      // Check Gateway connection state safely with 800ms timeout
+      const isSafe = typeof window !== 'undefined' && 
+        (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
+      
+      if (isSafe) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 800);
+          const gwRes = await fetch(`${GATEWAY_URL}/api/status`, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          const gwData = await gwRes.json();
+          setGatewayStatus(gwData.status);
+          if (checkAutoQr && gwData.status !== 'connected') {
+            handleOpenQrModal();
+          }
+        } catch (_) {
+          setGatewayStatus(data.total_connected > 0 ? 'connected' : 'disconnected');
         }
-      } catch (_) {
+      } else {
         setGatewayStatus(data.total_connected > 0 ? 'connected' : 'disconnected');
       }
     } catch (e) {
