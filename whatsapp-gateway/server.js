@@ -228,6 +228,30 @@ async function initClient() {
     } catch (_) {}
   });
 
+  // Real-time WhatsApp Message Read Receipts / Delivery Acks
+  client.on('message_ack', async (msg, ack) => {
+    try {
+      // ack: -1 Error, 0 Pending, 1 Sent (Server), 2 Delivered (Device), 3 Read, 4 Played
+      let status = 'sent';
+      if (ack === 2) status = 'delivered';
+      else if (ack >= 3) status = 'read';
+      else if (ack === 1) status = 'sent';
+      else if (ack === 0) status = 'pending';
+
+      const msgId = msg.id?._serialized || msg.id?.id;
+      if (msgId) {
+        console.log(`👁️ ACK: [${msgId}] ack=${ack} -> status=${status}`);
+        await postAckWebhook({
+          id: msgId,
+          ack,
+          status,
+        });
+      }
+    } catch (e) {
+      console.error('Ack event error:', e.message);
+    }
+  });
+
   client.initialize().catch(async (err) => {
     console.error('Init error:', err.message);
     isInitializing   = false;
@@ -239,6 +263,23 @@ async function initClient() {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function postAckWebhook(data) {
+  try {
+    await fetch('http://127.0.0.1:8000/api/whatsapp/webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'message_ack',
+        type: 'ack',
+        channel_id: 1,
+        id: data.id,
+        ack: data.ack,
+        status: data.status,
+      }),
+    });
+  } catch (_) {}
+}
 
 async function postWebhook(data) {
   try {
@@ -347,13 +388,24 @@ async function syncHistoryToLaravel() {
           try {
             if (c.msgs && typeof c.msgs.getModelsArray === 'function') {
               const mArr = c.msgs.getModelsArray();
-              recentMsgs = mArr.slice(-6).map(m => ({
-                id: m.id?._serialized || ('WA-' + Math.random().toString(36).substr(2, 9)),
-                text: m.body || m.caption || (m.type !== 'chat' ? `[${m.type || 'Media'}]` : ''),
-                from_me: !!m.id?.fromMe,
-                timestamp: m.t || ts,
-                media_type: m.type === 'chat' ? 'text' : (m.type || 'text'),
-              })).filter(m => m.text && m.text.trim().length > 0);
+              recentMsgs = mArr.slice(-6).map(m => {
+                let status = 'sent';
+                if (m.ack === 2) status = 'delivered';
+                else if (m.ack >= 3) status = 'read';
+                else if (m.ack === 1) status = 'sent';
+                else if (m.ack === 0) status = 'pending';
+                else if (!m.id?.fromMe) status = 'read';
+
+                return {
+                  id: m.id?._serialized || ('WA-' + Math.random().toString(36).substr(2, 9)),
+                  text: m.body || m.caption || (m.type !== 'chat' ? `[${m.type || 'Media'}]` : ''),
+                  from_me: !!m.id?.fromMe,
+                  timestamp: m.t || ts,
+                  media_type: m.type === 'chat' ? 'text' : (m.type || 'text'),
+                  ack: m.ack ?? 1,
+                  status: status,
+                };
+              }).filter(m => m.text && m.text.trim().length > 0);
             }
           } catch (_) {}
 
@@ -591,64 +643,21 @@ app.post('/api/send', async (req, res) => {
 
         const sent = await client.sendMessage(target, mediaAttachment, { caption: text || '' });
         console.log(`📎 Attachment [${mime} - ${safeFilename}] delivered to ${target}! ID: ${sent?.id?._serialized}`);
-        return res.json({ success: true, messageId: sent?.id?._serialized });
+        return res.json({ success: true, messageId: sent?.id?._serialized, status: 'sent', ack: 1 });
       } catch (attachErr) {
         console.error('Attachment transmission error:', attachErr.message);
         return res.status(500).json({ error: attachErr.message });
       }
     }
 
-    // 1. Direct page action via WAWebCollections
-    const sendResult = await client.pupPage.evaluate(async (targetJid, targetPhone, msgText) => {
-      try {
-        const Collections = window.require('WAWebCollections');
-        const WidFactory = window.require('WAWebWidFactory');
-        const SendTextMsg = window.require('WAWebSendTextMsgChatAction') || window.require('WAWebSendMsgChatAction');
-
-        let chat = null;
-
-        // Try find by targetJid (e.g. 145023882531066@lid or 923452963288@c.us)
-        if (targetJid && Collections?.Chat && WidFactory) {
-          const wid = WidFactory.createWid(targetJid);
-          if (wid) chat = Collections.Chat.get(wid);
-        }
-
-        // Try find by phone number in Chat collection
-        if (!chat && targetPhone && Collections?.Chat && WidFactory) {
-          const clean = targetPhone.replace(/[^0-9]/g, '');
-          const cWid = WidFactory.createWid(`${clean}@c.us`);
-          if (cWid) chat = Collections.Chat.get(cWid);
-        }
-
-        if (chat && SendTextMsg && typeof SendTextMsg.sendTextMsgToChat === 'function') {
-          await SendTextMsg.sendTextMsgToChat(chat, msgText);
-          return { success: true, method: 'SendTextMsg' };
-        }
-
-        if (chat && window.WWebJS && typeof window.WWebJS.sendMessage === 'function') {
-          await window.WWebJS.sendMessage(chat, msgText, {}, false);
-          return { success: true, method: 'WWebJS' };
-        }
-
-        return { fallback: true };
-      } catch (err) {
-        return { fallback: true, error: err.message || String(err) };
-      }
-    }, jid, phone, text);
-
-    if (sendResult && sendResult.success) {
-      console.log(`✅ Message successfully delivered via WhatsApp Web: "${text}"`);
-      return res.json({ success: true, result: sendResult });
-    }
-
-    // 2. Fallback to client.sendMessage
+    // Direct client.sendMessage for text (reliable ack and id tracking)
     let target = jid;
     if (!target && phone) {
       target = `${phone.replace(/[^0-9]/g, '')}@c.us`;
     }
     const result = await client.sendMessage(target, text);
-    console.log(`✅ Message sent via client.sendMessage to ${target}`);
-    return res.json({ success: true, result });
+    console.log(`✅ Message sent via client.sendMessage to ${target}, ID: ${result?.id?._serialized}`);
+    return res.json({ success: true, messageId: result?.id?._serialized, status: 'sent', ack: 1, result });
   } catch (err) {
     console.error('Send error:', err.message);
     res.status(500).json({ error: err.message });

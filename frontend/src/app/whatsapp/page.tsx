@@ -491,15 +491,64 @@ export default function WhatsAppPage() {
     }
   };
 
+  const renderMessageStatus = (status?: string) => {
+    switch (status) {
+      case 'pending':
+        return <span title="Sending..."><Clock className="w-3 h-3 text-slate-400 animate-pulse" /></span>;
+      case 'sent':
+        return <span title="Sent to WhatsApp server"><Check className="w-3.5 h-3.5 text-slate-400" /></span>;
+      case 'delivered':
+        return <span title="Delivered to recipient device"><CheckCheck className="w-3.5 h-3.5 text-slate-400" /></span>;
+      case 'read':
+      case 'played':
+        return <span title="Read by recipient"><CheckCheck className="w-3.5 h-3.5 text-[#34B7F1]" /></span>;
+      case 'failed':
+        return <span title="Failed to send"><AlertTriangle className="w-3 h-3 text-rose-500" /></span>;
+      default:
+        return <span title="Sent"><Check className="w-3.5 h-3.5 text-slate-400" /></span>;
+    }
+  };
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if ((!messageText.trim() && !selectedFile) || !selectedChat || sending) return;
 
     const outgoingText = messageText.trim();
     const filePayload = selectedFile;
+    const targetChatId = selectedChat.id;
 
+    // 1. Instant zero-latency UI clearing
     setMessageText('');
     setSelectedFile(null);
+
+    // 2. Immediate Optimistic Message insertion into chat thread
+    const tempId = 'temp-' + Date.now();
+    const fallbackText = filePayload ? (filePayload.mediaType === 'image' ? '📷 Photo' : `📄 ${filePayload.name}`) : '';
+    const displayText = outgoingText || fallbackText;
+
+    const optimisticMsg: any = {
+      id: tempId,
+      message_id: tempId,
+      chat_id: targetChatId,
+      from_me: true,
+      sender_name: 'You',
+      text: displayText,
+      media_url: filePayload ? (filePayload.mediaType === 'image' ? filePayload.base64 : filePayload.base64) : null,
+      media_type: filePayload?.mediaType || 'text',
+      status: 'pending', // Shows animated clock ⏱ instantly!
+      timestamp: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === targetChatId
+          ? { ...c, last_message: displayText, last_message_at: new Date().toISOString() }
+          : c
+      )
+    );
+
     setSending(true);
 
     try {
@@ -509,26 +558,38 @@ export default function WhatsAppPage() {
         payload.media_type = filePayload.mediaType;
         payload.filename = filePayload.name;
         if (!outgoingText) {
-          payload.text = filePayload.mediaType === 'image' ? '📷 Photo' : `📄 ${filePayload.name}`;
+          payload.text = fallbackText;
         }
       }
 
-      const data = await fetchApi(`/whatsapp/chats/${selectedChat.id}/send`, {
+      const data = await fetchApi(`/whatsapp/chats/${targetChatId}/send`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+
       if (data.success && data.message) {
-        setMessages((prev) => [...prev, data.message]);
+        // Smoothly replace the optimistic temp message with the persisted record
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId || m.message_id === tempId ? data.message : m))
+        );
         setChats((prev) =>
           prev.map((c) =>
-            c.id === selectedChat.id
-              ? { ...c, last_message: payload.text || 'Attachment', last_message_at: new Date().toISOString() }
+            c.id === targetChatId
+              ? { ...c, last_message: data.message.text || displayText, last_message_at: data.message.timestamp || new Date().toISOString() }
               : c
           )
+        );
+      } else {
+        // Update temp message to failed
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m))
         );
       }
     } catch (e) {
       console.error('Failed to send message', e);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m))
+      );
     } finally {
       setSending(false);
     }
@@ -609,14 +670,41 @@ export default function WhatsAppPage() {
       reader.readAsDataURL(audioBlob);
       reader.onloadend = async () => {
         const base64Audio = reader.result as string;
+        const voiceText = `🎤 Voice Note (${duration}s)`;
+        const tempVoiceId = 'temp-voice-' + Date.now();
+        const targetChatId = selectedChat.id;
+
+        // Instant optimistic voice note in chat thread
+        const optimisticVoice: any = {
+          id: tempVoiceId,
+          message_id: tempVoiceId,
+          chat_id: targetChatId,
+          from_me: true,
+          sender_name: 'You',
+          text: voiceText,
+          media_url: base64Audio,
+          media_type: 'audio',
+          status: 'pending',
+          timestamp: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        };
+
+        setMessages((prev) => [...prev, optimisticVoice]);
+        setChats((prev) =>
+          prev.map((c) =>
+            c.id === targetChatId
+              ? { ...c, last_message: voiceText, last_message_at: new Date().toISOString() }
+              : c
+          )
+        );
 
         setSending(true);
         try {
-          const res = await fetch(`${API_BASE_URL}/whatsapp/chats/${selectedChat.id}/send`, {
+          const res = await fetch(`${API_BASE_URL}/whatsapp/chats/${targetChatId}/send`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              text: `🎤 Voice Note (${duration}s)`,
+              text: voiceText,
               media_type: 'audio',
               media_base64: base64Audio,
               media_url: base64Audio,
@@ -624,17 +712,26 @@ export default function WhatsAppPage() {
           });
           const data = await res.json();
           if (data.success && data.message) {
-            setMessages((prev) => [...prev, data.message]);
+            setMessages((prev) =>
+              prev.map((m) => (m.id === tempVoiceId || m.message_id === tempVoiceId ? data.message : m))
+            );
             setChats((prev) =>
               prev.map((c) =>
-                c.id === selectedChat.id
-                  ? { ...c, last_message: `🎤 Voice Note (${duration}s)`, last_message_at: new Date().toISOString() }
+                c.id === targetChatId
+                  ? { ...c, last_message: data.message.text || voiceText, last_message_at: data.message.timestamp || new Date().toISOString() }
                   : c
               )
+            );
+          } else {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === tempVoiceId ? { ...m, status: 'failed' } : m))
             );
           }
         } catch (e) {
           console.error('Failed to send voice note', e);
+          setMessages((prev) =>
+            prev.map((m) => (m.id === tempVoiceId ? { ...m, status: 'failed' } : m))
+          );
         } finally {
           setSending(false);
         }
@@ -1325,9 +1422,7 @@ export default function WhatsAppPage() {
                             {/* Time & Delivery Status */}
                             <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-400">
                               <span className="font-mono">{formatMessageTime(msg.timestamp || msg.created_at)}</span>
-                              {isFromMe && (
-                                <CheckCheck className="w-3.5 h-3.5 text-[#34B7F1]" />
-                              )}
+                              {isFromMe && renderMessageStatus(msg.status)}
                             </div>
                           </div>
                         </div>

@@ -103,6 +103,16 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - Resilient backend media ingestion into `public/storage/whatsapp_media/` with automated MIME classification, binary decoding, and `whatsapp_messages.media_type` schema upgrade (`VARCHAR(50)`).
   - Puppeteer gateway integration leveraging `MessageMedia` for official WhatsApp media delivery to mobile handsets and automatic `downloadMedia()` for inbound client files.
   - Complete database purge and session wipe mechanism permanently removing dummy seed data to guarantee 100% clean initial QR scans.
+- **38 — Instant Optimistic Messaging & Real-Time WhatsApp Read Receipts Delivery Ticks**:
+  - **Zero-Latency Optimistic UI**: Implemented instant message appending across the chat view upon pressing Enter or clicking Send (text, attachments, or voice notes). Messages and media render on screen in 0ms with a pulsing clock status (`pending`) while background transmission completes, eliminating previous multi-second UI freezes.
+  - **Instant Composer Reset**: Clears the message text input and attachment preview tray immediately so the advisor can continue chatting without blocking.
+  - **Full WhatsApp Tick Lifecycle**: Replaced previously hardcoded blue double checkmarks with dynamic, accurate read receipt statuses matching official WhatsApp specifications:
+    - ⏱ `pending`: Animated clock indicator while the message is in flight.
+    - ✓ `sent`: Single grey tick when accepted by WhatsApp server (`ack = 1`).
+    - ✓✓ (Grey) `delivered`: Double grey checkmarks when delivered to the recipient's mobile device (`ack = 2`).
+    - ✓✓ (Blue `#34B7F1`) `read`: Double blue checkmarks only after the recipient opens and reads the conversation (`ack = 3` or `4`).
+  - **Gateway Real-Time Ack Ingestion**: Added `client.on('message_ack')` listener in `whatsapp-gateway/server.js` forwarding delivery events to Laravel's `/api/whatsapp/webhook` to update `whatsapp_messages.status` in real time.
+  - **History Sync Status Attribution**: Enhanced `syncHistoryToLaravel()` to extract genuine `m.ack` properties from WhatsApp Web models, preserving true sent, delivered, and read states on historical messages.
 
 ### Enterprise Access, Governance & Distribution
 - **36 — Enterprise User Management & Granular Permission Matrix (`/users`)**:

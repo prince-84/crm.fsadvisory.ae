@@ -276,7 +276,7 @@ class WhatsAppController extends Controller
                             'sender_name' => !empty($m['from_me']) ? 'You' : $chat->contact_name,
                             'text' => $mText,
                             'media_type' => $m['media_type'] ?? 'text',
-                            'status' => !empty($m['from_me']) ? 'delivered' : 'read',
+                            'status' => $m['status'] ?? (!empty($m['from_me']) ? 'sent' : 'read'),
                             'timestamp' => $mTs,
                         ]
                     );
@@ -476,7 +476,7 @@ class WhatsAppController extends Controller
                 'text' => $msgText,
                 'media_url' => $mediaUrl,
                 'media_type' => $mediaType,
-                'status' => 'read',
+                'status' => 'sent',
                 'timestamp' => now(),
             ]);
 
@@ -487,7 +487,7 @@ class WhatsAppController extends Controller
 
             // Transmit out over real WhatsApp Gateway
             try {
-                \Illuminate\Support\Facades\Http::timeout(15)->post('http://127.0.0.1:5001/api/send', [
+                $gwRes = \Illuminate\Support\Facades\Http::timeout(15)->post('http://127.0.0.1:5001/api/send', [
                     'phone' => $chat->phone,
                     'jid' => $chat->remote_jid,
                     'text' => $caption ?: '',
@@ -496,6 +496,19 @@ class WhatsAppController extends Controller
                     'filename' => $originalFilename ?: 'attachment',
                     'is_voice' => ($mediaType === 'audio'),
                 ]);
+                if ($gwRes->successful()) {
+                    $gwData = $gwRes->json();
+                    $updates = [];
+                    if (!empty($gwData['messageId'])) {
+                        $updates['message_id'] = $gwData['messageId'];
+                    }
+                    if (!empty($gwData['status'])) {
+                        $updates['status'] = $gwData['status'];
+                    }
+                    if (!empty($updates)) {
+                        $message->update($updates);
+                    }
+                }
             } catch (\Exception $e) {
                 \Log::error('WhatsApp gateway send error: ' . $e->getMessage());
             }
@@ -616,6 +629,19 @@ class WhatsAppController extends Controller
     {
         $payload = $request->all();
         \Log::info('WhatsApp Webhook Received:', $payload);
+
+        // Handle delivery acks & read receipts from WhatsApp Gateway
+        if (($payload['type'] ?? '') === 'ack' || ($payload['event'] ?? '') === 'message_ack' || isset($payload['ack'])) {
+            $msgId = $payload['id'] ?? $payload['message_id'] ?? null;
+            $newStatus = $payload['status'] ?? 'delivered';
+            if ($msgId) {
+                $affected = WhatsAppMessage::where('message_id', $msgId)
+                    ->orWhere('message_id', 'like', "%{$msgId}%")
+                    ->update(['status' => $newStatus]);
+                \Log::info("WhatsApp ACK: {$msgId} -> {$newStatus} (affected: {$affected})");
+            }
+            return response()->json(['success' => true, 'status' => 'ACK_PROCESSED']);
+        }
 
         $remoteJid = $payload['remote_jid'] ?? $payload['from'] ?? null;
         $remotePhone = $payload['phone'] ?? null;
@@ -759,7 +785,7 @@ class WhatsAppController extends Controller
                 'text' => $messageText,
                 'media_url' => $mediaUrl,
                 'media_type' => $mediaType,
-                'status' => 'read',
+                'status' => $isFromMe ? 'sent' : 'read',
                 'timestamp' => now(),
             ]);
         }
