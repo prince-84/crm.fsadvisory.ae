@@ -853,7 +853,10 @@ export default function WhatsAppPage() {
         method: 'POST',
         body: JSON.stringify({ channel_id: targetId }),
       });
-      if (backendRes.qr_code) {
+      if (backendRes?.qr_image) {
+        setQrImageData(backendRes.qr_image);
+      }
+      if (backendRes?.qr_code) {
         setQrCodeData(backendRes.qr_code);
       }
     } catch (err) {
@@ -865,7 +868,9 @@ export default function WhatsAppPage() {
       const data = await fetchGateway('/api/qr');
       if (data?.qr_image) {
         setQrImageData(data.qr_image);
-        if (data.qr_code) setQrCodeData(data.qr_code);
+      }
+      if (data?.qr_code) {
+        setQrCodeData(data.qr_code);
       }
     } catch (_) {}
   };
@@ -878,7 +883,10 @@ export default function WhatsAppPage() {
         method: 'POST',
         body: JSON.stringify({ channel_id: qrChannelId || 1 }),
       });
-      if (backendRes.qr_code) {
+      if (backendRes?.qr_image) {
+        setQrImageData(backendRes.qr_image);
+      }
+      if (backendRes?.qr_code) {
         setQrCodeData(backendRes.qr_code);
       }
     } catch (err) {
@@ -890,7 +898,9 @@ export default function WhatsAppPage() {
       const data = await fetchGateway('/api/qr');
       if (data?.qr_image) {
         setQrImageData(data.qr_image);
-        if (data.qr_code) setQrCodeData(data.qr_code);
+      }
+      if (data?.qr_code) {
+        setQrCodeData(data.qr_code);
       }
     } catch (_) {}
   };

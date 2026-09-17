@@ -1847,6 +1847,25 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     3. **Pre-Seeded Realistic Real Estate Inquiries**: Added `seedInitialChats()` in `WhatsAppController.php`: when `WhatsAppChat::count() === 0`, it instantly populates 5 authentic client conversations linked to CRM contacts (*Alexander Volkov*, *Sarah Jenkins*, *Fahad Al Otaibi*, *Jean-Pierre Dupont*, *Elena Rostova*) with full property specifications, timeline messages, unread badges, and linked deal context.
     4. Sub-300ms page load verified on both local and live deployments.
 
+- **147 — WhatsApp Authentic Cryptographic Pairing QR Code Resolution & Gateway Proxy Synchronization (`whatsapp-gateway/server.js`, `backend/app/Http/Controllers/Api/WhatsAppController.php`, `frontend/src/app/whatsapp/page.tsx`)**:
+  - **Issue Identified ("Invalid QR Code" on Phone Scan)**:
+    - When scanning the QR code in the WhatsApp Link Device modal on the live deployment (`crm.fsadvisory.ae`), the mobile WhatsApp app reported *"Invalid QR Code"*.
+  - **Root Cause Analysis**:
+    1. **Mock QR Fallback**: `WhatsAppController::generateQr()` previously generated a synthetic random string (`'2@' . Str::random(44)...`) intended for offline testing. When the live server had not yet synced the gateway proxy route, the frontend fell back to this synthetic code, which WhatsApp's mobile client rejected as unauthentic.
+    2. **Unexposed Raw QR in Gateway**: `whatsapp-gateway/server.js` was creating a PNG data URL (`currentQrImage`) but not storing or returning the raw cryptographic pairing string (`currentQrRaw`) in `/api/qr`.
+    3. **Live Server Code Drift**: The live cPanel Laravel installation at `/home/irmg/api.fsadvisory.ae` had not yet received the latest git updates (`/api/whatsapp/gateway/qr` returning 404), preventing Vercel from querying the gateway.
+  - **Technical Upgrades**:
+    - **Raw QR Tracking & API Exposure (`whatsapp-gateway/server.js`)**:
+      - Stored `currentQrRaw` on the `client.on('qr')` event and cleared it on `ready`, `disconnected`, and `auth_failure`.
+      - Updated `GET /api/qr` to return `{ status, qr_image, qr_code: currentQrRaw, expires_in: 60 }`.
+    - **Authentic Gateway Querying in Laravel (`WhatsAppController.php`)**:
+      - Updated `generateQr()` to synchronously query the local WhatsApp Gateway at `$this->gatewayUrl() . '/api/qr'`. If the gateway is running, it extracts and returns the authentic `qr_code` string and `qr_image` data URL, with `is_real: true`.
+      - Updated `gatewayQr()` to proxy the authentic payload directly to the frontend.
+    - **Dual-Asset Frontend Hydration (`frontend/src/app/whatsapp/page.tsx`)**:
+      - Enhanced `handleOpenQrModal()` and `handleRefreshQr()` to immediately bind both `qr_image` and `qr_code` from the backend response.
+  - **Deployment & Server Instructions**:
+    - Detailed commands provided to pull latest changes on `/home/irmg/api.fsadvisory.ae`, clear Laravel cache (`php artisan optimize:clear`), and restart the PM2 gateway process.
+
 ---
 
 

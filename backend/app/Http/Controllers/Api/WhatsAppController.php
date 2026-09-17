@@ -63,8 +63,26 @@ class WhatsAppController extends Controller
             );
         }
 
-        // Generate dynamic WhatsApp multi-device pairing string
-        $qrPayload = '2@' . Str::random(44) . ',' . Str::random(32) . ',' . time() . ',1';
+        // Attempt to fetch real cryptographic pairing QR from WhatsApp Gateway
+        $realQrCode = null;
+        $realQrImage = null;
+        try {
+            $gwRes = \Illuminate\Support\Facades\Http::timeout(3)->get($this->gatewayUrl() . '/api/qr');
+            if ($gwRes->successful()) {
+                $gwData = $gwRes->json();
+                if (!empty($gwData['qr_code'])) {
+                    $realQrCode = $gwData['qr_code'];
+                }
+                if (!empty($gwData['qr_image'])) {
+                    $realQrImage = $gwData['qr_image'];
+                }
+            }
+        } catch (\Exception $e) {
+            // Gateway not running or connecting
+        }
+
+        // Use authentic WhatsApp pairing code if gateway is running, else fallback to dynamic string
+        $qrPayload = $realQrCode ?? ('2@' . Str::random(44) . ',' . Str::random(32) . ',' . time() . ',1');
 
         $channel->update([
             'qr_code' => $qrPayload,
@@ -76,6 +94,8 @@ class WhatsAppController extends Controller
             'success' => true,
             'channel' => $channel,
             'qr_code' => $qrPayload,
+            'qr_image' => $realQrImage,
+            'is_real' => !empty($realQrCode) || !empty($realQrImage),
             'expires_in' => 45, // seconds
             'instructions' => [
                 '1. Open WhatsApp on your mobile phone',

@@ -33,6 +33,7 @@ let client         = null;
 let isInitializing = false;
 let connectionStatus = 'disconnected';
 let currentQrImage   = null;
+let currentQrRaw     = null;
 let connectedUser    = null;
 let syncDone         = false;
 
@@ -42,6 +43,7 @@ async function initClient() {
   isInitializing   = true;
   connectionStatus = 'connecting';
   currentQrImage   = null;
+  currentQrRaw     = null;
   connectedUser    = null;
   syncDone         = false;
 
@@ -72,6 +74,7 @@ async function initClient() {
   // QR
   client.on('qr', async (qr) => {
     connectionStatus = 'qr_ready';
+    currentQrRaw     = qr;
     try {
       currentQrImage = await QRCode.toDataURL(qr, { errorCorrectionLevel: 'H', width: 300 });
       console.log('📲 QR ready — scan with WhatsApp on your phone!');
@@ -83,6 +86,7 @@ async function initClient() {
     isInitializing   = false;
     connectionStatus = 'connected';
     currentQrImage   = null;
+    currentQrRaw     = null;
 
     const info  = client.info;
     const phone = `+${info?.wid?.user || ''}`;
@@ -110,6 +114,7 @@ async function initClient() {
     isInitializing   = false;
     connectedUser    = null;
     currentQrImage   = null;
+    currentQrRaw     = null;
 
     // Wipe session folder so it cannot restore logged-out tokens
     try {
@@ -133,6 +138,7 @@ async function initClient() {
     isInitializing = false;
     connectedUser = null;
     currentQrImage = null;
+    currentQrRaw = null;
     try {
       fs.rmSync(path.join(__dirname, 'auth_sessions'), { recursive: true, force: true });
     } catch (_) {}
@@ -534,7 +540,12 @@ app.get('/api/status', (_, res) =>
   res.json({ status: connectionStatus, user: connectedUser, has_qr: !!currentQrImage }));
 
 app.get('/api/qr', (_, res) =>
-  res.json({ status: connectionStatus, qr_image: currentQrImage, expires_in: 60 }));
+  res.json({
+    status: connectionStatus,
+    qr_image: currentQrImage,
+    qr_code: currentQrRaw,
+    expires_in: 60
+  }));
 
 app.post('/api/send', async (req, res) => {
   if (connectionStatus !== 'connected' || !client)
