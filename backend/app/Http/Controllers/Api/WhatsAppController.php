@@ -339,10 +339,6 @@ class WhatsAppController extends Controller
      */
     public function chats(Request $request)
     {
-        if (WhatsAppChat::count() === 0) {
-            $this->seedInitialChats();
-        }
-
         $query = WhatsAppChat::with([
             'channel',
             'contact.opportunity.buyerQualification',
@@ -435,23 +431,39 @@ class WhatsAppController extends Controller
             $mediaBase64 = $request->input('media_base64') ?: ($request->input('media_type') === 'audio' ? $request->input('media_url') : null);
             $mediaUrl = $request->input('media_url');
             $mediaType = $request->input('media_type', 'text');
-            $msgText = $request->input('text') ?: ($mediaType === 'audio' ? '🎤 Voice Message' : 'Media file');
+            $originalFilename = $request->input('filename');
+            $caption = $request->input('text');
+            $msgText = $caption ?: ($mediaType === 'image' ? '📷 Photo' : ($mediaType === 'audio' ? '🎤 Voice Message' : ($originalFilename ? "📄 {$originalFilename}" : 'Attachment')));
 
-            // If Base64 Audio is received, save to public storage disk
+            // Process and store media attachments (images, PDFs, documents, audio)
             if ($mediaBase64 && str_contains($mediaBase64, ';base64,')) {
                 try {
-                    $dir = public_path('storage/whatsapp_audio');
+                    $dir = public_path('storage/whatsapp_media');
                     if (!file_exists($dir)) {
                         mkdir($dir, 0777, true);
                     }
                     $parts = explode(';base64,', $mediaBase64);
-                    $ext = str_contains($parts[0], 'webm') ? 'webm' : (str_contains($parts[0], 'mp3') ? 'mp3' : 'ogg');
+                    $mime = str_replace('data:', '', $parts[0]);
                     $rawBinary = base64_decode($parts[1]);
-                    $fileName = 'voice_' . time() . '_' . Str::random(8) . '.' . $ext;
-                    file_put_contents($dir . '/' . $fileName, $rawBinary);
-                    $mediaUrl = url('storage/whatsapp_audio/' . $fileName);
+
+                    $ext = 'bin';
+                    if (str_contains($mime, 'pdf')) $ext = 'pdf';
+                    elseif (str_contains($mime, 'jpeg') || str_contains($mime, 'jpg')) $ext = 'jpg';
+                    elseif (str_contains($mime, 'png')) $ext = 'png';
+                    elseif (str_contains($mime, 'webp')) $ext = 'webp';
+                    elseif (str_contains($mime, 'word') || str_contains($mime, 'doc')) $ext = 'docx';
+                    elseif (str_contains($mime, 'sheet') || str_contains($mime, 'xls')) $ext = 'xlsx';
+                    elseif (str_contains($mime, 'webm')) $ext = 'webm';
+                    elseif (str_contains($mime, 'mp3')) $ext = 'mp3';
+                    elseif (str_contains($mime, 'ogg')) $ext = 'ogg';
+
+                    $safeName = $originalFilename ? preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $originalFilename) : ('media_' . time() . '_' . Str::random(6) . '.' . $ext);
+                    $savedPath = $dir . '/' . time() . '_' . $safeName;
+                    file_put_contents($savedPath, $rawBinary);
+
+                    $mediaUrl = url('storage/whatsapp_media/' . basename($savedPath));
                 } catch (\Exception $e) {
-                    \Log::warning('Audio file save warning: ' . $e->getMessage());
+                    \Log::warning('Media file save warning: ' . $e->getMessage());
                     $mediaUrl = $mediaBase64;
                 }
             }
@@ -475,12 +487,13 @@ class WhatsAppController extends Controller
 
             // Transmit out over real WhatsApp Gateway
             try {
-                \Illuminate\Support\Facades\Http::timeout(10)->post('http://127.0.0.1:5001/api/send', [
+                \Illuminate\Support\Facades\Http::timeout(15)->post('http://127.0.0.1:5001/api/send', [
                     'phone' => $chat->phone,
                     'jid' => $chat->remote_jid,
-                    'text' => $msgText,
+                    'text' => $caption ?: '',
                     'media_base64' => $mediaBase64,
                     'media_type' => $mediaType,
+                    'filename' => $originalFilename ?: 'attachment',
                     'is_voice' => ($mediaType === 'audio'),
                 ]);
             } catch (\Exception $e) {
@@ -610,8 +623,49 @@ class WhatsAppController extends Controller
         $pushName = $payload['push_name'] ?? null;
         $channelId = $payload['channel_id'] ?? 1;
 
+        $rawMediaType = $payload['media_type'] ?? 'text';
+        $mediaType = in_array($rawMediaType, ['image', 'document', 'audio', 'video', 'location']) ? $rawMediaType : ($rawMediaType === 'ptt' ? 'audio' : 'text');
+        $mediaBase64 = $payload['media_base64'] ?? null;
+        $mediaUrl = $payload['media_url'] ?? null;
+
         if (empty($messageText)) {
-            return response()->json(['status' => 'SKIPPED_EMPTY'], 200);
+            if ($mediaType === 'image') $messageText = '📷 Photo';
+            elseif ($mediaType === 'document') $messageText = '📄 Document';
+            elseif ($mediaType === 'audio') $messageText = '🎤 Voice Note';
+            elseif ($mediaType === 'video') $messageText = '🎥 Video';
+            elseif (!empty($mediaBase64)) $messageText = 'Attachment';
+            else return response()->json(['status' => 'SKIPPED_EMPTY'], 200);
+        }
+
+        // Save incoming media base64 if present
+        if ($mediaBase64 && str_contains($mediaBase64, ';base64,')) {
+            try {
+                $dir = public_path('storage/whatsapp_media');
+                if (!file_exists($dir)) {
+                    mkdir($dir, 0777, true);
+                }
+                $parts = explode(';base64,', $mediaBase64);
+                $mime = str_replace('data:', '', $parts[0]);
+                $rawBinary = base64_decode($parts[1]);
+
+                $ext = 'bin';
+                if (str_contains($mime, 'pdf')) $ext = 'pdf';
+                elseif (str_contains($mime, 'jpeg') || str_contains($mime, 'jpg')) $ext = 'jpg';
+                elseif (str_contains($mime, 'png')) $ext = 'png';
+                elseif (str_contains($mime, 'webp')) $ext = 'webp';
+                elseif (str_contains($mime, 'word') || str_contains($mime, 'doc')) $ext = 'docx';
+                elseif (str_contains($mime, 'sheet') || str_contains($mime, 'xls')) $ext = 'xlsx';
+                elseif (str_contains($mime, 'webm')) $ext = 'webm';
+                elseif (str_contains($mime, 'mp3')) $ext = 'mp3';
+                elseif (str_contains($mime, 'ogg')) $ext = 'ogg';
+
+                $origName = $payload['filename'] ?? ('in_' . time() . '_' . Str::random(6) . '.' . $ext);
+                $safeName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $origName);
+                file_put_contents($dir . '/' . $safeName, $rawBinary);
+                $mediaUrl = url('storage/whatsapp_media/' . $safeName);
+            } catch (\Exception $e) {
+                \Log::warning('Inbound media save warning: ' . $e->getMessage());
+            }
         }
 
         $cleanPhone = $remotePhone ? preg_replace('/[^0-9]/', '', $remotePhone) : '';
@@ -703,8 +757,8 @@ class WhatsAppController extends Controller
                 'from_me' => $isFromMe,
                 'sender_name' => $isFromMe ? 'You' : ($pushName ?: $chat->contact_name),
                 'text' => $messageText,
-                'media_url' => $payload['media_url'] ?? null,
-                'media_type' => $payload['media_type'] ?? 'text',
+                'media_url' => $mediaUrl,
+                'media_type' => $mediaType,
                 'status' => 'read',
                 'timestamp' => now(),
             ]);

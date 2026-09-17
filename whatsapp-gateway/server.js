@@ -157,8 +157,32 @@ async function initClient() {
         name = chat?.name || chat?.formattedTitle || '';
       } catch (_) {}
 
-      console.log(`📨 IN: [${rawJid}] ${phone || name}: "${msg.body.substring(0, 60)}"`);
-      await postWebhook({ remote_jid: rawJid, phone, name, id: msg.id._serialized, text: msg.body, type: msg.type, fromMe: false });
+      let mediaBase64 = null;
+      let mediaFilename = '';
+      if (msg.hasMedia) {
+        try {
+          const downloaded = await msg.downloadMedia();
+          if (downloaded) {
+            mediaBase64 = `data:${downloaded.mimetype};base64,${downloaded.data}`;
+            mediaFilename = downloaded.filename || '';
+          }
+        } catch (mediaErr) {
+          console.warn('Could not download incoming media:', mediaErr.message);
+        }
+      }
+
+      console.log(`📨 IN: [${rawJid}] ${phone || name}: "${(msg.body || `[${msg.type}]`).substring(0, 60)}"`);
+      await postWebhook({
+        remote_jid: rawJid,
+        phone,
+        name,
+        id: msg.id._serialized,
+        text: msg.body,
+        type: msg.type,
+        media_base64: mediaBase64,
+        filename: mediaFilename,
+        fromMe: false
+      });
     } catch (e) { console.error('Incoming error:', e.message); }
   });
 
@@ -177,8 +201,30 @@ async function initClient() {
         name = chat?.name || chat?.formattedTitle || '';
       } catch (_) {}
 
-      console.log(`📤 OUT (Mobile): [${rawJid}] ${phone || name}: "${msg.body.substring(0, 60)}"`);
-      await postWebhook({ remote_jid: rawJid, phone, name, id: msg.id._serialized, text: msg.body, type: msg.type, fromMe: true });
+      let mediaBase64 = null;
+      let mediaFilename = '';
+      if (msg.hasMedia) {
+        try {
+          const downloaded = await msg.downloadMedia();
+          if (downloaded) {
+            mediaBase64 = `data:${downloaded.mimetype};base64,${downloaded.data}`;
+            mediaFilename = downloaded.filename || '';
+          }
+        } catch (_) {}
+      }
+
+      console.log(`📤 OUT (Mobile): [${rawJid}] ${phone || name}: "${(msg.body || `[${msg.type}]`).substring(0, 60)}"`);
+      await postWebhook({
+        remote_jid: rawJid,
+        phone,
+        name,
+        id: msg.id._serialized,
+        text: msg.body,
+        type: msg.type,
+        media_base64: mediaBase64,
+        filename: mediaFilename,
+        fromMe: true
+      });
     } catch (_) {}
   });
 
@@ -208,6 +254,8 @@ async function postWebhook(data) {
         push_name:  data.name || '',
         text:       data.text,
         media_type: data.type === 'chat' ? 'text' : (data.type || 'text'),
+        media_base64: data.media_base64 || null,
+        filename:   data.filename || '',
         from_me:    data.fromMe,
       }),
     });
@@ -439,20 +487,15 @@ app.post('/api/send', async (req, res) => {
   if (connectionStatus !== 'connected' || !client)
     return res.status(400).json({ error: 'WhatsApp not connected' });
 
-  const { phone, text, jid, media_base64, media_type, is_voice } = req.body;
+  const { phone, text, jid, media_base64, media_type, is_voice, filename } = req.body;
   try {
-    console.log(`🚀 Processing outbound WhatsApp message -> phone: ${phone}, jid: ${jid}, is_voice: ${!!is_voice}`);
+    console.log(`🚀 Processing outbound WhatsApp message -> phone: ${phone}, jid: ${jid}, is_voice: ${!!is_voice}, media_type: ${media_type || 'text'}`);
 
-    // Voice Note or Audio Media Transmission (PTT)
+    // Media Transmission (Voice Note OR Image / Document / PDF)
     if (media_base64) {
       let base64Clean = media_base64;
       if (media_base64.includes(';base64,')) {
         base64Clean = media_base64.split(';base64,')[1];
-      }
-
-      // Convert browser WebM audio to strict WhatsApp-compliant Opus OGG
-      if (is_voice || media_type === 'audio') {
-        base64Clean = transcodeToWhatsAppOpus(base64Clean);
       }
 
       let target = jid;
@@ -460,72 +503,98 @@ app.post('/api/send', async (req, res) => {
         target = `${phone.replace(/[^0-9]/g, '')}@c.us`;
       }
 
-      const mediaPayload = {
-        mimetype: 'audio/ogg; codecs=opus',
-        data: base64Clean,
-        filename: 'voice_note.ogg'
-      };
+      // 1. Voice Note (PTT)
+      if (is_voice || media_type === 'audio') {
+        base64Clean = transcodeToWhatsAppOpus(base64Clean);
 
-      try {
-        const sendResult = await client.pupPage.evaluate(async (targetJid, targetPhone, mediaInfo, isVoice) => {
-          try {
-            const widFactory = window.require('WAWebWidFactory');
-            const collections = window.require('WAWebCollections');
+        const mediaPayload = {
+          mimetype: 'audio/ogg; codecs=opus',
+          data: base64Clean,
+          filename: 'voice_note.ogg'
+        };
 
-            let wid = null;
-            if (targetJid) {
-              wid = widFactory.createWid(targetJid);
-            } else if (targetPhone) {
-              const clean = targetPhone.replace(/[^0-9]/g, '');
-              wid = widFactory.createWid(`${clean}@c.us`);
+        try {
+          const sendResult = await client.pupPage.evaluate(async (targetJid, targetPhone, mediaInfo, isVoice) => {
+            try {
+              const widFactory = window.require('WAWebWidFactory');
+              const collections = window.require('WAWebCollections');
+
+              let wid = null;
+              if (targetJid) {
+                wid = widFactory.createWid(targetJid);
+              } else if (targetPhone) {
+                const clean = targetPhone.replace(/[^0-9]/g, '');
+                wid = widFactory.createWid(`${clean}@c.us`);
+              }
+
+              if (!wid) throw new Error('Could not create WID for voice note');
+
+              let chat = collections.Chat.get(wid);
+              if (!chat) {
+                try {
+                  const findChat = window.require('WAWebFindChat');
+                  const found = await findChat.findChat(wid);
+                  chat = found?.chat || found;
+                } catch (_) {}
+              }
+
+              if (!chat) {
+                chat = collections.Chat.getModelsArray().find((c) => {
+                  const idStr = c.id?._serialized || '';
+                  return (targetJid && idStr === targetJid) || (targetPhone && idStr.includes(targetPhone.replace(/[^0-9]/g, '')));
+                });
+              }
+
+              if (!chat) throw new Error('Chat model not found');
+
+              const options = {
+                media: mediaInfo,
+                sendAudioAsVoice: isVoice,
+              };
+
+              const msg = await window.WWebJS.sendMessage(chat, '', options);
+              return {
+                success: true,
+                messageId: msg?.id?._serialized || msg?.id?.id || 'sent',
+              };
+            } catch (evalErr) {
+              return { success: false, error: evalErr.message || evalErr.name || String(evalErr) };
             }
+          }, target, phone, mediaPayload, !!is_voice);
 
-            if (!wid) throw new Error('Could not create WID for voice note');
-
-            let chat = collections.Chat.get(wid);
-            if (!chat) {
-              try {
-                const findChat = window.require('WAWebFindChat');
-                const found = await findChat.findChat(wid);
-                chat = found?.chat || found;
-              } catch (_) {}
-            }
-
-            if (!chat) {
-              chat = collections.Chat.getModelsArray().find((c) => {
-                const idStr = c.id?._serialized || '';
-                return (targetJid && idStr === targetJid) || (targetPhone && idStr.includes(targetPhone.replace(/[^0-9]/g, '')));
-              });
-            }
-
-            if (!chat) throw new Error('Chat model not found');
-
-            // Send Real Voice Note through WhatsApp Web Internal Engine
-            const options = {
-              media: mediaInfo,
-              sendAudioAsVoice: isVoice,
-            };
-
-            const msg = await window.WWebJS.sendMessage(chat, '', options);
-            return {
-              success: true,
-              messageId: msg?.id?._serialized || msg?.id?.id || 'sent',
-            };
-          } catch (evalErr) {
-            return { success: false, error: evalErr.message || evalErr.name || String(evalErr) };
+          if (sendResult && sendResult.success) {
+            console.log(`🎤 Official Push-To-Talk Voice Note delivered to ${target}! ID: ${sendResult.messageId}`);
+            return res.json({ success: true, result: sendResult });
+          } else {
+            console.log('Voice send failed:', sendResult?.error);
+            return res.status(500).json({ error: sendResult?.error || 'Failed to send voice note' });
           }
-        }, target, phone, mediaPayload, !!is_voice);
-
-        if (sendResult && sendResult.success) {
-          console.log(`🎤 Official Push-To-Talk Voice Note delivered to ${target}! ID: ${sendResult.messageId}`);
-          return res.json({ success: true, result: sendResult });
-        } else {
-          console.log('Voice send failed:', sendResult?.error);
-          return res.status(500).json({ error: sendResult?.error || 'Failed to send voice note' });
+        } catch (voiceOuterErr) {
+          console.log('Voice outer error:', voiceOuterErr.message);
+          return res.status(500).json({ error: voiceOuterErr.message });
         }
-      } catch (voiceOuterErr) {
-        console.log('Voice outer error:', voiceOuterErr.message);
-        return res.status(500).json({ error: voiceOuterErr.message });
+      }
+
+      // 2. Image, PDF, Brochure, Contract or Document Attachment
+      try {
+        let mime = 'application/octet-stream';
+        if (media_base64.includes(';base64,')) {
+          mime = media_base64.split(';base64,')[0].replace('data:', '');
+        } else if (media_type === 'image') {
+          mime = 'image/jpeg';
+        } else if (media_type === 'document' || media_type === 'pdf') {
+          mime = 'application/pdf';
+        }
+
+        const safeFilename = filename || (media_type === 'image' ? 'photo.jpg' : 'document.pdf');
+        const mediaAttachment = new MessageMedia(mime, base64Clean, safeFilename);
+
+        const sent = await client.sendMessage(target, mediaAttachment, { caption: text || '' });
+        console.log(`📎 Attachment [${mime} - ${safeFilename}] delivered to ${target}! ID: ${sent?.id?._serialized}`);
+        return res.json({ success: true, messageId: sent?.id?._serialized });
+      } catch (attachErr) {
+        console.error('Attachment transmission error:', attachErr.message);
+        return res.status(500).json({ error: attachErr.message });
       }
     }
 

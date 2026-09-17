@@ -96,6 +96,13 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - On-demand single contact avatar resolution (`GET /api/avatar/:jid`) triggered only when a chat is opened.
   - Avoids bulk-fetch rate limits and prevents WhatsApp spam/bot account bans.
   - Automatic database caching in Laravel and instant frontend UI rendering with initial fallback badges.
+- **37 — End-to-End WhatsApp Media Attachments (Photos, PDFs, Documents, Voice Notes)**:
+  - Full bidirectional multimedia transmission supporting images (JPG, PNG, WebP), documents (PDF, DOC, DOCX, XLS, XLSX, TXT), and Opus voice notes.
+  - Interactive file composer featuring a Paperclip attachment button, active file preview tray (with image thumbnails, document cards, file size metrics, and dismissal controls), and optional message captions.
+  - Modern message bubble rendering: full responsive photo previews with click-to-expand lightbox modal, downloadable document cards with file type icons, and audio voice note scrubbing.
+  - Resilient backend media ingestion into `public/storage/whatsapp_media/` with automated MIME classification, binary decoding, and `whatsapp_messages.media_type` schema upgrade (`VARCHAR(50)`).
+  - Puppeteer gateway integration leveraging `MessageMedia` for official WhatsApp media delivery to mobile handsets and automatic `downloadMedia()` for inbound client files.
+  - Complete database purge and session wipe mechanism permanently removing dummy seed data to guarantee 100% clean initial QR scans.
 
 ### Enterprise Access, Governance & Distribution
 - **36 — Enterprise User Management & Granular Permission Matrix (`/users`)**:

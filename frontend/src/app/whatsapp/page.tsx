@@ -37,7 +37,9 @@ import {
   Play,
   Pause,
   Volume2,
-  AlertTriangle
+  AlertTriangle,
+  Download,
+  Image as ImageIcon
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import Swal from 'sweetalert2';
@@ -237,6 +239,49 @@ export default function WhatsAppPage() {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // File Attachment State
+  const [selectedFile, setSelectedFile] = useState<{
+    file: File;
+    previewUrl: string;
+    base64: string;
+    mediaType: 'image' | 'document' | 'audio';
+    name: string;
+    sizeFormatted: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewImageModal, setPreviewImageModal] = useState<string | null>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const sizeInKb = Math.round(file.size / 1024);
+    const sizeFormatted = sizeInKb > 1024 ? `${(sizeInKb / 1024).toFixed(1)} MB` : `${sizeInKb} KB`;
+
+    let mediaType: 'image' | 'document' | 'audio' = 'document';
+    if (file.type.startsWith('image/')) mediaType = 'image';
+    else if (file.type.startsWith('audio/')) mediaType = 'audio';
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      setSelectedFile({
+        file,
+        previewUrl: mediaType === 'image' ? base64 : '',
+        base64,
+        mediaType,
+        name: file.name,
+        sizeFormatted,
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const removeSelectedFile = () => {
+    setSelectedFile(null);
+  };
 
   const quickTemplates = [
     { label: '🏢 Dubai Hills Floor Plan', text: 'Hello! I have attached the latest floor plans and master layout brochure for the 3BR Townhouse in Dubai Hills Estate.' },
@@ -441,23 +486,36 @@ export default function WhatsAppPage() {
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!messageText.trim() || !selectedChat || sending) return;
+    if ((!messageText.trim() && !selectedFile) || !selectedChat || sending) return;
 
     const outgoingText = messageText.trim();
+    const filePayload = selectedFile;
+
     setMessageText('');
+    setSelectedFile(null);
     setSending(true);
 
     try {
+      const payload: any = { text: outgoingText };
+      if (filePayload) {
+        payload.media_base64 = filePayload.base64;
+        payload.media_type = filePayload.mediaType;
+        payload.filename = filePayload.name;
+        if (!outgoingText) {
+          payload.text = filePayload.mediaType === 'image' ? '📷 Photo' : `📄 ${filePayload.name}`;
+        }
+      }
+
       const data = await fetchApi(`/whatsapp/chats/${selectedChat.id}/send`, {
         method: 'POST',
-        body: JSON.stringify({ text: outgoingText }),
+        body: JSON.stringify(payload),
       });
       if (data.success && data.message) {
         setMessages((prev) => [...prev, data.message]);
         setChats((prev) =>
           prev.map((c) =>
             c.id === selectedChat.id
-              ? { ...c, last_message: outgoingText, last_message_at: new Date().toISOString() }
+              ? { ...c, last_message: payload.text || 'Attachment', last_message_at: new Date().toISOString() }
               : c
           )
         );
@@ -1198,13 +1256,59 @@ export default function WhatsAppPage() {
                               </div>
                             )}
 
-                            {/* Message Content: Voice Audio Player OR Text */}
+                            {/* Message Content: Audio Voice Note OR Image OR Document OR Text */}
                             {msg.media_type === 'audio' || (msg.media_url && msg.media_url.startsWith('data:audio')) || (msg.text && msg.text.startsWith('🎤 Voice')) ? (
                               <WhatsAppAudioPlayer
                                 audioUrl={msg.media_url}
                                 isFromMe={isFromMe}
                                 durationText={msg.text}
                               />
+                            ) : msg.media_type === 'image' || (msg.media_url && (msg.media_url.match(/\.(jpg|jpeg|png|webp|gif)$/i) || msg.media_url.startsWith('data:image'))) ? (
+                              <div className="space-y-1.5">
+                                <div 
+                                  onClick={() => setPreviewImageModal(msg.media_url)}
+                                  className="cursor-pointer group relative overflow-hidden rounded-lg border border-black/10 bg-black/5"
+                                >
+                                  <img
+                                    src={msg.media_url}
+                                    alt="WhatsApp Image"
+                                    className="max-h-64 sm:max-h-72 w-auto object-cover rounded-lg group-hover:opacity-95 transition-opacity"
+                                    loading="lazy"
+                                  />
+                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                    <span className="px-2.5 py-1 bg-black/75 text-white text-[11px] font-semibold rounded-md shadow-xs flex items-center gap-1.5">
+                                      <ExternalLink className="w-3.5 h-3.5" /> View Full
+                                    </span>
+                                  </div>
+                                </div>
+                                {msg.text && !msg.text.startsWith('📷') && (
+                                  <p className="text-xs sm:text-[13px] leading-relaxed whitespace-pre-wrap pt-0.5">
+                                    {msg.text}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (msg.media_type === 'document' || msg.media_type === 'pdf' || (msg.media_url && msg.media_url.match(/\.(pdf|docx?|xlsx?|txt)$/i))) ? (
+                              <div className="space-y-1.5">
+                                <a
+                                  href={msg.media_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2.5 p-2.5 rounded-lg bg-black/5 hover:bg-black/10 border border-black/10 transition-colors group text-decoration-none"
+                                >
+                                  <div className="w-9 h-9 rounded bg-white shadow-2xs border border-slate-200 flex items-center justify-center text-[#C8A147] shrink-0">
+                                    <FileText className="w-5 h-5" />
+                                  </div>
+                                  <div className="flex-1 min-w-0 pr-2">
+                                    <p className="text-xs font-bold text-[#081428] truncate group-hover:underline">
+                                      {msg.text?.replace(/^📄\s*/, '') || 'Document attachment'}
+                                    </p>
+                                    <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                      <span>Click to view / download</span>
+                                      <Download className="w-3 h-3 text-slate-400 group-hover:text-[#081428]" />
+                                    </p>
+                                  </div>
+                                </a>
+                              </div>
                             ) : (
                               <p className="text-xs sm:text-[13px] leading-relaxed whitespace-pre-wrap">
                                 {msg.text}
@@ -1362,65 +1466,119 @@ export default function WhatsAppPage() {
                     </button>
                   </div>
                 ) : (
-                  <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                    {/* Quick Templates Toggle */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowTemplates(!showTemplates);
-                        setShowEmojiPicker(false);
-                      }}
-                      className="p-2 bg-white border border-[#E8E4DC] hover:bg-slate-100 text-[#C8A147] rounded-md transition-colors cursor-pointer shrink-0"
-                      title="Real Estate Quick Templates"
-                    >
-                      <Zap className="w-4 h-4" />
-                    </button>
+                  <div>
+                    {/* Selected File Attachment Preview Tray */}
+                    {selectedFile && (
+                      <div className="mb-2 p-2.5 bg-white rounded-lg border border-[#25D366]/50 shadow-xs flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                        <div className="flex items-center gap-2.5 overflow-hidden">
+                          {selectedFile.mediaType === 'image' ? (
+                            <img
+                              src={selectedFile.previewUrl}
+                              alt="Attachment preview"
+                              className="w-10 h-10 object-cover rounded border border-slate-200 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded bg-[#FAF8F5] border border-slate-200 flex items-center justify-center text-[#C8A147] shrink-0">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                          )}
+                          <div className="truncate">
+                            <p className="text-xs font-bold text-[#081428] truncate">{selectedFile.name}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">{selectedFile.sizeFormatted} • Attached & ready to send</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={removeSelectedFile}
+                          className="p-1 hover:bg-slate-100 text-slate-400 hover:text-red-500 rounded-full transition-colors cursor-pointer shrink-0"
+                          title="Remove attachment"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
 
-                    {/* Emoji Picker Toggle */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowEmojiPicker(!showEmojiPicker);
-                        setShowTemplates(false);
-                      }}
-                      className={`p-2 bg-white border rounded-md transition-colors cursor-pointer shrink-0 ${
-                        showEmojiPicker ? 'border-[#25D366] text-[#25D366] bg-emerald-50' : 'border-[#E8E4DC] text-slate-500 hover:bg-slate-100'
-                      }`}
-                      title="Insert Emojis"
-                    >
-                      <Smile className="w-4 h-4" />
-                    </button>
+                    <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                      {/* Hidden File Input */}
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileSelect}
+                        accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
+                        className="hidden"
+                      />
 
-                    {/* Text Composer Input */}
-                    <input
-                      type="text"
-                      placeholder="Type a message to client via mirrored WhatsApp..."
-                      value={messageText}
-                      onChange={(e) => setMessageText(e.target.value)}
-                      className="flex-1 px-4 py-2 text-xs sm:text-[13px] bg-white border border-[#E8E4DC] rounded-md focus:outline-none focus:border-[#25D366] text-[#081428]"
-                    />
-
-                    {/* Dynamic Action: Send button OR Record Voice button */}
-                    {messageText.trim().length > 0 ? (
-                      <button
-                        type="submit"
-                        disabled={sending}
-                        className="px-4 py-2 bg-[#25D366] hover:bg-[#1EBE5D] disabled:opacity-50 text-[#081428] font-bold text-xs rounded-md shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                      >
-                        <Send className="w-4 h-4" />
-                        <span>Send</span>
-                      </button>
-                    ) : (
+                      {/* Attachment Button */}
                       <button
                         type="button"
-                        onClick={startRecording}
-                        className="p-2 bg-[#081428] hover:bg-[#152B4D] text-[#25D366] rounded-md shadow-xs transition-all flex items-center gap-1 cursor-pointer shrink-0"
-                        title="Record & Send WhatsApp Voice Note"
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`p-2 bg-white border rounded-md transition-colors cursor-pointer shrink-0 ${
+                          selectedFile ? 'border-[#25D366] text-[#25D366] bg-emerald-50' : 'border-[#E8E4DC] text-slate-500 hover:bg-slate-100'
+                        }`}
+                        title="Attach Document, PDF, Brochure or Photo"
                       >
-                        <Mic className="w-4 h-4" />
+                        <Paperclip className="w-4 h-4" />
                       </button>
-                    )}
-                  </form>
+
+                      {/* Quick Templates Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowTemplates(!showTemplates);
+                          setShowEmojiPicker(false);
+                        }}
+                        className="p-2 bg-white border border-[#E8E4DC] hover:bg-slate-100 text-[#C8A147] rounded-md transition-colors cursor-pointer shrink-0"
+                        title="Real Estate Quick Templates"
+                      >
+                        <Zap className="w-4 h-4" />
+                      </button>
+
+                      {/* Emoji Picker Toggle */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowEmojiPicker(!showEmojiPicker);
+                          setShowTemplates(false);
+                        }}
+                        className={`p-2 bg-white border rounded-md transition-colors cursor-pointer shrink-0 ${
+                          showEmojiPicker ? 'border-[#25D366] text-[#25D366] bg-emerald-50' : 'border-[#E8E4DC] text-slate-500 hover:bg-slate-100'
+                        }`}
+                        title="Insert Emojis"
+                      >
+                        <Smile className="w-4 h-4" />
+                      </button>
+
+                      {/* Text Composer Input */}
+                      <input
+                        type="text"
+                        placeholder={selectedFile ? "Add an optional caption for this attachment..." : "Type a message to client via mirrored WhatsApp..."}
+                        value={messageText}
+                        onChange={(e) => setMessageText(e.target.value)}
+                        className="flex-1 px-4 py-2 text-xs sm:text-[13px] bg-white border border-[#E8E4DC] rounded-md focus:outline-none focus:border-[#25D366] text-[#081428]"
+                      />
+
+                      {/* Dynamic Action: Send button OR Record Voice button */}
+                      {messageText.trim().length > 0 || selectedFile ? (
+                        <button
+                          type="submit"
+                          disabled={sending}
+                          className="px-4 py-2 bg-[#25D366] hover:bg-[#1EBE5D] disabled:opacity-50 text-[#081428] font-bold text-xs rounded-md shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                        >
+                          <Send className="w-4 h-4" />
+                          <span>{sending ? 'Sending...' : 'Send'}</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={startRecording}
+                          className="p-2 bg-[#081428] hover:bg-[#152B4D] text-[#25D366] rounded-md shadow-xs transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                          title="Record & Send WhatsApp Voice Note"
+                        >
+                          <Mic className="w-4 h-4" />
+                        </button>
+                      )}
+                    </form>
+                  </div>
                 )}
               </div>
             </>
@@ -1716,6 +1874,32 @@ export default function WhatsAppPage() {
                 <span>Refresh QR</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal for Image Attachments */}
+      {previewImageModal && (
+        <div 
+          onClick={() => setPreviewImageModal(null)}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer animate-in fade-in duration-200"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full flex justify-end pb-2">
+              <button
+                type="button"
+                onClick={() => setPreviewImageModal(null)}
+                className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
+                title="Close preview"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <img
+              src={previewImageModal}
+              alt="Full size attachment"
+              className="max-h-[80vh] max-w-full rounded-lg shadow-2xl object-contain border border-white/10"
+            />
           </div>
         </div>
       )}
