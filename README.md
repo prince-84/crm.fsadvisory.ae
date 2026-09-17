@@ -70,7 +70,7 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
 
 ### WhatsApp Multi-Device & Live Chat Suite (`/whatsapp`)
 - **32 — WhatsApp Node.js Baileys / Puppeteer Gateway Daemon**:
-  - Independent Node.js service running on port `5001` (`whatsapp-gateway/server.js`).
+  - Independent Node.js service running on port `5003` (`whatsapp-gateway/server.js`).
   - Native multi-device QR code generation, fast SVG rendering, pairing, and automatic session restoration via `LocalAuth` (`auth_sessions`).
   - Outbound message sending (`POST /api/send`), voice note Opus transcoding (`ffmpeg-static`), and inbound webhook forwarder to Laravel.
   - Dedicated WhatsApp Web interface (`/whatsapp`) with channel selector, search, unread filters, and live chat thread.
