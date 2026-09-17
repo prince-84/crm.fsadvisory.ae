@@ -447,6 +447,118 @@ class WhatsAppController extends Controller
     }
 
     /**
+     * Start / Create a new WhatsApp chat with a contact or phone number
+     */
+    public function startChat(Request $request)
+    {
+        $rawPhone = $request->input('phone');
+        if (empty($rawPhone)) {
+            return response()->json(['success' => false, 'message' => 'Phone number is required.'], 422);
+        }
+
+        // Clean digits
+        $digits = preg_replace('/[^0-9]/', '', $rawPhone);
+        if (strlen($digits) < 7) {
+            return response()->json(['success' => false, 'message' => 'Invalid phone number format.'], 422);
+        }
+
+        $formattedPhone = '+' . $digits;
+        $nameInput = trim($request->input('name', ''));
+        $channelId = $request->input('channel_id');
+        if (!$channelId || $channelId === 'all') {
+            $firstChan = WhatsAppChannel::first();
+            $channelId = $firstChan ? $firstChan->id : 1;
+        }
+
+        // Find matching CRM Contact by last 7 digits
+        $last7 = substr($digits, -7);
+        $contact = Contact::where('phone', 'like', "%{$last7}%")
+            ->orWhere('secondary_phone', 'like', "%{$last7}%")
+            ->first();
+
+        $displayName = $nameInput;
+        if (empty($displayName) && $contact) {
+            $displayName = $contact->name;
+        }
+        if (empty($displayName)) {
+            $displayName = $formattedPhone;
+        }
+
+        $remoteJid = $digits . '@c.us';
+
+        // Check if chat already exists for this channel and phone
+        $chat = WhatsAppChat::where('channel_id', $channelId)
+            ->where(function ($q) use ($digits, $formattedPhone, $last7) {
+                $q->where('phone', $formattedPhone)
+                  ->orWhere('phone', 'like', "%{$last7}%")
+                  ->orWhere('remote_jid', 'like', "%{$digits}%");
+            })
+            ->first();
+
+        if (!$chat) {
+            $chat = WhatsAppChat::create([
+                'channel_id' => $channelId,
+                'contact_id' => $contact ? $contact->id : null,
+                'remote_jid' => $remoteJid,
+                'phone' => $formattedPhone,
+                'contact_name' => $displayName,
+                'last_message' => 'Conversation started',
+                'last_message_at' => now(),
+                'unread_count' => 0,
+                'is_pinned' => false,
+            ]);
+        } else {
+            // Update contact_id or contact_name if better info available
+            $updates = [];
+            if (!$chat->contact_id && $contact) {
+                $updates['contact_id'] = $contact->id;
+            }
+            if (!empty($nameInput) && ($chat->contact_name === $chat->phone || empty($chat->contact_name))) {
+                $updates['contact_name'] = $nameInput;
+            }
+            if (!empty($updates)) {
+                $chat->update($updates);
+            }
+        }
+
+        // Send initial message if provided
+        $initialMsg = trim($request->input('initial_message', ''));
+        if (!empty($initialMsg)) {
+            $msgId = 'WA-OUT-' . Str::random(12);
+            WhatsAppMessage::create([
+                'chat_id' => $chat->id,
+                'message_id' => $msgId,
+                'from_me' => true,
+                'sender_name' => 'You',
+                'text' => $initialMsg,
+                'media_type' => 'text',
+                'status' => 'pending',
+                'timestamp' => now(),
+            ]);
+
+            $chat->update([
+                'last_message' => $initialMsg,
+                'last_message_at' => now(),
+            ]);
+
+            // Attempt to deliver via WhatsApp Gateway if running
+            try {
+                \Illuminate\Support\Facades\Http::timeout(3)->post($this->gatewayUrl() . '/api/send', [
+                    'phone' => $formattedPhone,
+                    'jid' => $remoteJid,
+                    'text' => $initialMsg,
+                ]);
+            } catch (\Exception $e) {}
+        }
+
+        return response()->json([
+            'success' => true,
+            'chat' => $chat->fresh(['channel', 'contact.opportunity.buyerQualification', 'messages']),
+            'message' => "Chat ready for {$displayName}",
+        ]);
+    }
+
+    /**
      * Get message history for a specific chat
      */
     public function getChatMessages(Request $request, $id)

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   MessageSquare, 
+  MessageSquarePlus,
   QrCode, 
   Smartphone, 
   BatteryCharging, 
@@ -215,6 +216,23 @@ export default function WhatsAppPage() {
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Current Logged-in CRM User
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('crm_user');
+      if (raw) setCurrentUser(JSON.parse(raw));
+    } catch (_) {}
+  }, []);
+
+  // New Chat Modal State (WhatsApp Web Style)
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [newChatPhone, setNewChatPhone] = useState('');
+  const [newChatName, setNewChatName] = useState('');
+  const [newChatMessage, setNewChatMessage] = useState('');
+  const [isSubmittingNewChat, setIsSubmittingNewChat] = useState(false);
+
   // QR Pairing Modal State
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [qrChannelId, setQrChannelId] = useState<number | null>(null);
@@ -424,8 +442,10 @@ export default function WhatsAppPage() {
         let selected = false;
         if (typeof window !== 'undefined') {
           const params = new URLSearchParams(window.location.search);
-          const searchPhone = params.get('phone')?.replace(/[^0-9]/g, '');
-          const searchName = params.get('name')?.toLowerCase();
+          const rawPhone = params.get('phone');
+          const rawName = params.get('name');
+          const searchPhone = rawPhone?.replace(/[^0-9]/g, '');
+          const searchName = rawName?.toLowerCase();
           if (searchPhone || searchName) {
             const matched = chatList.find((c: any) => {
               const cPhone = c.phone?.replace(/[^0-9]/g, '') || '';
@@ -436,10 +456,30 @@ export default function WhatsAppPage() {
             if (matched) {
               handleSelectChat(matched);
               selected = true;
+            } else if (rawPhone) {
+              // Auto-create & open chat for this lead
+              try {
+                const startRes = await fetchApi('/whatsapp/chats/start', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    phone: rawPhone,
+                    name: rawName || '',
+                    channel_id: selectedChannelId !== 'all' ? selectedChannelId : 1,
+                  }),
+                });
+                if (startRes?.success && startRes?.chat) {
+                  const newChat = startRes.chat;
+                  setChats((prev) => [newChat, ...prev.filter((c) => c.id !== newChat.id)]);
+                  handleSelectChat(newChat);
+                  selected = true;
+                }
+              } catch (err) {
+                console.error('Failed to auto-start chat for lead', err);
+              }
             }
           }
         }
-        if (!selected) {
+        if (!selected && chatList.length > 0) {
           handleSelectChat(chatList[0]);
         }
       } else {
@@ -838,10 +878,84 @@ export default function WhatsAppPage() {
     return () => clearInterval(interval);
   }, [isQrModalOpen]);
 
+  // Handle Start New WhatsApp Chat (WhatsApp Web Style)
+  const handleStartNewChat = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanPhone = newChatPhone.trim();
+    if (!cleanPhone) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Phone Number Required',
+        text: 'Please enter a valid mobile number with country code (e.g. +971 50 123 4567).',
+        confirmButtonColor: '#081428',
+      });
+      return;
+    }
+
+    setIsSubmittingNewChat(true);
+    try {
+      const res = await fetchApi('/whatsapp/chats/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          phone: cleanPhone,
+          name: newChatName.trim(),
+          initial_message: newChatMessage.trim(),
+          channel_id: selectedChannelId !== 'all' ? selectedChannelId : 1,
+        }),
+      });
+
+      if (res?.success && res?.chat) {
+        const createdChat = res.chat;
+        setChats((prev) => [createdChat, ...prev.filter((c) => c.id !== createdChat.id)]);
+        handleSelectChat(createdChat);
+        setIsNewChatModalOpen(false);
+        setNewChatPhone('');
+        setNewChatName('');
+        setNewChatMessage('');
+        Swal.fire({
+          icon: 'success',
+          title: 'WhatsApp Chat Ready!',
+          text: `Opened conversation with ${createdChat.contact_name}`,
+          timer: 1500,
+          showConfirmButton: false,
+        });
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Could Not Start Chat',
+          text: res?.message || 'Please check the phone number and try again.',
+          confirmButtonColor: '#081428',
+        });
+      }
+    } catch (err: any) {
+      console.error('Failed to start chat', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err?.message || 'Failed to start chat.',
+        confirmButtonColor: '#081428',
+      });
+    } finally {
+      setIsSubmittingNewChat(false);
+    }
+  };
+
   // QR Modal Handlers
   const handleOpenQrModal = async (channelId?: number) => {
-    const targetId = channelId || (channels.length > 0 ? channels[0].id : 1);
-    setQrChannelId(targetId);
+    let targetId = channelId;
+    if (!targetId) {
+      if (currentUser?.name && channels.length > 0) {
+        const match = channels.find((c) => c.agent_name?.toLowerCase() === currentUser.name?.toLowerCase());
+        if (match) targetId = match.id;
+        else targetId = channels[0].id;
+      } else if (channels.length > 0) {
+        targetId = channels[0].id;
+      } else {
+        targetId = 1;
+      }
+    }
+    const finalTargetId = Number(targetId) || 1;
+    setQrChannelId(finalTargetId);
     setQrTimer(45);
     setQrImageData('');
     setQrCodeData('');
@@ -851,7 +965,10 @@ export default function WhatsAppPage() {
     try {
       const backendRes = await fetchApi('/whatsapp/channels/generate-qr', {
         method: 'POST',
-        body: JSON.stringify({ channel_id: targetId }),
+        body: JSON.stringify({ 
+          channel_id: targetId,
+          agent_name: currentUser?.name || 'Active Advisor',
+        }),
       });
       if (backendRes?.qr_image) {
         setQrImageData(backendRes.qr_image);
@@ -1114,23 +1231,32 @@ export default function WhatsAppPage() {
         <aside className="w-80 sm:w-96 bg-white border-r border-[#E8E4DC] flex flex-col shrink-0">
           {/* Search & Filter Header */}
           <div className="p-3 border-b border-[#E8E4DC] space-y-2 bg-[#FAF8F5]">
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="Search chats, phone or CRM contacts..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-[#E8E4DC] rounded-md focus:outline-none focus:border-[#C8A147] text-[#081428]"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
+            <div className="flex items-center gap-1.5">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Search chats, phone or CRM contacts..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-[#E8E4DC] rounded-md focus:outline-none focus:border-[#C8A147] text-[#081428]"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => setIsNewChatModalOpen(true)}
+                className="p-1.5 bg-[#25D366] hover:bg-[#1EBE5D] text-[#081428] rounded-md transition-colors cursor-pointer shrink-0 shadow-2xs flex items-center justify-center"
+                title="Start New Chat / Create WhatsApp Contact"
+              >
+                <MessageSquarePlus className="w-4 h-4" />
+              </button>
             </div>
 
             <div className="flex items-center justify-between text-xs">
@@ -1149,13 +1275,18 @@ export default function WhatsAppPage() {
                     unreadOnly ? 'bg-[#25D366] text-[#081428]' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  Unread
+                  Unread ({chats.filter((c) => c.unread_count > 0).length})
                 </button>
               </div>
 
-              <span className="text-[11px] font-mono text-slate-400">
-                {chats.filter((c) => c.unread_count > 0).length} unread
-              </span>
+              <button
+                onClick={() => setIsNewChatModalOpen(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold text-[#081428] hover:text-[#25D366] bg-white border border-[#E8E4DC] hover:border-[#25D366] shadow-2xs transition-colors cursor-pointer"
+                title="Start New Chat with any Phone Number"
+              >
+                <Plus className="w-3.5 h-3.5 text-[#25D366]" />
+                <span>+ New Chat</span>
+              </button>
             </div>
           </div>
 
@@ -1873,24 +2004,30 @@ export default function WhatsAppPage() {
               </button>
             </div>
 
-            {/* Target Channel Selector */}
-            <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg space-y-1">
-              <label className="text-xs font-bold text-[#081428] block">Select Account / Advisor Profile:</label>
-              <select
-                value={qrChannelId || ''}
-                onChange={(e) => {
-                  const id = Number(e.target.value);
-                  setQrChannelId(id);
-                  handleOpenQrModal(id);
-                }}
-                className="w-full p-2 bg-white border border-[#E8E4DC] rounded text-xs font-semibold text-[#081428] focus:outline-none focus:border-[#C8A147]"
-              >
-                {channels.map((ch) => (
-                  <option key={ch.id} value={ch.id}>
-                    {ch.agent_name} ({ch.status === 'connected' ? '🟢 Currently Connected' : '⚪ Disconnected'})
-                  </option>
-                ))}
-              </select>
+            {/* Auto-Linked Active Account / Advisor Profile Card */}
+            <div className="p-3.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-xl flex items-center justify-between shadow-2xs">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-[#081428] text-[#C8A147] border border-[#C8A147]/40 flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs">
+                  {currentUser?.name ? currentUser.name.slice(0, 2).toUpperCase() : 'WA'}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-[#081428] truncate">
+                      {currentUser?.name || 'Active Account'}
+                    </h4>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-[#081428]/10 text-[#081428] border border-[#081428]/20">
+                      {currentUser?.role || 'Advisor'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    Connecting personal mobile WhatsApp session into CRM
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Active Profile</span>
+              </div>
             </div>
 
             {/* QR Code Canvas & Instructions Box */}
@@ -1976,6 +2113,108 @@ export default function WhatsAppPage() {
                 <span>Refresh QR</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. MODAL: START NEW CHAT / CREATE WHATSAPP CONTACT */}
+      {isNewChatModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white border border-[#E8E4DC] rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-md bg-[#25D366]/20 border border-[#25D366]/40 flex items-center justify-center text-[#25D366]">
+                  <MessageSquarePlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-bold text-base text-[#081428]">
+                    Start New WhatsApp Chat
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Message any client or enter a new contact number
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsNewChatModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleStartNewChat} className="space-y-3.5 pt-2">
+              <div>
+                <label className="block text-xs font-bold text-[#081428] mb-1">
+                  Mobile / WhatsApp Number <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. +971 50 123 4567 or 0501234567"
+                  value={newChatPhone}
+                  onChange={(e) => setNewChatPhone(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-medium text-[#081428] focus:outline-none focus:border-[#C8A147]"
+                  required
+                  autoFocus
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5 block">
+                  International format recommended (UAE: +971...)
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#081428] mb-1">
+                  Contact / Client Name <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Ahmed Al Mansoor"
+                  value={newChatName}
+                  onChange={(e) => setNewChatName(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-medium text-[#081428] focus:outline-none focus:border-[#C8A147]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#081428] mb-1">
+                  Initial Message <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Hello Ahmed, this is FS Advisory regarding your property inquiry..."
+                  value={newChatMessage}
+                  onChange={(e) => setNewChatMessage(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-xs font-medium text-[#081428] focus:outline-none focus:border-[#C8A147] resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsNewChatModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingNewChat || !newChatPhone.trim()}
+                  className="px-5 py-2 bg-[#25D366] hover:bg-[#1EBE5D] disabled:opacity-50 text-[#081428] font-bold text-xs rounded-lg shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isSubmittingNewChat ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Opening Chat...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Start Chat</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

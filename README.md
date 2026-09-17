@@ -1862,9 +1862,19 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - Updated `generateQr()` to synchronously query the local WhatsApp Gateway at `$this->gatewayUrl() . '/api/qr'`. If the gateway is running, it extracts and returns the authentic `qr_code` string and `qr_image` data URL, with `is_real: true`.
       - Updated `gatewayQr()` to proxy the authentic payload directly to the frontend.
     - **Dual-Asset Frontend Hydration (`frontend/src/app/whatsapp/page.tsx`)**:
-      - Enhanced `handleOpenQrModal()` and `handleRefreshQr()` to immediately bind both `qr_image` and `qr_code` from the backend response.
-  - **Deployment & Server Instructions**:
-    - Detailed commands provided to pull latest changes on `/home/irmg/api.fsadvisory.ae`, clear Laravel cache (`php artisan optimize:clear`), and restart the PM2 gateway process.
+- **148 — WhatsApp Direct Lead Chat Creation, WhatsApp Web New Chat Suite & Auto-Linked User Session Mirroring (`backend/app/Http/Controllers/Api/WhatsAppController.php`, `backend/routes/api.php`, `frontend/src/app/whatsapp/page.tsx`)**:
+  - **Auto-Linked User Profile in QR Scan Popup (Dropdown Eliminated)**:
+    - Replaced the redundant "Select Account / Advisor Profile" dropdown in the Link WhatsApp Device modal with an elegant, auto-detected active user profile card.
+    - Automatically captures the currently authenticated staff member (`currentUser.name`, `currentUser.role`), displays their initials avatar, role badge, and session notice, and seamlessly pairs the phone to that advisor's personal workspace with 0 manual configuration.
+  - **WhatsApp Web-Style "New Chat / Create Contact" Suite (`/whatsapp`)**:
+    - Added a modern green `MessageSquarePlus` quick action button and a `+ New Chat` pill button in the WhatsApp sidebar header above conversations.
+    - Opens a dedicated **"Start New WhatsApp Chat"** popup allowing advisors to input any international mobile number (`+971...`), optional client name, and optional initial message.
+    - Integrated with backend `POST /api/whatsapp/chats/start`: automatically normalizes the phone number, checks for existing chats, creates the conversation record in `whatsapp_chats`, links to CRM `Contact` if found by phone digits, dispatches the initial message via the gateway, and immediately selects the chat in the active view pane.
+  - **Instant 1-Click WhatsApp Chat Launch from Leads Table Rows (`frontend/src/app/page.tsx` & `/whatsapp`)**:
+    - When an advisor clicks the WhatsApp icon on any row in the Leads table (or My Queue, Owner Data, Opportunity Workspace, and Slide-over Drawer), the application navigates to `/whatsapp?phone=...&name=...`.
+    - Upgraded `loadChats` in `frontend/src/app/whatsapp/page.tsx`:
+      - If a chat with that lead's phone already exists, it is selected immediately.
+      - If no conversation exists yet, the frontend automatically calls `POST /api/whatsapp/chats/start` to register the chat, inserts it at the top of the conversation list, and opens the messaging thread ready for instant conversation.
 
 ---
 
