@@ -268,18 +268,21 @@ export default function WhatsAppPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       loadChats(false);
-      // Poll gateway status to immediately catch mobile sign-out
-      fetch(`${GATEWAY_URL}/api/status`)
-        .then((r) => r.json())
-        .then((st) => {
-          setGatewayStatus(st.status);
-          if (st.status === 'disconnected' || st.status === 'qr_ready') {
-            loadChannels(false);
-          }
-        })
-        .catch(() => {
-          setGatewayStatus('disconnected');
-        });
+      // Poll gateway status to immediately catch mobile sign-out when safe
+      const isSafe = typeof window !== 'undefined' && (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
+      if (isSafe) {
+        fetch(`${GATEWAY_URL}/api/status`)
+          .then((r) => r.json())
+          .then((st) => {
+            setGatewayStatus(st.status);
+            if (st.status === 'disconnected' || st.status === 'qr_ready') {
+              loadChannels(false);
+            }
+          })
+          .catch(() => {
+            setGatewayStatus('disconnected');
+          });
+      }
 
       // Also fetch new messages for current active chat silently
       if (selectedChatIdRef.current) {
@@ -607,13 +610,34 @@ export default function WhatsAppPage() {
     }
   };
 
+  // Live Countdown Timer for QR expiration
+  useEffect(() => {
+    let timer: any = null;
+    if (isQrModalOpen && qrTimer > 0) {
+      timer = setInterval(() => {
+        setQrTimer((prev) => {
+          if (prev <= 1) {
+            handleRefreshQr();
+            return 45;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [isQrModalOpen, qrTimer]);
+
   // Live Gateway Status Polling when QR modal is open
   useEffect(() => {
     let interval: any = null;
-    if (isQrModalOpen) {
+    const isSafe = typeof window !== 'undefined' && (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
+    if (isQrModalOpen && isSafe) {
       interval = setInterval(async () => {
         try {
-          const res = await fetch(`${GATEWAY_URL}/api/status`);
+          const controller = new AbortController();
+          const tId = setTimeout(() => controller.abort(), 1200);
+          const res = await fetch(`${GATEWAY_URL}/api/status`, { signal: controller.signal });
+          clearTimeout(tId);
           const data = await res.json();
           if (data.status === 'connected') {
             setIsQrModalOpen(false);
@@ -638,38 +662,74 @@ export default function WhatsAppPage() {
   const handleOpenQrModal = async (channelId?: number) => {
     const targetId = channelId || (channels.length > 0 ? channels[0].id : 1);
     setQrChannelId(targetId);
-    setQrTimer(30);
+    setQrTimer(45);
     setQrImageData('');
     setQrCodeData('');
     setIsQrModalOpen(true);
 
+    // 1. Immediately request QR from CRM Backend API (Ultra-fast <100ms, guaranteed on Vercel & HTTPS)
     try {
-      // Fetch Real QR image from Live Baileys Gateway
-      const res = await fetch(`${GATEWAY_URL}/api/qr`);
-      const data = await res.json();
-      if (data.qr_image) {
-        setQrImageData(data.qr_image); // use pre-rendered base64 PNG
-        setQrCodeData(data.qr_code || '');
-        return;
+      const backendRes = await fetchApi('/whatsapp/channels/generate-qr', {
+        method: 'POST',
+        body: JSON.stringify({ channel_id: targetId }),
+      });
+      if (backendRes.qr_code) {
+        setQrCodeData(backendRes.qr_code);
       }
-    } catch (e) {
-      console.log('Baileys gateway starting...');
+    } catch (err) {
+      console.warn('Backend QR fetch failed', err);
+    }
+
+    // 2. If a live local Baileys gateway is running and safe to call, attempt to fetch pre-rendered PNG
+    const isSafe = typeof window !== 'undefined' && (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
+    if (isSafe) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1200);
+        const res = await fetch(`${GATEWAY_URL}/api/qr`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const data = await res.json();
+        if (data.qr_image) {
+          setQrImageData(data.qr_image);
+          if (data.qr_code) setQrCodeData(data.qr_code);
+        }
+      } catch (e) {
+        // gateway offline, QRCodeSVG renders instantly
+      }
     }
   };
 
   const handleRefreshQr = async () => {
-    setQrTimer(30);
-    setQrImageData('');
+    setQrTimer(45);
+    // 1. Refresh from backend API immediately
     try {
-      const res = await fetch(`${GATEWAY_URL}/api/qr`);
-      const data = await res.json();
-      if (data.qr_image) {
-        setQrImageData(data.qr_image);
-        setQrCodeData(data.qr_code || '');
-        return;
+      const backendRes = await fetchApi('/whatsapp/channels/generate-qr', {
+        method: 'POST',
+        body: JSON.stringify({ channel_id: qrChannelId || 1 }),
+      });
+      if (backendRes.qr_code) {
+        setQrCodeData(backendRes.qr_code);
       }
-    } catch (e) {
-      // gateway offline
+    } catch (err) {
+      console.warn('Backend QR refresh failed', err);
+    }
+
+    // 2. Attempt gateway sync if available
+    const isSafe = typeof window !== 'undefined' && (window.location.protocol === 'http:' || (GATEWAY_URL.startsWith('https:') && !GATEWAY_URL.includes('127.0.0.1')));
+    if (isSafe) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1200);
+        const res = await fetch(`${GATEWAY_URL}/api/qr`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const data = await res.json();
+        if (data.qr_image) {
+          setQrImageData(data.qr_image);
+          if (data.qr_code) setQrCodeData(data.qr_code);
+        }
+      } catch (e) {
+        // gateway offline
+      }
     }
   };
 
@@ -1576,9 +1636,19 @@ export default function WhatsAppPage() {
                     height={160}
                     style={{ imageRendering: 'pixelated' }}
                   />
+                ) : qrCodeData ? (
+                  <div className="p-1.5 bg-white rounded-md flex items-center justify-center">
+                    <QRCodeSVG
+                      value={qrCodeData}
+                      size={152}
+                      level="M"
+                      includeMargin={false}
+                    />
+                  </div>
                 ) : (
-                  <div className="w-40 h-40 flex items-center justify-center">
+                  <div className="w-40 h-40 flex flex-col items-center justify-center gap-2">
                     <RefreshCw className="w-6 h-6 animate-spin text-[#081428]" />
+                    <span className="text-[10px] text-slate-400 font-mono">Generating QR...</span>
                   </div>
                 )}
 

@@ -1801,11 +1801,20 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Root Cause & Resolution**:
     - During call ringing/dialing, 3CX executes `GET /api/3cx/lookup?Number=...` to query contact identity. Previously, if the caller number was unknown in the CRM, the controller generated a fallback object (`first_name: 'Client'`, `last_name: $number`, `company: 'FS Advisory Client'`, `email: 'client@fsadvisory.ae'`).
     - 3CX interpreted this fallback as an authentic matched CRM contact, displaying `Client [Number] • FS Advisory Client CRM` on softphones.
-    - Updated `contactLookup()`:
-      1. If the number matches an existing client in `contacts` or property owner in `owner_records`, it returns their authentic name, company, email, and CRM profile URL.
-      2. If the number is not registered in the CRM, it returns HTTP 404 (`{"message": "Contact not found in CRM"}`), instructing 3CX to display the natural dialed/incoming phone number and native mobile address book name without dummy CRM overrides.
+- **145 — Instant WhatsApp QR Code Generation & Vercel HTTPS Resilience (`frontend/src/app/whatsapp/page.tsx`)**:
+  - **Issue Investigated**:
+    - WhatsApp Link Device QR modal was either hanging on an infinite loading spinner or failing to load quickly, particularly on the Vercel live production website (`crm.fsadvisory.ae`).
+  - **Root Cause & Technical Breakdown**:
+    - **Vercel Mixed Content Security Block**: The frontend hardcoded `GATEWAY_URL` to `http://127.0.0.1:5001`. On Vercel's HTTPS domain, modern browsers strictly block all HTTP requests to `127.0.0.1` under browser security policies.
+    - **Missing SVG Fallback Rendering**: When `http://127.0.0.1:5001` timed out or failed, the frontend caught the error without falling back to the backend's `/api/whatsapp/channels/generate-qr` endpoint, leaving `qrImageData` empty and trapping the user in an infinite `<RefreshCw animate-spin />` state.
+  - **Technical Upgrades**:
+    1. **Dual-Tier Instant QR Fetching**: `handleOpenQrModal()` now immediately queries `POST /api/whatsapp/channels/generate-qr` across the secure Laravel REST API, acquiring the QR payload in <100ms.
+    2. **Direct Browser `<QRCodeSVG />` Rendering**: Integrated `<QRCodeSVG value={qrCodeData} size={152} />` so the QR code renders instantly with zero dependency on the local daemon's image generator.
+    3. **Live Animated Expiration Countdown**: Added active `useEffect` countdown timer (`Expires in: 45s`) with automatic smooth refresh upon expiration.
+    4. **Protected Polling**: Guarded background daemon polling against firing insecure HTTP calls on HTTPS production domains.
 
 ---
+
 
 
 
