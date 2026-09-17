@@ -102,6 +102,70 @@ class CallRecordingController extends Controller
             }
         }
 
+        // Contact ID filter (direct or phone match)
+        if ($request->filled('contact_id')) {
+            $contactId = (int) $request->contact_id;
+            $contact = \App\Models\Contact::find($contactId);
+            $phones = [];
+            if ($contact) {
+                if (!empty($contact->phone)) $phones[] = $contact->phone;
+                if (!empty($contact->secondary_phone)) $phones[] = $contact->secondary_phone;
+            }
+
+            $query->where(function ($q) use ($contactId, $phones) {
+                $q->where('contact_id', $contactId);
+                foreach ($phones as $p) {
+                    $cleanP = preg_replace('/[^0-9]/', '', $p);
+                    $last7 = strlen($cleanP) >= 7 ? substr($cleanP, -7) : $cleanP;
+                    if (!empty($last7)) {
+                        $q->orWhere('caller_number', 'like', "%{$last7}%")
+                          ->orWhere('destination_number', 'like', "%{$last7}%")
+                          ->orWhere('notes', 'like', "%{$last7}%");
+                    }
+                }
+            });
+        }
+
+        // Opportunity ID filter (direct or via opportunity's contact)
+        if ($request->filled('opportunity_id')) {
+            $oppId = (int) $request->opportunity_id;
+            $opp = \App\Models\Opportunity::with('contact')->find($oppId);
+            $phones = [];
+            if ($opp && $opp->contact) {
+                if (!empty($opp->contact->phone)) $phones[] = $opp->contact->phone;
+                if (!empty($opp->contact->secondary_phone)) $phones[] = $opp->contact->secondary_phone;
+            }
+
+            $query->where(function ($q) use ($oppId, $phones, $opp) {
+                $q->where('opportunity_id', $oppId);
+                if ($opp && $opp->contact_id) {
+                    $q->orWhere('contact_id', $opp->contact_id);
+                }
+                foreach ($phones as $p) {
+                    $cleanP = preg_replace('/[^0-9]/', '', $p);
+                    $last7 = strlen($cleanP) >= 7 ? substr($cleanP, -7) : $cleanP;
+                    if (!empty($last7)) {
+                        $q->orWhere('caller_number', 'like', "%{$last7}%")
+                          ->orWhere('destination_number', 'like', "%{$last7}%")
+                          ->orWhere('notes', 'like', "%{$last7}%");
+                    }
+                }
+            });
+        }
+
+        // Phone number filter
+        if ($request->filled('phone')) {
+            $cleanP = preg_replace('/[^0-9]/', '', $request->phone);
+            $last7 = strlen($cleanP) >= 7 ? substr($cleanP, -7) : $cleanP;
+            if (!empty($last7)) {
+                $query->where(function ($q) use ($last7) {
+                    $q->where('caller_number', 'like', "%{$last7}%")
+                      ->orWhere('destination_number', 'like', "%{$last7}%")
+                      ->orWhere('notes', 'like', "%{$last7}%");
+                });
+            }
+        }
+
         // Search query
         if ($request->has('search') && !empty($request->search)) {
             $search = $request->search;

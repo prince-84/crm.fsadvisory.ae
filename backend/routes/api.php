@@ -128,6 +128,7 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::post('/whatsapp/channels/generate-qr', [WhatsAppController::class, 'generateQr']);
     Route::get('/whatsapp/chats', [WhatsAppController::class, 'chats']);
     Route::post('/whatsapp/chats/start', [WhatsAppController::class, 'startChat']);
+    Route::get('/whatsapp/contact-history', [WhatsAppController::class, 'contactHistory']);
     Route::get('/whatsapp/chats/{id}/messages', [WhatsAppController::class, 'getChatMessages']);
     Route::post('/whatsapp/chats/{id}/send', [WhatsAppController::class, 'sendMessage']);
     Route::post('/whatsapp/chats/{id}/update-contact-info', [WhatsAppController::class, 'updateContactInfo']);

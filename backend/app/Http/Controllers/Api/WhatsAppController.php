@@ -1100,4 +1100,80 @@ class WhatsAppController extends Controller
             }
         }
     }
+
+    /**
+     * Get WhatsApp conversation history and messages for a specific Contact or Opportunity
+     */
+    public function contactHistory(Request $request)
+    {
+        $contact = null;
+        $phones = [];
+
+        if ($request->filled('contact_id')) {
+            $contact = Contact::find($request->contact_id);
+        } elseif ($request->filled('opportunity_id')) {
+            $opp = Opportunity::with('contact')->find($request->opportunity_id);
+            if ($opp && $opp->contact) {
+                $contact = $opp->contact;
+            }
+        }
+
+        if ($contact) {
+            if (!empty($contact->phone)) $phones[] = $contact->phone;
+            if (!empty($contact->secondary_phone)) $phones[] = $contact->secondary_phone;
+        }
+
+        if ($request->filled('phone')) {
+            $phones[] = $request->phone;
+        }
+
+        $chat = null;
+
+        // 1. Try finding by contact_id
+        if ($contact) {
+            $chat = WhatsAppChat::where('contact_id', $contact->id)->latest('last_message_at')->first();
+        }
+
+        // 2. Try finding by matching phone numbers (last 7 digits)
+        if (!$chat && !empty($phones)) {
+            $chat = WhatsAppChat::where(function ($q) use ($phones) {
+                foreach ($phones as $p) {
+                    $cleanP = preg_replace('/[^0-9]/', '', $p);
+                    $last7 = strlen($cleanP) >= 7 ? substr($cleanP, -7) : $cleanP;
+                    if (!empty($last7)) {
+                        $q->orWhere('phone', 'like', "%{$last7}%")
+                          ->orWhere('remote_jid', 'like', "%{$last7}%");
+                    }
+                }
+            })->latest('last_message_at')->first();
+        }
+
+        if (!$chat) {
+            return response()->json([
+                'success' => true,
+                'has_chat' => false,
+                'chat' => null,
+                'messages' => [],
+                'contact' => $contact,
+            ]);
+        }
+
+        // Link contact_id if missing
+        if ($contact && !$chat->contact_id) {
+            $chat->update(['contact_id' => $contact->id]);
+        }
+
+        $messages = WhatsAppMessage::where('chat_id', $chat->id)
+            ->orderBy('timestamp', 'asc')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'has_chat' => true,
+            'chat' => $chat->load('channel'),
+            'messages' => $messages,
+            'contact' => $contact,
+        ]);
+    }
 }
+

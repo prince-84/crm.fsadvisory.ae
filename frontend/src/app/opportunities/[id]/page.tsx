@@ -10,11 +10,26 @@ import { fetchApi } from '@/lib/api';
 import { 
   Building2, User, Phone, Mail, Clock, ShieldCheck, Flame, 
   CheckCircle2, ArrowRight, Activity as ActivityIcon, MessageSquare, Plus, FileText, Sparkles, RotateCcw, Loader2,
-  DollarSign, MapPin, Compass, Layers, Globe, Tag, Award, Wallet, Building, Save, Briefcase, Edit3, History, X, Home, Bed
+  DollarSign, MapPin, Compass, Layers, Globe, Tag, Award, Wallet, Building, Save, Briefcase, Edit3, History, X, Home, Bed,
+  FileAudio, PhoneIncoming, PhoneOutgoing, Send, Download, ExternalLink, RefreshCw
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Swal from 'sweetalert2';
+
+const getPlayableAudioUrl = (url: string | null | undefined, recId?: number) => {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.fsadvisory.ae/api';
+  if (!url) {
+    return recId ? `${API_BASE_URL}/3cx/recordings/${recId}/stream` : '';
+  }
+  if (url.includes('actions.google.com') || url.includes('ukits.3cx.ae')) {
+    return recId ? `${API_BASE_URL}/3cx/recordings/${recId}/stream` : `${API_BASE_URL}/3cx/recordings/1/stream`;
+  }
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const backendBase = API_BASE_URL.replace(/\/api$/, '');
+  const clean = url.startsWith('/') ? url : `/${url}`;
+  return `${backendBase}${clean}`;
+};
 
 const OPPORTUNITY_TYPES = [
   { value: 'buyer', label: 'Buyer Opportunity' },
@@ -184,7 +199,14 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [updatingStageId, setUpdatingStageId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'recordings' | 'whatsapp' | 'history'>('overview');
+  const [oppRecordings, setOppRecordings] = useState<any[]>([]);
+  const [loadingOppRecordings, setLoadingOppRecordings] = useState(false);
+  const [oppChat, setOppChat] = useState<any | null>(null);
+  const [oppWhatsAppMessages, setOppWhatsAppMessages] = useState<any[]>([]);
+  const [loadingOppWhatsApp, setLoadingOppWhatsApp] = useState(false);
+  const [newOppWhatsAppMsg, setNewOppWhatsAppMsg] = useState('');
+  const [sendingOppWhatsApp, setSendingOppWhatsApp] = useState(false);
   const [isHandoverModalOpen, setIsHandoverModalOpen] = useState(false);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
 
@@ -414,11 +436,82 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
       if (data.next_action) setNextAction(data.next_action);
       if (data.next_action_due_at) setNextDueDate(data.next_action_due_at.slice(0, 16));
       setLoading(false);
+
+      if (data.id) {
+        fetchOppRecordings(data.id, data.contact_id);
+        fetchOppWhatsApp(data.id, data.contact_id);
+      }
     } catch (err: any) {
       console.error('Failed to load opportunity workspace:', err);
       setLoadError(err.message || 'Opportunity record could not be loaded.');
       setOpp(null);
       setLoading(false);
+    }
+  };
+
+  const fetchOppRecordings = async (targetOppId: number | string, contactId?: number) => {
+    setLoadingOppRecordings(true);
+    try {
+      const endpoint = contactId 
+        ? `/recordings?opportunity_id=${targetOppId}&contact_id=${contactId}&per_page=50`
+        : `/recordings?opportunity_id=${targetOppId}&per_page=50`;
+      const res = await fetchApi(endpoint);
+      if (res && res.recordings && res.recordings.data) {
+        setOppRecordings(res.recordings.data);
+      } else if (res && res.data) {
+        setOppRecordings(res.data);
+      }
+    } catch (err) {
+      console.warn('Failed to load opportunity voice recordings:', err);
+    } finally {
+      setLoadingOppRecordings(false);
+    }
+  };
+
+  const fetchOppWhatsApp = async (targetOppId: number | string, contactId?: number) => {
+    setLoadingOppWhatsApp(true);
+    try {
+      const endpoint = contactId
+        ? `/whatsapp/contact-history?opportunity_id=${targetOppId}&contact_id=${contactId}`
+        : `/whatsapp/contact-history?opportunity_id=${targetOppId}`;
+      const res = await fetchApi(endpoint);
+      if (res && res.success) {
+        setOppChat(res.chat || null);
+        setOppWhatsAppMessages(res.messages || []);
+      }
+    } catch (err) {
+      console.warn('Failed to load opportunity WhatsApp messages:', err);
+    } finally {
+      setLoadingOppWhatsApp(false);
+    }
+  };
+
+  const handleSendOppWhatsApp = async () => {
+    if (!newOppWhatsAppMsg.trim() || !opp) return;
+    setSendingOppWhatsApp(true);
+    try {
+      const phone = opp.contact?.phone || '';
+      if (oppChat?.id) {
+        await fetchApi(`/whatsapp/chats/${oppChat.id}/send`, {
+          method: 'POST',
+          body: JSON.stringify({ text: newOppWhatsAppMsg.trim() }),
+        });
+      } else {
+        await fetchApi('/whatsapp/chats/start', {
+          method: 'POST',
+          body: JSON.stringify({
+            phone: phone,
+            contact_name: opp.contact?.name || 'Client',
+            initial_message: newOppWhatsAppMsg.trim(),
+          }),
+        });
+      }
+      setNewOppWhatsAppMsg('');
+      await fetchOppWhatsApp(opp.id, opp.contact_id);
+    } catch (err: any) {
+      Swal.fire('WhatsApp Error', err.message || 'Failed to send WhatsApp message.', 'error');
+    } finally {
+      setSendingOppWhatsApp(false);
     }
   };
 
@@ -656,6 +749,8 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
   const dynamicTabs = [
     { id: 'overview', label: 'Overview & Requirements' },
     { id: 'activity', label: 'Activity Timeline' },
+    { id: 'recordings', label: `Call Recordings (${oppRecordings.length})` },
+    { id: 'whatsapp', label: `WhatsApp Chat (${oppWhatsAppMessages.length})` },
     { id: 'history', label: 'Ownership Log' },
   ];
 
@@ -1475,6 +1570,221 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
                     ) : (
                       <div className="text-xs text-[#6E6E6E] pl-2">No activity logs found.</div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 3: Call Recordings */}
+              {activeTab === 'recordings' && (
+                <div className="bg-white border border-[#E8E4DC] rounded-lg p-6 space-y-4 shadow-2xs text-xs">
+                  <div className="flex items-center justify-between border-b border-[#E8E4DC] pb-3">
+                    <div className="flex items-center gap-2">
+                      <FileAudio className="w-4 h-4 text-[#C8A147]" />
+                      <h3 className="font-semibold text-sm text-[#081428] uppercase tracking-wider">
+                        Customer Call Recordings
+                      </h3>
+                    </div>
+                    <span className="text-[10px] text-[#6E6E6E] font-mono">
+                      {oppRecordings.length} Recorded Calls
+                    </span>
+                  </div>
+
+                  {loadingOppRecordings ? (
+                    <div className="p-8 text-center text-xs text-[#6E6E6E]">
+                      <RefreshCw className="w-5 h-5 animate-spin text-[#C8A147] mx-auto mb-2" />
+                      <span>Loading call recordings...</span>
+                    </div>
+                  ) : oppRecordings.length > 0 ? (
+                    <div className="space-y-3">
+                      {oppRecordings.map((rec: any) => {
+                        const isOutbound = rec.direction === 'outbound';
+                        const durMins = Math.floor((rec.duration_seconds || 0) / 60);
+                        const durSecs = (rec.duration_seconds || 0) % 60;
+                        const durStr = `${String(durMins).padStart(2, '0')}:${String(durSecs).padStart(2, '0')}`;
+                        const playUrl = getPlayableAudioUrl(rec.audio_url, rec.id);
+
+                        return (
+                          <div key={rec.id} className="p-4 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg space-y-2.5 text-xs shadow-2xs">
+                            <div className="flex items-center justify-between flex-wrap gap-2 border-b border-[#E8E4DC]/60 pb-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {isOutbound ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                    <PhoneOutgoing className="w-3 h-3" /> Outbound Call
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1">
+                                    <PhoneIncoming className="w-3 h-3" /> Inbound Call
+                                  </span>
+                                )}
+                                <span className="font-mono text-[11px] text-slate-600 font-bold">
+                                  {rec.pbx_call_id || `REC-${rec.id}`}
+                                </span>
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                                  Duration: {durStr}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <span className="text-[11px] text-[#6E6E6E] font-mono">
+                                  {rec.recorded_at ? new Date(rec.recorded_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                                </span>
+                                {playUrl && (
+                                  <a
+                                    href={playUrl}
+                                    download={`Call-Audio-${rec.pbx_call_id || rec.id}.wav`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1 text-slate-500 hover:text-[#081428] transition-colors"
+                                    title="Download Audio"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-slate-700 flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <User className="w-3.5 h-3.5 text-[#C8A147]" />
+                                <span>Advisor: <strong className="text-[#081428]">{rec.agent_name || 'Advisor'}</strong></span>
+                                <span className="text-slate-400 font-mono text-[11px]">(Extension {rec.agent_extension || '1030'})</span>
+                              </div>
+                              {rec.call_outcome && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-50 text-amber-900 border border-amber-300">
+                                  {rec.call_outcome}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Voice Audio Player */}
+                            <div className="pt-1">
+                              <audio controls preload="none" src={playUrl} className="w-full h-8 rounded" />
+                            </div>
+
+                            {rec.notes && (
+                              <div className="text-[11px] text-slate-700 bg-white p-2.5 rounded border border-[#E8E4DC] leading-relaxed">
+                                {rec.notes}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-8 bg-[#FAF8F5] border border-dashed border-[#E8E4DC] rounded-lg text-center space-y-2">
+                      <FileAudio className="w-8 h-8 text-slate-300 mx-auto" />
+                      <div className="text-xs font-semibold text-[#081428]">No Call Recordings Logged</div>
+                      <p className="text-[11px] text-[#6E6E6E] max-w-sm mx-auto">
+                        Calls made or received with this client will automatically sync here with instant voice playback.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 4: WhatsApp Conversation */}
+              {activeTab === 'whatsapp' && (
+                <div className="bg-white border border-[#E8E4DC] rounded-lg p-6 space-y-4 shadow-2xs text-xs">
+                  <div className="flex items-center justify-between border-b border-[#E8E4DC] pb-3 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
+                        WA
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-sm text-[#081428] uppercase tracking-wider flex items-center gap-1.5">
+                          <span>WhatsApp Conversation</span>
+                        </h3>
+                        <span className="text-[10px] text-slate-500 font-mono">{contact.name} • {contact.phone}</span>
+                      </div>
+                    </div>
+
+                    <Link
+                      href={`/whatsapp?phone=${encodeURIComponent(contact.phone || '')}&name=${encodeURIComponent(contact.name || '')}`}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
+                      title="Open full conversation in WhatsApp Web desk"
+                    >
+                      <span>Open in WhatsApp Web</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+
+                  {loadingOppWhatsApp ? (
+                    <div className="p-8 text-center text-xs text-[#6E6E6E]">
+                      <RefreshCw className="w-5 h-5 animate-spin text-emerald-600 mx-auto mb-2" />
+                      <span>Loading WhatsApp conversation...</span>
+                    </div>
+                  ) : oppWhatsAppMessages.length > 0 ? (
+                    <div className="p-4 bg-[#EFEAE2] rounded-lg border border-[#E8E4DC] max-h-[420px] overflow-y-auto space-y-2.5 text-xs">
+                      {oppWhatsAppMessages.map((msg: any, mIdx: number) => {
+                        const isMe = msg.from_me;
+                        return (
+                          <div
+                            key={msg.id || mIdx}
+                            className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                          >
+                            <div
+                              className={`p-3 rounded-lg max-w-[80%] shadow-2xs text-xs space-y-1 ${
+                                isMe
+                                  ? 'bg-[#DCF8C6] text-[#081428] rounded-tr-none'
+                                  : 'bg-white text-[#081428] rounded-tl-none border border-slate-200'
+                              }`}
+                            >
+                              <div className="leading-relaxed whitespace-pre-wrap">{msg.text}</div>
+                              <div className="flex items-center justify-end gap-1 text-[9px] text-slate-400 pt-0.5">
+                                <span>
+                                  {msg.timestamp
+                                    ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                    : ''}
+                                </span>
+                                {isMe && (
+                                  <span className={msg.status === 'read' ? 'text-[#34B7F1]' : 'text-slate-400'}>
+                                    ✓✓
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-8 bg-[#FAF8F5] border border-dashed border-[#E8E4DC] rounded-lg text-center space-y-2">
+                      <MessageSquare className="w-8 h-8 text-emerald-400 mx-auto" />
+                      <div className="text-xs font-semibold text-[#081428]">No WhatsApp Messages Found</div>
+                      <p className="text-[11px] text-[#6E6E6E] max-w-sm mx-auto">
+                        Send brochures, project floor plans, or messages directly below to start the conversation.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Quick Send Bar */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={newOppWhatsAppMsg}
+                      onChange={(e) => setNewOppWhatsAppMsg(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendOppWhatsApp();
+                        }
+                      }}
+                      placeholder="Type a WhatsApp message to this client..."
+                      className="flex-1 p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md text-xs text-[#081428] focus:bg-white focus:border-emerald-500 focus:outline-none transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSendOppWhatsApp}
+                      disabled={sendingOppWhatsApp || !newOppWhatsAppMsg.trim()}
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold text-xs transition-colors disabled:opacity-50 cursor-pointer shadow-xs flex items-center gap-1.5"
+                    >
+                      {sendingOppWhatsApp ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      <span>Send</span>
+                    </button>
                   </div>
                 </div>
               )}

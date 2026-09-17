@@ -1,16 +1,31 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   X, Phone, Mail, Clock, MessageSquare, 
   PhoneCall, Edit2, Target, Link2, ExternalLink, Copy, Check,
   Building2, Home, DollarSign, User, Sparkles, Plus, RefreshCw,
-  Calendar, Layers, CheckCircle2, AlertCircle, Briefcase, FileText, UserCheck, ArrowRightLeft
+  Calendar, Layers, CheckCircle2, AlertCircle, Briefcase, FileText, UserCheck, ArrowRightLeft,
+  FileAudio, PhoneIncoming, PhoneOutgoing, Send, Download
 } from 'lucide-react';
 import Link from 'next/link';
 import Swal from 'sweetalert2';
 import { fetchApi } from '@/lib/api';
 import { hasAnyPermission, getCurrentUser } from '@/lib/permissions';
+
+const getPlayableAudioUrl = (url: string | null | undefined, recId?: number) => {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.fsadvisory.ae/api';
+  if (!url) {
+    return recId ? `${API_BASE_URL}/3cx/recordings/${recId}/stream` : '';
+  }
+  if (url.includes('actions.google.com') || url.includes('ukits.3cx.ae')) {
+    return recId ? `${API_BASE_URL}/3cx/recordings/${recId}/stream` : `${API_BASE_URL}/3cx/recordings/1/stream`;
+  }
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const backendBase = API_BASE_URL.replace(/\/api$/, '');
+  const clean = url.startsWith('/') ? url : `/${url}`;
+  return `${backendBase}${clean}`;
+};
 
 interface ContactDrawerProps {
   contact: any | null;
@@ -36,7 +51,14 @@ export default function ContactDrawer({
   const [showPhone, setShowPhone] = useState(false);
   const [showSecondaryPhone, setShowSecondaryPhone] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [activeActivityTab, setActiveActivityTab] = useState<'calls' | 'all'>('calls');
+  const [activeActivityTab, setActiveActivityTab] = useState<'calls' | 'recordings' | 'whatsapp' | 'all'>('calls');
+  const [clientRecordings, setClientRecordings] = useState<any[]>([]);
+  const [loadingRecordings, setLoadingRecordings] = useState(false);
+  const [clientChat, setClientChat] = useState<any | null>(null);
+  const [whatsAppMessages, setWhatsAppMessages] = useState<any[]>([]);
+  const [loadingWhatsApp, setLoadingWhatsApp] = useState(false);
+  const [newWhatsAppMsg, setNewWhatsAppMsg] = useState('');
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
   const [activeAgents, setActiveAgents] = useState<any[]>([]);
   const [reassigning, setReassigning] = useState(false);
 
@@ -52,6 +74,71 @@ export default function ContactDrawer({
         .catch(console.error);
     }
   }, [isOpen]);
+
+  // Load voice recordings for this contact
+  const fetchClientRecordings = useCallback(async (contactId: number) => {
+    if (!contactId) return;
+    setLoadingRecordings(true);
+    try {
+      const res = await fetchApi(`/recordings?contact_id=${contactId}&per_page=50`);
+      if (res && res.recordings && res.recordings.data) {
+        setClientRecordings(res.recordings.data);
+      } else if (res && res.data) {
+        setClientRecordings(res.data);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch voice recordings:', err);
+    } finally {
+      setLoadingRecordings(false);
+    }
+  }, []);
+
+  // Load WhatsApp conversation history for this contact
+  const fetchClientWhatsApp = useCallback(async (contactId: number) => {
+    if (!contactId) return;
+    setLoadingWhatsApp(true);
+    try {
+      const res = await fetchApi(`/whatsapp/contact-history?contact_id=${contactId}`);
+      if (res && res.success) {
+        setClientChat(res.chat || null);
+        setWhatsAppMessages(res.messages || []);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch WhatsApp history:', err);
+    } finally {
+      setLoadingWhatsApp(false);
+    }
+  }, []);
+
+  // Send WhatsApp message directly from drawer
+  const handleSendDrawerWhatsApp = async () => {
+    if (!newWhatsAppMsg.trim() || !liveContact) return;
+    setSendingWhatsApp(true);
+    try {
+      const phone = liveContact.phone || '';
+      if (clientChat?.id) {
+        await fetchApi(`/whatsapp/chats/${clientChat.id}/send`, {
+          method: 'POST',
+          body: JSON.stringify({ text: newWhatsAppMsg.trim() }),
+        });
+      } else {
+        await fetchApi('/whatsapp/chats/start', {
+          method: 'POST',
+          body: JSON.stringify({
+            phone: phone,
+            contact_name: liveContact.name,
+            initial_message: newWhatsAppMsg.trim(),
+          }),
+        });
+      }
+      setNewWhatsAppMsg('');
+      await fetchClientWhatsApp(liveContact.id);
+    } catch (err: any) {
+      Swal.fire('WhatsApp Error', err.message || 'Failed to send WhatsApp message.', 'error');
+    } finally {
+      setSendingWhatsApp(false);
+    }
+  };
 
   // Load fresh contact details from database whenever drawer opens or contact changes
   const fetchLiveContact = useCallback(async (contactId: number) => {
@@ -75,10 +162,15 @@ export default function ContactDrawer({
       setShowPhone(false);
       setShowSecondaryPhone(false);
       fetchLiveContact(contact.id);
+      fetchClientRecordings(contact.id);
+      fetchClientWhatsApp(contact.id);
     } else if (!isOpen) {
       setLiveContact(null);
+      setClientRecordings([]);
+      setWhatsAppMessages([]);
+      setClientChat(null);
     }
-  }, [isOpen, contact?.id, fetchLiveContact]);
+  }, [isOpen, contact?.id, fetchLiveContact, fetchClientRecordings, fetchClientWhatsApp]);
 
   // Sync live contact whenever contact prop updates from parent
   useEffect(() => {
@@ -93,13 +185,15 @@ export default function ContactDrawer({
       const updatedId = e.detail?.contactId;
       if (isOpen && contact?.id && (!updatedId || Number(updatedId) === Number(contact.id))) {
         fetchLiveContact(contact.id);
+        fetchClientRecordings(contact.id);
+        fetchClientWhatsApp(contact.id);
       }
     };
     window.addEventListener('crm:contact-updated', handleRemoteUpdate);
     return () => {
       window.removeEventListener('crm:contact-updated', handleRemoteUpdate);
     };
-  }, [isOpen, contact?.id, fetchLiveContact]);
+  }, [isOpen, contact?.id, fetchLiveContact, fetchClientRecordings, fetchClientWhatsApp]);
 
   if (!isOpen || !liveContact) return null;
 
@@ -972,11 +1066,11 @@ export default function ContactDrawer({
               </div>
 
               {/* Activity Filter Tabs */}
-              <div className="flex items-center justify-between border-b border-[#E8E4DC]/60 pb-1.5 gap-2">
+              <div className="flex items-center justify-between border-b border-[#E8E4DC]/60 pb-1.5 gap-2 overflow-x-auto">
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setActiveActivityTab('calls')}
-                    className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors flex items-center gap-1 whitespace-nowrap ${
                       activeActivityTab === 'calls' 
                         ? 'bg-[#081428] text-white' 
                         : 'text-[#6E6E6E] hover:bg-slate-100'
@@ -985,9 +1079,34 @@ export default function ContactDrawer({
                     <Phone className="w-2.5 h-2.5" />
                     <span>Calls ({callActivities.length})</span>
                   </button>
+
+                  <button
+                    onClick={() => setActiveActivityTab('recordings')}
+                    className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors flex items-center gap-1 whitespace-nowrap ${
+                      activeActivityTab === 'recordings' 
+                        ? 'bg-[#081428] text-white' 
+                        : 'text-[#6E6E6E] hover:bg-slate-100'
+                    }`}
+                  >
+                    <FileAudio className="w-2.5 h-2.5 text-[#C8A147]" />
+                    <span>Recordings ({clientRecordings.length})</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveActivityTab('whatsapp')}
+                    className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors flex items-center gap-1 whitespace-nowrap ${
+                      activeActivityTab === 'whatsapp' 
+                        ? 'bg-[#081428] text-white' 
+                        : 'text-[#6E6E6E] hover:bg-slate-100'
+                    }`}
+                  >
+                    <MessageSquare className="w-2.5 h-2.5 text-emerald-500" />
+                    <span>WhatsApp ({whatsAppMessages.length})</span>
+                  </button>
+
                   <button
                     onClick={() => setActiveActivityTab('all')}
-                    className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors flex items-center gap-1 whitespace-nowrap ${
                       activeActivityTab === 'all' 
                         ? 'bg-[#081428] text-white' 
                         : 'text-[#6E6E6E] hover:bg-slate-100'
@@ -999,71 +1118,255 @@ export default function ContactDrawer({
                 </div>
               </div>
 
-              {/* Activity Records Timeline */}
-              <div className="space-y-3 pl-2 border-l-2 border-[#E8E4DC]">
-                {displayedActivities.length > 0 ? (
-                  displayedActivities.map((act: any) => {
-                    const isCall = act.type === 'call' || !!act.call_outcome;
-                    return (
-                      <div key={act.id} className="relative pl-4 space-y-1">
-                        <div className="absolute -left-[13px] top-1 w-2.5 h-2.5 rounded-full bg-white border-2 border-[#C8A147]" />
-                        
-                        <div className="flex items-center justify-between text-xs gap-2">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {isCall ? (
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getOutcomeBadgeClass(act.call_outcome)}`}>
-                                {act.call_outcome || 'Phone Call'}
+              {/* Tab Contents */}
+              {activeActivityTab === 'recordings' ? (
+                <div className="space-y-3">
+                  {loadingRecordings ? (
+                    <div className="p-6 text-center text-xs text-[#6E6E6E]">
+                      <RefreshCw className="w-4 h-4 animate-spin text-[#C8A147] mx-auto mb-1.5" />
+                      <span>Loading voice recordings...</span>
+                    </div>
+                  ) : clientRecordings.length > 0 ? (
+                    clientRecordings.map((rec: any) => {
+                      const isOutbound = rec.direction === 'outbound';
+                      const durMins = Math.floor((rec.duration_seconds || 0) / 60);
+                      const durSecs = (rec.duration_seconds || 0) % 60;
+                      const durStr = `${String(durMins).padStart(2, '0')}:${String(durSecs).padStart(2, '0')}`;
+                      const playUrl = getPlayableAudioUrl(rec.audio_url, rec.id);
+
+                      return (
+                        <div key={rec.id} className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg space-y-2 text-xs shadow-2xs">
+                          <div className="flex items-center justify-between flex-wrap gap-1.5 border-b border-[#E8E4DC]/60 pb-1.5">
+                            <div className="flex items-center gap-1.5">
+                              {isOutbound ? (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-0.5">
+                                  <PhoneOutgoing className="w-2.5 h-2.5" /> Outbound
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-0.5">
+                                  <PhoneIncoming className="w-2.5 h-2.5" /> Inbound
+                                </span>
+                              )}
+                              <span className="font-mono text-[10px] text-slate-500 font-semibold">
+                                {rec.pbx_call_id || `REC-${rec.id}`}
                               </span>
-                            ) : act.type === 'ownership_change' ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-50 text-indigo-800 border border-indigo-200 flex items-center gap-1">
-                                <UserCheck className="w-2.5 h-2.5 text-indigo-600" />
-                                <span>Ownership Change</span>
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                                {durStr}
                               </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-200">
-                                {act.type?.replace(/_/g, ' ') || 'Activity'}
+                            </div>
+
+                            <span className="text-[10px] text-[#6E6E6E] font-mono">
+                              {rec.recorded_at ? formatDateTime(rec.recorded_at) : '—'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] text-slate-700">
+                            <div className="flex items-center gap-1">
+                              <User className="w-3 h-3 text-[#C8A147]" />
+                              <span>Advisor: <strong className="text-[#081428]">{rec.agent_name || 'Advisor'}</strong></span>
+                              <span className="text-slate-400 font-mono">(Ext {rec.agent_extension || '1030'})</span>
+                            </div>
+                            {rec.call_outcome && (
+                              <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase border ${getOutcomeBadgeClass(rec.call_outcome)}`}>
+                                {rec.call_outcome}
                               </span>
                             )}
                           </div>
-                          
-                          <span className="text-[10px] text-[#6E6E6E] font-mono shrink-0">
-                            {formatDateTime(act.created_at)}
-                          </span>
-                        </div>
 
-                        <div className="text-[11px] text-[#081428] font-normal leading-relaxed bg-[#FAF8F5] p-2 rounded border border-[#E8E4DC]/60">
-                          {act.description}
-                        </div>
+                          {/* Audio Player */}
+                          <div className="pt-1">
+                            <audio controls preload="none" src={playUrl} className="w-full h-8 rounded" />
+                          </div>
 
-                        <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                          <User className="w-2.5 h-2.5 text-slate-400" />
-                          <span>
-                            {act.type === 'ownership_change' ? 'Assigned by ' : 'Logged by '}
-                            <strong className="text-slate-600 font-medium">{act.user_name || 'Admin'}</strong>
-                          </span>
+                          {rec.notes && (
+                            <div className="text-[11px] text-[#6E6E6E] bg-white p-2 rounded border border-[#E8E4DC] leading-relaxed">
+                              {rec.notes}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="p-4 bg-[#FAF8F5] border border-dashed border-[#E8E4DC] rounded-lg text-center space-y-2">
-                    <Phone className="w-5 h-5 text-slate-400 mx-auto" />
-                    <div className="text-xs font-semibold text-[#081428]">
-                      {activeActivityTab === 'calls' ? 'No Call Records Logged Yet' : 'No Activities Recorded Yet'}
+                      );
+                    })
+                  ) : (
+                    <div className="p-6 bg-[#FAF8F5] border border-dashed border-[#E8E4DC] rounded-lg text-center space-y-2">
+                      <FileAudio className="w-6 h-6 text-slate-400 mx-auto" />
+                      <div className="text-xs font-semibold text-[#081428]">No Call Recordings Found</div>
+                      <p className="text-[11px] text-[#6E6E6E]">
+                        Calls placed or received with this client will automatically archive here with audio playback.
+                      </p>
                     </div>
-                    <p className="text-[11px] text-[#6E6E6E]">
-                      Connect with this client and record discussion notes to maintain continuous CRM history.
-                    </p>
-                    <button
-                      onClick={handleLogCallInternal}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#081428] hover:bg-[#122444] text-white rounded text-[11px] font-semibold transition-colors shadow-xs"
+                  )}
+                </div>
+              ) : activeActivityTab === 'whatsapp' ? (
+                <div className="space-y-3">
+                  {/* Top Bar with Open in WhatsApp Web */}
+                  <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-[#E8E4DC]">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-[10px]">
+                        WA
+                      </div>
+                      <div className="text-xs">
+                        <span className="font-bold text-[#081428] block">{currentContact.name}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">{currentContact.phone}</span>
+                      </div>
+                    </div>
+
+                    <Link
+                      href={`/whatsapp?phone=${encodeURIComponent(currentContact.phone || '')}&name=${encodeURIComponent(currentContact.name || '')}`}
+                      className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded text-[10px] font-bold flex items-center gap-1 transition-colors"
+                      title="Open full chat in WhatsApp Command Center"
                     >
-                      <PhoneCall className="w-3 h-3 text-[#C8A147]" />
-                      <span>Log First Call Outcome</span>
+                      <span>Open Full Chat</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+
+                  {/* Messages Feed */}
+                  {loadingWhatsApp ? (
+                    <div className="p-6 text-center text-xs text-[#6E6E6E]">
+                      <RefreshCw className="w-4 h-4 animate-spin text-emerald-600 mx-auto mb-1.5" />
+                      <span>Loading WhatsApp history...</span>
+                    </div>
+                  ) : whatsAppMessages.length > 0 ? (
+                    <div className="p-3 bg-[#EFEAE2] rounded-lg border border-[#E8E4DC] max-h-[320px] overflow-y-auto space-y-2 text-xs">
+                      {whatsAppMessages.map((msg: any, mIdx: number) => {
+                        const isMe = msg.from_me;
+                        return (
+                          <div
+                            key={msg.id || mIdx}
+                            className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                          >
+                            <div
+                              className={`p-2.5 rounded-lg max-w-[85%] shadow-2xs text-xs space-y-0.5 ${
+                                isMe
+                                  ? 'bg-[#DCF8C6] text-[#081428] rounded-tr-none'
+                                  : 'bg-white text-[#081428] rounded-tl-none border border-slate-200'
+                              }`}
+                            >
+                              <div className="leading-relaxed whitespace-pre-wrap">{msg.text}</div>
+                              <div className="flex items-center justify-end gap-1 text-[9px] text-slate-400 pt-0.5">
+                                <span>
+                                  {msg.timestamp
+                                    ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                    : ''}
+                                </span>
+                                {isMe && (
+                                  <span className={msg.status === 'read' ? 'text-[#34B7F1]' : 'text-slate-400'}>
+                                    ✓✓
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-6 bg-[#FAF8F5] border border-dashed border-[#E8E4DC] rounded-lg text-center space-y-2">
+                      <MessageSquare className="w-6 h-6 text-emerald-400 mx-auto" />
+                      <div className="text-xs font-semibold text-[#081428]">No WhatsApp Messages Yet</div>
+                      <p className="text-[11px] text-[#6E6E6E]">
+                        Start a conversation below or open the WhatsApp suite to send brochures and chat with this client.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Inline Message Input */}
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <input
+                      type="text"
+                      value={newWhatsAppMsg}
+                      onChange={(e) => setNewWhatsAppMsg(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendDrawerWhatsApp();
+                        }
+                      }}
+                      placeholder="Type a WhatsApp message..."
+                      className="flex-1 p-2 bg-white border border-[#E8E4DC] rounded-md text-xs text-[#081428] focus:border-emerald-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSendDrawerWhatsApp}
+                      disabled={sendingWhatsApp || !newWhatsAppMsg.trim()}
+                      className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
+                      title="Send message"
+                    >
+                      {sendingWhatsApp ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                /* Activity Records Timeline (Calls and All Activity) */
+                <div className="space-y-3 pl-2 border-l-2 border-[#E8E4DC]">
+                  {displayedActivities.length > 0 ? (
+                    displayedActivities.map((act: any) => {
+                      const isCall = act.type === 'call' || !!act.call_outcome;
+                      return (
+                        <div key={act.id} className="relative pl-4 space-y-1">
+                          <div className="absolute -left-[13px] top-1 w-2.5 h-2.5 rounded-full bg-white border-2 border-[#C8A147]" />
+                          
+                          <div className="flex items-center justify-between text-xs gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {isCall ? (
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getOutcomeBadgeClass(act.call_outcome)}`}>
+                                  {act.call_outcome || 'Phone Call'}
+                                </span>
+                              ) : act.type === 'ownership_change' ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-50 text-indigo-800 border border-indigo-200 flex items-center gap-1">
+                                  <UserCheck className="w-2.5 h-2.5 text-indigo-600" />
+                                  <span>Ownership Change</span>
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-200">
+                                  {act.type?.replace(/_/g, ' ') || 'Activity'}
+                                </span>
+                              )}
+                            </div>
+                            
+                            <span className="text-[10px] text-[#6E6E6E] font-mono shrink-0">
+                              {formatDateTime(act.created_at)}
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-[#081428] font-normal leading-relaxed bg-[#FAF8F5] p-2 rounded border border-[#E8E4DC]/60">
+                            {act.description}
+                          </div>
+
+                          <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                            <User className="w-2.5 h-2.5 text-slate-400" />
+                            <span>
+                              {act.type === 'ownership_change' ? 'Assigned by ' : 'Logged by '}
+                              <strong className="text-slate-600 font-medium">{act.user_name || 'Admin'}</strong>
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="p-4 bg-[#FAF8F5] border border-dashed border-[#E8E4DC] rounded-lg text-center space-y-2">
+                      <Phone className="w-5 h-5 text-slate-400 mx-auto" />
+                      <div className="text-xs font-semibold text-[#081428]">
+                        {activeActivityTab === 'calls' ? 'No Call Records Logged Yet' : 'No Activities Recorded Yet'}
+                      </div>
+                      <p className="text-[11px] text-[#6E6E6E]">
+                        Connect with this client and record discussion notes to maintain continuous CRM history.
+                      </p>
+                      <button
+                        onClick={handleLogCallInternal}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#081428] hover:bg-[#122444] text-white rounded text-[11px] font-semibold transition-colors shadow-xs"
+                      >
+                        <PhoneCall className="w-3 h-3 text-[#C8A147]" />
+                        <span>Log First Call Outcome</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
           </div>

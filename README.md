@@ -1900,6 +1900,34 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - Added a **`[ ✨ Load Demo Calls ]`** action button directly inside the empty state message on `/recordings` next to "Scan Server Recordings".
       - Calls `POST /api/recordings/reseed` to generate realistic call records with playable audio playback so advisors can test and verify audio capabilities at any time even before live calls occur.
 
+- **150 — Client-Specific Call Recordings & WhatsApp History in Leads Master Page, Contact Drawer, Contact Detail Modal & Opportunity Workspace (`backend/app/Http/Controllers/Api/CallRecordingController.php`, `backend/app/Http/Controllers/Api/WhatsAppController.php`, `backend/routes/api.php`, `frontend/src/components/ContactDrawer.tsx`, `frontend/src/components/ContactDetailModal.tsx`, `frontend/src/app/opportunities/[id]/page.tsx`)**:
+  - **Comprehensive Client-Centric Call & Chat History Architecture**:
+    - Fulfills the requirement to provide real-time, bidirectional communication history for every client directly within their CRM profile views without needing to leave the Leads page or Opportunity Workspace.
+    - Preserves all existing CRM operations, schemas, activity logs, and table actions ("baqi kuch kharab na ho").
+    - **Strict Telephony Naming Convention**: Strictly adheres to the requirement that proprietary telephony brand names (such as "3CX") are completely excluded from user-facing UI labels, badges, tabs, buttons, and titles—using polished labels like "Call Recordings", "Voice Recordings", "Call Audio", "Advisor Ext", and "Phone System".
+  - **Backend API Expansions**:
+    - **Filtered Call Recordings (`CallRecordingController::index`)**:
+      - Added `contact_id`, `opportunity_id`, and `phone` request filter parameters.
+      - Implemented normalized phone sanitization (`preg_replace('/[^0-9]/', '', $phone)`) and matched the last 7 digits (`substr($cleanP, -7)`) against `caller_number`, `destination_number`, and related Contact/Opportunity records to ensure robust cross-matching across UAE local formats (`050...`) and international formats (`+971...`).
+    - **Client WhatsApp History Endpoint (`WhatsAppController::contactHistory` & `GET /api/whatsapp/contact-history`)**:
+      - Retrieves the active conversation thread (`WhatsAppChat`) and all associated message logs (`WhatsAppMessage`) by `contact_id`, `opportunity_id`, or `phone`.
+      - Automatically normalizes client contact numbers and queries `whatsapp_chats` using sanitized digit substrings.
+      - Returns conversation metadata and chronological message feeds formatted for immediate UI bubble rendering.
+  - **Contact Drawer Slide-Over (`frontend/src/components/ContactDrawer.tsx`)**:
+    - Expanded activity tabs to include:
+      - **`Calls`**: Human-logged CRM call activity and discussion outcomes.
+      - **`Recordings (N)`**: Interactive audio player list displaying inbound/outbound call direction badges, advisor extension, call duration, timestamp, audio streaming controls (`<audio controls>`), and audio download button.
+      - **`WhatsApp (N)`**: Authentic WhatsApp Web-style conversation bubble feed showing inbound/outbound messages, timestamps, delivery ticks (`✓✓`), and an inline quick-reply input with instant `Enter` key dispatch.
+      - **`All Activity`**: Chronological event timeline including ownership reassignments and deal status transitions.
+  - **Contact Detail Modal (`frontend/src/components/ContactDetailModal.tsx`)**:
+    - Added an elegant top tab switcher (`Profile & Requirements`, `Call Recordings (N)`, `WhatsApp Chat (N)`).
+    - **Call Recordings View**: Displays client-linked phone recordings with full audio player streaming, advisor attribution, call outcome badges, and direct file download options.
+    - **WhatsApp View**: Full chat bubble conversation feed with 1-click "Open in WhatsApp" quick link, live thread refresher, and embedded message dispatching bar.
+  - **Opportunity Workspace (`frontend/src/app/opportunities/[id]/page.tsx`)**:
+    - Added dedicated dynamic tabs:
+      - **`Call Recordings (N)`**: Filtered specifically for calls associated with the opportunity or client phone number, complete with in-browser audio players and duration metrics.
+      - **`WhatsApp Chat (N)`**: Full conversation history between the assigned advisor and the opportunity's primary client, enabling immediate follow-up and floor plan/brochure discussion directly within the deal workspace.
+
 ---
 
 

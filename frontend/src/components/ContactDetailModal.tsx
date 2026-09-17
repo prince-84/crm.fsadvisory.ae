@@ -6,9 +6,25 @@ import {
   MapPin, DollarSign, Calendar, User, 
   Briefcase, Sparkles, Copy, Check, 
   ExternalLink, Globe, Target, AlertCircle, 
-  CheckCircle2, Flame, Building2
+  CheckCircle2, Flame, Building2, FileAudio,
+  PhoneIncoming, PhoneOutgoing, Send, Download, RefreshCw
 } from 'lucide-react';
 import Link from 'next/link';
+import { fetchApi } from '@/lib/api';
+
+const getPlayableAudioUrl = (url: string | null | undefined, recId?: number) => {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.fsadvisory.ae/api';
+  if (!url) {
+    return recId ? `${API_BASE_URL}/3cx/recordings/${recId}/stream` : '';
+  }
+  if (url.includes('actions.google.com') || url.includes('ukits.3cx.ae')) {
+    return recId ? `${API_BASE_URL}/3cx/recordings/${recId}/stream` : `${API_BASE_URL}/3cx/recordings/1/stream`;
+  }
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const backendBase = API_BASE_URL.replace(/\/api$/, '');
+  const clean = url.startsWith('/') ? url : `/${url}`;
+  return `${backendBase}${clean}`;
+};
 
 interface ContactDetailModalProps {
   contact: any | null;
@@ -25,10 +41,80 @@ export default function ContactDetailModal({
 }: ContactDetailModalProps) {
   const [showPhone, setShowPhone] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [modalTab, setModalTab] = useState<'profile' | 'recordings' | 'whatsapp'>('profile');
+  const [recordings, setRecordings] = useState<any[]>([]);
+  const [loadingRecordings, setLoadingRecordings] = useState(false);
+  const [whatsAppMessages, setWhatsAppMessages] = useState<any[]>([]);
+  const [loadingWhatsApp, setLoadingWhatsApp] = useState(false);
+  const [whatsAppChat, setWhatsAppChat] = useState<any | null>(null);
+  const [newWhatsAppMsg, setNewWhatsAppMsg] = useState('');
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
 
   useEffect(() => {
     setShowPhone(false);
+    setModalTab('profile');
+    if (contact?.id) {
+      setLoadingRecordings(true);
+      fetchApi(`/recordings?contact_id=${contact.id}&per_page=50`)
+        .then((res) => {
+          if (res && res.recordings && res.recordings.data) {
+            setRecordings(res.recordings.data);
+          } else if (res && res.data) {
+            setRecordings(res.data);
+          } else {
+            setRecordings([]);
+          }
+        })
+        .catch(() => setRecordings([]))
+        .finally(() => setLoadingRecordings(false));
+
+      setLoadingWhatsApp(true);
+      fetchApi(`/whatsapp/contact-history?contact_id=${contact.id}`)
+        .then((res) => {
+          if (res && res.success) {
+            setWhatsAppChat(res.chat || null);
+            setWhatsAppMessages(res.messages || []);
+          } else {
+            setWhatsAppMessages([]);
+          }
+        })
+        .catch(() => setWhatsAppMessages([]))
+        .finally(() => setLoadingWhatsApp(false));
+    }
   }, [contact?.id]);
+
+  const handleSendModalWhatsApp = async () => {
+    if (!newWhatsAppMsg.trim() || !contact) return;
+    setSendingWhatsApp(true);
+    try {
+      const phone = contact.phone || '';
+      if (whatsAppChat?.id) {
+        await fetchApi(`/whatsapp/chats/${whatsAppChat.id}/send`, {
+          method: 'POST',
+          body: JSON.stringify({ text: newWhatsAppMsg.trim() }),
+        });
+      } else {
+        await fetchApi('/whatsapp/chats/start', {
+          method: 'POST',
+          body: JSON.stringify({
+            phone: phone,
+            contact_name: contact.name,
+            initial_message: newWhatsAppMsg.trim(),
+          }),
+        });
+      }
+      setNewWhatsAppMsg('');
+      const res = await fetchApi(`/whatsapp/contact-history?contact_id=${contact.id}`);
+      if (res && res.success) {
+        setWhatsAppChat(res.chat || null);
+        setWhatsAppMessages(res.messages || []);
+      }
+    } catch (err: any) {
+      console.error('Failed to send WhatsApp message:', err);
+    } finally {
+      setSendingWhatsApp(false);
+    }
+  };
 
   if (!isOpen || !contact) return null;
 
@@ -87,9 +173,43 @@ export default function ContactDetailModal({
           </button>
         </div>
 
+        {/* Tab Switcher */}
+        <div className="bg-[#081428] px-5 py-2 flex items-center gap-2 border-b border-white/10 text-xs shrink-0 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setModalTab('profile')}
+            className={`px-3 py-1.5 rounded font-bold text-xs transition-colors cursor-pointer whitespace-nowrap ${
+              modalTab === 'profile' ? 'bg-[#C8A147] text-[#081428]' : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            Profile & Requirements
+          </button>
+          <button
+            type="button"
+            onClick={() => setModalTab('recordings')}
+            className={`px-3 py-1.5 rounded font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+              modalTab === 'recordings' ? 'bg-[#C8A147] text-[#081428]' : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            <FileAudio className="w-3.5 h-3.5" />
+            <span>Call Recordings ({recordings.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setModalTab('whatsapp')}
+            className={`px-3 py-1.5 rounded font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+              modalTab === 'whatsapp' ? 'bg-[#C8A147] text-[#081428]' : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+            <span>WhatsApp Chat ({whatsAppMessages.length})</span>
+          </button>
+        </div>
+
         {/* Modal Body (Scrollable Read-Only Information) */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-[#FAF8F5] text-xs">
-          
+          {modalTab === 'profile' && (
+            <>
           {/* Section 1: Contact Information */}
           <div className="bg-white p-4 rounded-xl border border-[#E8E4DC] shadow-2xs space-y-3">
             <div className="flex items-center justify-between border-b border-[#E8E4DC] pb-2">
@@ -339,6 +459,271 @@ export default function ContactDetailModal({
                     <span className="font-mono text-[11px] text-blue-600 truncate block">{contact.landing_page_url}</span>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+            </>
+          )}
+
+          {/* Tab 2: Call Audio Recordings */}
+          {modalTab === 'recordings' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-[#E8E4DC]">
+                <div>
+                  <h4 className="text-xs font-bold text-[#081428] uppercase tracking-wide flex items-center gap-1.5">
+                    <FileAudio className="w-4 h-4 text-[#C8A147]" />
+                    <span>Client Call Recordings ({recordings.length})</span>
+                  </h4>
+                  <p className="text-[11px] text-[#6E6E6E]">
+                    Audio call records linked to {contact.name || 'this client'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (contact?.id) {
+                      setLoadingRecordings(true);
+                      fetchApi(`/recordings?contact_id=${contact.id}&per_page=50`)
+                        .then((res) => {
+                          if (res && res.recordings && res.recordings.data) {
+                            setRecordings(res.recordings.data);
+                          } else if (res && res.data) {
+                            setRecordings(res.data);
+                          } else {
+                            setRecordings([]);
+                          }
+                        })
+                        .catch(() => setRecordings([]))
+                        .finally(() => setLoadingRecordings(false));
+                    }
+                  }}
+                  className="p-1.5 rounded hover:bg-slate-200 text-slate-500 hover:text-[#081428] transition-colors cursor-pointer"
+                  title="Refresh recordings"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingRecordings ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+
+              {loadingRecordings ? (
+                <div className="p-8 text-center text-xs text-[#6E6E6E]">
+                  <RefreshCw className="w-5 h-5 animate-spin text-[#C8A147] mx-auto mb-2" />
+                  <span>Loading call recordings...</span>
+                </div>
+              ) : recordings.length > 0 ? (
+                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                  {recordings.map((rec: any) => {
+                    const audioSrc = getPlayableAudioUrl(rec.audio_url, rec.id);
+                    const isIncoming = rec.direction === 'inbound';
+                    return (
+                      <div
+                        key={rec.id}
+                        className="bg-white p-3.5 rounded-xl border border-[#E8E4DC] shadow-2xs space-y-2 hover:border-[#C8A147]/50 transition-colors"
+                      >
+                        <div className="flex items-center justify-between text-xs gap-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`p-1.5 rounded-full ${
+                                isIncoming ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
+                              }`}
+                              title={isIncoming ? 'Inbound Client Call' : 'Outbound Advisor Call'}
+                            >
+                              {isIncoming ? (
+                                <PhoneIncoming className="w-3.5 h-3.5" />
+                              ) : (
+                                <PhoneOutgoing className="w-3.5 h-3.5" />
+                              )}
+                            </span>
+                            <div>
+                              <div className="font-bold text-[#081428] text-xs">
+                                {isIncoming ? 'Inbound Call' : 'Outbound Call'} ·{' '}
+                                <span className="font-mono text-[11px] text-[#6E6E6E]">
+                                  {rec.duration_formatted || (rec.duration ? `${rec.duration}s` : '00:00')}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                {rec.call_start ? new Date(rec.call_start).toLocaleString() : '—'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {rec.extension && (
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                                Ext {rec.extension}
+                              </span>
+                            )}
+                            {audioSrc && (
+                              <a
+                                href={audioSrc}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                download
+                                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+                                title="Download Audio File"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Audio Streaming Player */}
+                        {audioSrc && (
+                          <div className="pt-1">
+                            <audio controls preload="none" className="w-full h-8 rounded accent-[#C8A147]">
+                              <source src={audioSrc} type="audio/wav" />
+                              <source src={audioSrc} type="audio/mpeg" />
+                              Your browser does not support audio playback.
+                            </audio>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-[#FAF8F5]">
+                          <span>Advisor: <strong>{rec.agent_name || rec.user?.name || 'Assigned Agent'}</strong></span>
+                          <span className="font-mono text-slate-400">{rec.caller_number || rec.destination_number || ''}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-8 bg-white border border-dashed border-[#E8E4DC] rounded-xl text-center space-y-2">
+                  <FileAudio className="w-8 h-8 text-slate-300 mx-auto" />
+                  <div className="text-xs font-bold text-[#081428]">No Call Audio Recordings Found</div>
+                  <p className="text-[11px] text-[#6E6E6E] max-w-sm mx-auto">
+                    When calls are conducted with this client phone number via the telephony system, call recordings will appear here automatically.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tab 3: WhatsApp Chat History */}
+          {modalTab === 'whatsapp' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-[#E8E4DC]">
+                <div>
+                  <h4 className="text-xs font-bold text-[#081428] uppercase tracking-wide flex items-center gap-1.5">
+                    <MessageSquare className="w-4 h-4 text-emerald-600" />
+                    <span>WhatsApp Conversation</span>
+                  </h4>
+                  <p className="text-[11px] text-[#6E6E6E]">
+                    Direct chat with {contact.name || 'Client'} ({contact.phone || 'No phone'})
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/whatsapp?phone=${encodeURIComponent(contact.phone || '')}&name=${encodeURIComponent(contact.name || '')}`}
+                    onClick={onClose}
+                    className="text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                  >
+                    <span>Open in WhatsApp</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (contact?.id) {
+                        setLoadingWhatsApp(true);
+                        fetchApi(`/whatsapp/contact-history?contact_id=${contact.id}`)
+                          .then((res) => {
+                            if (res && res.success) {
+                              setWhatsAppChat(res.chat || null);
+                              setWhatsAppMessages(res.messages || []);
+                            } else {
+                              setWhatsAppMessages([]);
+                            }
+                          })
+                          .catch(() => setWhatsAppMessages([]))
+                          .finally(() => setLoadingWhatsApp(false));
+                      }
+                    }}
+                    className="p-1.5 rounded hover:bg-slate-200 text-slate-500 hover:text-[#081428] transition-colors cursor-pointer"
+                    title="Refresh chat"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingWhatsApp ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Messages Feed */}
+              {loadingWhatsApp ? (
+                <div className="p-8 text-center text-xs text-[#6E6E6E]">
+                  <RefreshCw className="w-5 h-5 animate-spin text-emerald-600 mx-auto mb-2" />
+                  <span>Loading WhatsApp conversation...</span>
+                </div>
+              ) : whatsAppMessages.length > 0 ? (
+                <div className="p-4 bg-[#EFEAE2] rounded-xl border border-[#E8E4DC] max-h-[360px] overflow-y-auto space-y-2.5 text-xs">
+                  {whatsAppMessages.map((msg: any, mIdx: number) => {
+                    const isMe = msg.from_me;
+                    return (
+                      <div
+                        key={msg.id || mIdx}
+                        className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                      >
+                        <div
+                          className={`p-2.5 rounded-xl max-w-[80%] shadow-2xs text-xs space-y-0.5 ${
+                            isMe
+                              ? 'bg-[#DCF8C6] text-[#081428] rounded-tr-none'
+                              : 'bg-white text-[#081428] rounded-tl-none border border-slate-200'
+                          }`}
+                        >
+                          <div className="leading-relaxed whitespace-pre-wrap">{msg.text}</div>
+                          <div className="flex items-center justify-end gap-1 text-[9px] text-slate-400 pt-0.5">
+                            <span>
+                              {msg.timestamp
+                                ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                : ''}
+                            </span>
+                            {isMe && (
+                              <span className={msg.status === 'read' ? 'text-[#34B7F1]' : 'text-slate-400'}>
+                                ✓✓
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-8 bg-white border border-dashed border-[#E8E4DC] rounded-xl text-center space-y-2">
+                  <MessageSquare className="w-8 h-8 text-emerald-400 mx-auto" />
+                  <div className="text-xs font-bold text-[#081428]">No WhatsApp Messages Yet</div>
+                  <p className="text-[11px] text-[#6E6E6E] max-w-sm mx-auto">
+                    Type a message below to start chatting with {contact.name || 'this client'} directly on WhatsApp.
+                  </p>
+                </div>
+              )}
+
+              {/* Inline Quick Message Sender */}
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  value={newWhatsAppMsg}
+                  onChange={(e) => setNewWhatsAppMsg(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendModalWhatsApp();
+                    }
+                  }}
+                  placeholder="Type a WhatsApp message to client..."
+                  className="flex-1 p-2.5 bg-white border border-[#E8E4DC] rounded-lg text-xs text-[#081428] focus:border-emerald-500 focus:outline-none shadow-2xs"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendModalWhatsApp}
+                  disabled={sendingWhatsApp || !newWhatsAppMsg.trim()}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-50 cursor-pointer shadow-xs font-semibold text-xs flex items-center gap-1.5"
+                >
+                  {sendingWhatsApp ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  <span>Send</span>
+                </button>
               </div>
             </div>
           )}
