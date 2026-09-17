@@ -12,7 +12,8 @@ const fs      = require('fs');
 const path    = require('path');
 
 const app  = express();
-const PORT = 5001;
+const PORT = process.env.PORT || 5001;
+const LARAVEL_URL = (process.env.LARAVEL_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -90,7 +91,7 @@ async function initClient() {
 
     // Notify Laravel
     try {
-      await fetch('http://127.0.0.1:8000/api/whatsapp/channels/1/pair-confirm', {
+      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/1/pair-confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone_number: phone, platform: 'whatsapp-web.js (Puppeteer)' }),
@@ -117,7 +118,7 @@ async function initClient() {
 
     // Notify Laravel to mark channel as disconnected
     try {
-      await fetch('http://127.0.0.1:8000/api/whatsapp/channels/1/disconnect', { method: 'POST' });
+      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/1/disconnect`, { method: 'POST' });
     } catch (_) {}
 
     // Reinitialize to display fresh QR code for next scan
@@ -136,7 +137,7 @@ async function initClient() {
       fs.rmSync(path.join(__dirname, 'auth_sessions'), { recursive: true, force: true });
     } catch (_) {}
     try {
-      await fetch('http://127.0.0.1:8000/api/whatsapp/channels/1/disconnect', { method: 'POST' });
+      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/1/disconnect`, { method: 'POST' });
     } catch (_) {}
     await sleep(2000);
     initClient();
@@ -266,7 +267,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function postAckWebhook(data) {
   try {
-    await fetch('http://127.0.0.1:8000/api/whatsapp/webhook', {
+    await fetch(`${LARAVEL_URL}/api/whatsapp/webhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -283,7 +284,7 @@ async function postAckWebhook(data) {
 
 async function postWebhook(data) {
   try {
-    await fetch('http://127.0.0.1:8000/api/whatsapp/webhook', {
+    await fetch(`${LARAVEL_URL}/api/whatsapp/webhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -450,7 +451,7 @@ async function syncHistoryToLaravel() {
 
 async function sendBatch(chats) {
   try {
-    const res = await fetch('http://127.0.0.1:8000/api/whatsapp/sync-phone-data', {
+    const res = await fetch(`${LARAVEL_URL}/api/whatsapp/sync-phone-data`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ channel_id: 1, chats, contacts: [] }),
