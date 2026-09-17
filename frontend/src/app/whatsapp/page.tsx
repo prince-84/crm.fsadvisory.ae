@@ -403,8 +403,11 @@ export default function WhatsAppPage() {
       const chatList = data.chats || [];
       setChats(chatList);
 
-      // Select matching chat from URL params or first chat on initial load
-      if (!selectedChatIdRef.current && chatList.length > 0) {
+      if (chatList.length === 0) {
+        setSelectedChat(null);
+        setMessages([]);
+        selectedChatIdRef.current = null;
+      } else if (!selectedChatIdRef.current) {
         let selected = false;
         if (typeof window !== 'undefined') {
           const params = new URLSearchParams(window.location.search);
@@ -426,10 +429,14 @@ export default function WhatsAppPage() {
         if (!selected) {
           handleSelectChat(chatList[0]);
         }
-      } else if (selectedChatIdRef.current) {
+      } else {
         const current = chatList.find((c: any) => c.id === selectedChatIdRef.current);
         if (current) {
           setSelectedChat(current);
+        } else {
+          setSelectedChat(null);
+          setMessages([]);
+          selectedChatIdRef.current = null;
         }
       }
     } catch (e) {
