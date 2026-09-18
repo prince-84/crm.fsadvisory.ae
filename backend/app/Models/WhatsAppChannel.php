@@ -12,6 +12,7 @@ class WhatsAppChannel extends Model
     protected $table = 'whatsapp_channels';
 
     protected $fillable = [
+        'user_id',
         'session_name',
         'agent_name',
         'agent_extension',
@@ -29,6 +30,11 @@ class WhatsAppChannel extends Model
         'last_sync_at' => 'datetime',
         'battery_level' => 'integer',
     ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
 
     public function chats()
     {

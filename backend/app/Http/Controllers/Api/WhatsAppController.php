@@ -9,6 +9,7 @@ use App\Models\WhatsAppMessage;
 use App\Models\Contact;
 use App\Models\Opportunity;
 use App\Models\Activity;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
@@ -26,19 +27,136 @@ class WhatsAppController extends Controller
     ];
 
     /**
+     * Synchronize WhatsApp channels with CRM users in database
+     */
+    protected function syncChannelsFromUsers(): void
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('whatsapp_channels')) {
+            return;
+        }
+
+        $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
+
+        // 1. If database channels are empty, seed default agents
+        if (WhatsAppChannel::count() === 0) {
+            foreach (self::DEFAULT_AGENTS as $ag) {
+                WhatsAppChannel::create([
+                    'session_name' => $ag['name'],
+                    'agent_name' => $ag['name'],
+                    'agent_extension' => $ag['ext'],
+                    'phone_number' => $ag['phone'],
+                    'status' => 'disconnected',
+                    'platform' => 'WhatsApp Multi-Device',
+                    'battery_level' => 100,
+                ]);
+            }
+        }
+
+        // 2. Link existing channels with CRM users or create dedicated channel for each user
+        $users = User::all();
+        foreach ($users as $crmUser) {
+            if ($hasUserIdCol) {
+                $userChan = WhatsAppChannel::where('user_id', $crmUser->id)->first();
+                if ($userChan) {
+                    continue;
+                }
+            }
+
+            // Attempt to link to an unlinked channel matching name or phone
+            $matched = WhatsAppChannel::where(function ($q) use ($crmUser) {
+                $q->where('agent_name', $crmUser->name)
+                  ->orWhere('session_name', $crmUser->name);
+                if (!empty($crmUser->phone)) {
+                    $cleanPhone = preg_replace('/[^0-9]/', '', $crmUser->phone);
+                    if (strlen($cleanPhone) >= 7) {
+                        $last7 = substr($cleanPhone, -7);
+                        $q->orWhere('phone_number', 'like', "%{$last7}%");
+                    }
+                }
+            })->first();
+
+            if ($matched) {
+                if ($hasUserIdCol && !$matched->user_id) {
+                    $matched->update(['user_id' => $crmUser->id]);
+                }
+            } else {
+                // Auto-create a database channel for this CRM user
+                WhatsAppChannel::create([
+                    'user_id' => $hasUserIdCol ? $crmUser->id : null,
+                    'session_name' => $crmUser->name,
+                    'agent_name' => $crmUser->name,
+                    'agent_extension' => substr($crmUser->phone ?? '', -4) ?: '1000',
+                    'phone_number' => $crmUser->phone,
+                    'status' => 'disconnected',
+                    'platform' => 'WhatsApp Multi-Device',
+                    'battery_level' => 100,
+                ]);
+            }
+        }
+    }
+
+    /**
      * List all WhatsApp channels / connected devices
      */
     public function channels(Request $request)
     {
-        $channels = WhatsAppChannel::withCount('chats')->get();
+        $this->syncChannelsFromUsers();
 
-        if ($channels->isEmpty()) {
-            $this->seedInitialChannels();
-            $channels = WhatsAppChannel::withCount('chats')->get();
+        $user = $request->user();
+        $isSuper = false;
+        if ($user) {
+            $role = strtolower($user->role ?? '');
+            $isSuper = in_array($role, ['super admin', 'agency owner', 'owner', 'ceo', 'admin']) 
+                || in_array('*', $user->effective_permissions ?? []);
+        }
+
+        $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
+
+        if ($isSuper) {
+            // Super Admin can view all accounts/channels in the database
+            $channels = WhatsAppChannel::withCount('chats')->orderBy('id', 'asc')->get();
+            $currentUserChannel = $channels->firstWhere('user_id', $user?->id) ?? $channels->first();
+        } else {
+            // Individual user: ONLY return their own account/channel
+            $query = WhatsAppChannel::withCount('chats');
+            if ($user) {
+                $query->where(function ($q) use ($user, $hasUserIdCol) {
+                    if ($hasUserIdCol) {
+                        $q->where('user_id', $user->id);
+                    }
+                    $q->orWhere('agent_name', $user->name)
+                      ->orWhere('session_name', $user->name);
+                    if (!empty($user->phone)) {
+                        $cleanPhone = preg_replace('/[^0-9]/', '', $user->phone);
+                        if (strlen($cleanPhone) >= 7) {
+                            $last7 = substr($cleanPhone, -7);
+                            $q->orWhere('phone_number', 'like', "%{$last7}%");
+                        }
+                    }
+                });
+            }
+            $channels = $query->get();
+
+            // Auto-create if not present
+            if ($channels->isEmpty() && $user) {
+                $newChan = WhatsAppChannel::create([
+                    'user_id' => $hasUserIdCol ? $user->id : null,
+                    'session_name' => $user->name,
+                    'agent_name' => $user->name,
+                    'phone_number' => $user->phone,
+                    'status' => 'disconnected',
+                    'platform' => 'WhatsApp Multi-Device',
+                    'battery_level' => 100,
+                ]);
+                $channels = collect([$newChan]);
+            }
+            $currentUserChannel = $channels->first();
         }
 
         return response()->json([
             'channels' => $channels,
+            'is_super_admin' => $isSuper,
+            'current_user_channel' => $currentUserChannel,
             'total_connected' => $channels->where('status', 'connected')->count(),
             'total_channels' => $channels->count(),
         ]);
@@ -50,26 +168,62 @@ class WhatsAppController extends Controller
     public function generateQr(Request $request)
     {
         $channelId = $request->input('channel_id');
+        $user = $request->user();
+        $isSuper = false;
+        if ($user) {
+            $role = strtolower($user->role ?? '');
+            $isSuper = in_array($role, ['super admin', 'agency owner', 'owner', 'ceo', 'admin']) 
+                || in_array('*', $user->effective_permissions ?? []);
+        }
+
+        // Non-super-admin is locked to their personal channel
+        if (!$isSuper && $user) {
+            $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
+            $chanQ = WhatsAppChannel::query();
+            if ($hasUserIdCol) {
+                $chanQ->where('user_id', $user->id);
+            }
+            $userChan = $chanQ->orWhere('agent_name', $user->name)
+                ->orWhere('session_name', $user->name)
+                ->first();
+            if ($userChan) {
+                $channelId = $userChan->id;
+            }
+        }
+
         $channel = WhatsAppChannel::find($channelId);
 
         if (!$channel) {
+            $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
             $channel = WhatsAppChannel::firstOrCreate(
-                ['session_name' => $request->input('session_name', 'Agency Owner Main')],
+                ['session_name' => $request->input('session_name', $user ? $user->name : 'Agency Owner Main')],
                 [
-                    'agent_name' => $request->input('agent_name', 'Agency Owner'),
+                    'user_id' => ($hasUserIdCol && $user) ? $user->id : null,
+                    'agent_name' => $request->input('agent_name', $user ? $user->name : 'Agency Owner'),
                     'agent_extension' => $request->input('agent_extension', 'OWNER'),
                     'status' => 'qr_ready',
                 ]
             );
         }
 
+        // If client requested a fresh QR or logout of previous session, reset gateway
+        if ($request->boolean('force_refresh', false) || $request->boolean('logout_first', false)) {
+            try {
+                \Illuminate\Support\Facades\Http::timeout(6)->post($this->gatewayUrl() . '/api/logout');
+                sleep(2);
+            } catch (\Exception $e) {}
+        }
+
         // Attempt to fetch real cryptographic pairing QR from WhatsApp Gateway
         $realQrCode = null;
         $realQrImage = null;
+        $gatewayStatus = 'disconnected';
+        $connectedUser = null;
         try {
-            $gwRes = \Illuminate\Support\Facades\Http::timeout(3)->get($this->gatewayUrl() . '/api/qr');
+            $gwRes = \Illuminate\Support\Facades\Http::timeout(4)->get($this->gatewayUrl() . '/api/qr');
             if ($gwRes->successful()) {
                 $gwData = $gwRes->json();
+                $gatewayStatus = $gwData['status'] ?? 'disconnected';
                 if (!empty($gwData['qr_code'])) {
                     $realQrCode = $gwData['qr_code'];
                 }
@@ -77,16 +231,27 @@ class WhatsAppController extends Controller
                     $realQrImage = $gwData['qr_image'];
                 }
             }
+
+            // Also check status if QR wasn't returned
+            if (!$realQrCode && !$realQrImage) {
+                $stRes = \Illuminate\Support\Facades\Http::timeout(3)->get($this->gatewayUrl() . '/api/status');
+                if ($stRes->successful()) {
+                    $stData = $stRes->json();
+                    $gatewayStatus = $stData['status'] ?? $gatewayStatus;
+                    $connectedUser = $stData['user'] ?? null;
+                }
+            }
         } catch (\Exception $e) {
             // Gateway not running or connecting
         }
 
-        // Use authentic WhatsApp pairing code if gateway is running, else fallback to dynamic string
-        $qrPayload = $realQrCode ?? ('2@' . Str::random(44) . ',' . Str::random(32) . ',' . time() . ',1');
+        // Determine if this is an authentic gateway QR
+        $isReal = !empty($realQrCode) || !empty($realQrImage);
+        $qrPayload = $realQrCode ?? ($isReal ? '' : ('2@' . Str::random(44) . ',' . Str::random(32) . ',' . time() . ',1'));
 
         $channel->update([
             'qr_code' => $qrPayload,
-            'status' => 'qr_ready',
+            'status' => $gatewayStatus === 'connected' ? 'connected' : 'qr_ready',
             'last_sync_at' => now(),
         ]);
 
@@ -95,7 +260,9 @@ class WhatsAppController extends Controller
             'channel' => $channel,
             'qr_code' => $qrPayload,
             'qr_image' => $realQrImage,
-            'is_real' => !empty($realQrCode) || !empty($realQrImage),
+            'is_real' => $isReal,
+            'gateway_status' => $gatewayStatus,
+            'connected_user' => $connectedUser,
             'expires_in' => 45, // seconds
             'instructions' => [
                 '1. Open WhatsApp on your mobile phone',
@@ -139,6 +306,11 @@ class WhatsAppController extends Controller
     public function disconnect(Request $request, $id)
     {
         $channel = WhatsAppChannel::findOrFail($id);
+
+        try {
+            \Illuminate\Support\Facades\Http::timeout(6)->post($this->gatewayUrl() . '/api/logout');
+        } catch (\Exception $e) {}
+
         $channel->update([
             'status' => 'disconnected',
             'qr_code' => null,
@@ -192,6 +364,42 @@ class WhatsAppController extends Controller
         try {
             $res = \Illuminate\Support\Facades\Http::timeout(15)->post($this->gatewayUrl() . '/api/sync');
             return response()->json($res->json(), $res->status());
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 200);
+        }
+    }
+
+    /**
+     * Proxy WhatsApp Gateway logout (clears session and triggers fresh QR generation)
+     */
+    public function gatewayLogout()
+    {
+        try {
+            $res = \Illuminate\Support\Facades\Http::timeout(10)->post($this->gatewayUrl() . '/api/logout');
+            WhatsAppChannel::query()->update([
+                'status' => 'disconnected',
+                'qr_code' => null,
+                'connected_at' => null,
+            ]);
+            return response()->json($res->json() ?? ['success' => true, 'message' => 'Logged out'], 200);
+        } catch (\Exception $e) {
+            WhatsAppChannel::query()->update([
+                'status' => 'disconnected',
+                'qr_code' => null,
+                'connected_at' => null,
+            ]);
+            return response()->json(['success' => true, 'message' => 'Logged out locally'], 200);
+        }
+    }
+
+    /**
+     * Proxy WhatsApp Gateway restart
+     */
+    public function gatewayRestart()
+    {
+        try {
+            $res = \Illuminate\Support\Facades\Http::timeout(10)->post($this->gatewayUrl() . '/api/restart');
+            return response()->json($res->json() ?? ['success' => true, 'message' => 'Restarted'], 200);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 200);
         }
@@ -411,8 +619,35 @@ class WhatsAppController extends Controller
             }
         ]);
 
-        if ($request->has('channel_id') && $request->channel_id !== 'all') {
-            $query->where('channel_id', $request->channel_id);
+        $user = $request->user();
+        $isSuper = false;
+        if ($user) {
+            $role = strtolower($user->role ?? '');
+            $isSuper = in_array($role, ['super admin', 'agency owner', 'owner', 'ceo', 'admin']) 
+                || in_array('*', $user->effective_permissions ?? []);
+        }
+
+        if ($isSuper) {
+            if ($request->has('channel_id') && $request->channel_id !== 'all') {
+                $query->where('channel_id', $request->channel_id);
+            }
+        } else {
+            // Individual user: strictly scoped to their own channel
+            $userChan = null;
+            $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
+            if ($hasUserIdCol && $user) {
+                $userChan = WhatsAppChannel::where('user_id', $user->id)->first();
+            }
+            if (!$userChan && $user) {
+                $userChan = WhatsAppChannel::where('agent_name', $user->name)
+                    ->orWhere('session_name', $user->name)
+                    ->first();
+            }
+            if ($userChan) {
+                $query->where('channel_id', $userChan->id);
+            } else {
+                $query->whereRaw('1 = 0');
+            }
         }
 
         if ($request->has('unread_only') && $request->unread_only == 'true') {

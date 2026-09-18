@@ -136,6 +136,8 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::get('/whatsapp/gateway/status', [WhatsAppController::class, 'gatewayStatus']);
     Route::get('/whatsapp/gateway/qr', [WhatsAppController::class, 'gatewayQr']);
     Route::post('/whatsapp/gateway/sync', [WhatsAppController::class, 'gatewaySync']);
+    Route::post('/whatsapp/gateway/logout', [WhatsAppController::class, 'gatewayLogout']);
+    Route::post('/whatsapp/gateway/restart', [WhatsAppController::class, 'gatewayRestart']);
 
     // Reports & Analytics
     Route::get('/reports/team-performance', [ReportController::class, 'teamPerformance']);

@@ -113,6 +113,11 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - ✓✓ (Blue `#34B7F1`) `read`: Double blue checkmarks only after the recipient opens and reads the conversation (`ack = 3` or `4`).
   - **Gateway Real-Time Ack Ingestion**: Added `client.on('message_ack')` listener in `whatsapp-gateway/server.js` forwarding delivery events to Laravel's `/api/whatsapp/webhook` to update `whatsapp_messages.status` in real time.
   - **History Sync Status Attribution**: Enhanced `syncHistoryToLaravel()` to extract genuine `m.ack` properties from WhatsApp Web models, preserving true sent, delivered, and read states on historical messages.
+- **39 — Role-Scoped WhatsApp Multi-Account Management & Personal Channel Isolation**:
+  - **Super Admin Multi-Account Switcher**: Dynamically loads all registered agent WhatsApp channels directly from the database (`whatsapp_channels` table linked to `user_id`). Super Admins and Agency Owners retain access to the full account switcher dropdown (`All Accounts (N) (Admin View)`) to monitor, mirror, or link any advisor device.
+  - **Individual User Channel Isolation**: Non-super-admin users (Sales Consultants, Telesales Agents, Advisors) are strictly locked to their own individual account. The switcher dropdown is automatically hidden and replaced with a personal account status badge (`My Account: [Agent Name] (🟢 Online / ⚪ Offline)`).
+  - **Backend Access Scoping & Auto-Provisioning**: Enforced database-level scoping in `WhatsAppController@channels` and `WhatsAppController@chats`, preventing cross-account conversation snooping. Automatically auto-provisions and links a dedicated channel record for each CRM user upon login.
+  - **Session Unlinking & Re-Pairing Workflow**: Integrated disconnect proxy endpoint (`/api/whatsapp/gateway/logout`) allowing users to unlink existing paired sessions and generate fresh QR codes without manual backend intervention.
 
 ### Enterprise Access, Governance & Distribution
 - **36 — Enterprise User Management & Granular Permission Matrix (`/users`)**:
@@ -1930,6 +1935,26 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Added dedicated dynamic tabs:
       - **`Call Recordings (N)`**: Filtered specifically for calls associated with the opportunity or client phone number, complete with in-browser audio players and duration metrics.
       - **`WhatsApp Chat (N)`**: Full conversation history between the assigned advisor and the opportunity's primary client, enabling immediate follow-up and floor plan/brochure discussion directly within the deal workspace.
+
+- **151 — WhatsApp Gateway Session Unlink, Live Cryptographic QR Regeneration & Real-Time Pairing Diagnostics (`backend/app/Http/Controllers/Api/WhatsAppController.php`, `backend/routes/api.php`, `frontend/src/app/whatsapp/page.tsx`)**:
+  - **Issue Investigated (Mobile Phone Scans QR but Does Not Log In / Mirror)**:
+    - When scanning the QR code on `https://crm.fsadvisory.ae/whatsapp`, the phone camera scanned the code, but WhatsApp failed to link or log in.
+    - **Technical Root Cause Diagnostic**:
+      1. On the production server, the WhatsApp Gateway Node.js Puppeteer daemon (`server.js`) was already in a `"connected"` state (held by an old or previously paired session), returning `qr_code: null` and `qr_image: null`.
+      2. When `/whatsapp/channels/generate-qr` was called without an active QR from Puppeteer, Laravel fell back to generating an arbitrary cryptographic placeholder string (`'2@' . Str::random(...)`) with `is_real: false`.
+      3. The phone's camera scanned the placeholder string, but WhatsApp's mobile application could not complete the cryptographic handshake with WhatsApp's servers because there was no active web socket listening for that random string.
+      4. Furthermore, there was no proxy route in Laravel to invoke `/api/logout` on the gateway to flush stale `auth_sessions` and command Puppeteer to regenerate an authentic WhatsApp QR code.
+  - **Technical Architecture Upgrades**:
+    - **Gateway Logout & Restart Proxy Routes (`backend/routes/api.php`)**:
+      - Registered `POST /api/whatsapp/gateway/logout` and `POST /api/whatsapp/gateway/restart`.
+    - **Full Gateway Session Flush in Controller (`WhatsAppController.php`)**:
+      - Implemented `gatewayLogout()`: Dispatches an HTTP call to the Node.js daemon's `/api/logout` to terminate the headless browser session, recursively remove `auth_sessions/`, mark all channels in the CRM as `disconnected`, and trigger `initClient()` for fresh QR code generation.
+      - Enhanced `disconnect()`: Automatically notifies the gateway daemon to clear the Puppeteer session when an advisor unlinks a channel.
+      - Upgraded `generateQr()`: Added support for `force_refresh` and `logout_first` parameters. If the gateway is currently connected or a fresh scan is requested, it flushes the stale session and returns authentic QR codes with `is_real` and `connected_user` telemetry.
+    - **Live QR Modal Diagnostics & 1-Click Unlink Action (`frontend/src/app/whatsapp/page.tsx`)**:
+      - **Active Session Alert Card**: When an active session is detected on the gateway, the modal displays a clear notice with the paired account name/number and provides a dedicated **`[ Disconnect Current Session & Scan New WhatsApp ]`** action.
+      - **Authentic QR Badge**: Dynamically displays a green **`Authentic WhatsApp QR`** badge when the QR code is generated directly from WhatsApp's cryptographic socket, ensuring advisors only scan real, functional QR codes.
+      - **Automated Re-initialization**: Clicking "Unlink" or "Refresh QR" automatically purges stale tokens and re-generates an authentic live QR code within 2.5 seconds.
 
 ---
 

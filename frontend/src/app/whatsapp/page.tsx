@@ -40,7 +40,8 @@ import {
   Volume2,
   AlertTriangle,
   Download,
-  Image as ImageIcon
+  Image as ImageIcon,
+  LogOut
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import Swal from 'sweetalert2';
@@ -216,8 +217,9 @@ export default function WhatsAppPage() {
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
 
-  // Current Logged-in CRM User
+  // Current Logged-in CRM User & Permissions
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
 
   useEffect(() => {
     try {
@@ -225,6 +227,13 @@ export default function WhatsAppPage() {
       if (raw) setCurrentUser(JSON.parse(raw));
     } catch (_) {}
   }, []);
+
+  const isSuperAdminUser = useMemo(() => {
+    if (isSuperAdmin) return true;
+    const role = (currentUser?.role || '').toLowerCase();
+    return ['super admin', 'agency owner', 'owner', 'ceo', 'admin'].includes(role)
+      || Boolean(currentUser?.effective_permissions?.includes('*'));
+  }, [isSuperAdmin, currentUser]);
 
   // New Chat Modal State (WhatsApp Web Style)
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
@@ -240,6 +249,10 @@ export default function WhatsAppPage() {
   const [qrImageData, setQrImageData] = useState<string>(''); // base64 PNG from gateway
   const [qrTimer, setQrTimer] = useState<number>(45);
   const [pairingLoading, setPairingLoading] = useState<boolean>(false);
+  const [isRealQr, setIsRealQr] = useState<boolean>(false);
+  const [qrGatewayStatus, setQrGatewayStatus] = useState<string>('disconnected');
+  const [qrConnectedUser, setQrConnectedUser] = useState<any>(null);
+  const [isUnlinking, setIsUnlinking] = useState<boolean>(false);
 
   // Template Replies & Emojis
   const [showTemplates, setShowTemplates] = useState(false);
@@ -405,6 +418,16 @@ export default function WhatsAppPage() {
       const data = await fetchApi('/whatsapp/channels');
       const chList = data.channels || [];
       setChannels(chList);
+
+      const isSuper = data.is_super_admin !== undefined
+        ? Boolean(data.is_super_admin)
+        : ['super admin', 'agency owner', 'owner', 'ceo', 'admin'].includes((currentUser?.role || '').toLowerCase());
+      setIsSuperAdmin(isSuper);
+
+      // If regular user (non-super-admin), lock selection to their own channel
+      if (!isSuper && chList.length > 0) {
+        setSelectedChannelId(String(chList[0].id));
+      }
 
       try {
         const gwData = await fetchGateway('/api/status');
@@ -959,6 +982,7 @@ export default function WhatsAppPage() {
     setQrTimer(45);
     setQrImageData('');
     setQrCodeData('');
+    setIsRealQr(false);
     setIsQrModalOpen(true);
 
     // 1. Immediately request QR from CRM Backend API (Ultra-fast <100ms, guaranteed on Vercel & HTTPS)
@@ -976,6 +1000,9 @@ export default function WhatsAppPage() {
       if (backendRes?.qr_code) {
         setQrCodeData(backendRes.qr_code);
       }
+      if (backendRes?.is_real) setIsRealQr(true);
+      if (backendRes?.gateway_status) setQrGatewayStatus(backendRes.gateway_status);
+      if (backendRes?.connected_user) setQrConnectedUser(backendRes.connected_user);
     } catch (err) {
       console.warn('Backend QR fetch failed', err);
     }
@@ -985,20 +1012,27 @@ export default function WhatsAppPage() {
       const data = await fetchGateway('/api/qr');
       if (data?.qr_image) {
         setQrImageData(data.qr_image);
+        setIsRealQr(true);
       }
       if (data?.qr_code) {
         setQrCodeData(data.qr_code);
+        setIsRealQr(true);
       }
+      if (data?.status) setQrGatewayStatus(data.status);
+      if (data?.user) setQrConnectedUser(data.user);
     } catch (_) {}
   };
 
-  const handleRefreshQr = async () => {
+  const handleRefreshQr = async (forceLogout = false) => {
     setQrTimer(45);
     // 1. Refresh from backend API immediately
     try {
       const backendRes = await fetchApi('/whatsapp/channels/generate-qr', {
         method: 'POST',
-        body: JSON.stringify({ channel_id: qrChannelId || 1 }),
+        body: JSON.stringify({ 
+          channel_id: qrChannelId || 1,
+          force_refresh: forceLogout,
+        }),
       });
       if (backendRes?.qr_image) {
         setQrImageData(backendRes.qr_image);
@@ -1006,6 +1040,9 @@ export default function WhatsAppPage() {
       if (backendRes?.qr_code) {
         setQrCodeData(backendRes.qr_code);
       }
+      if (backendRes?.is_real) setIsRealQr(true);
+      if (backendRes?.gateway_status) setQrGatewayStatus(backendRes.gateway_status);
+      if (backendRes?.connected_user) setQrConnectedUser(backendRes.connected_user);
     } catch (err) {
       console.warn('Backend QR refresh failed', err);
     }
@@ -1015,11 +1052,34 @@ export default function WhatsAppPage() {
       const data = await fetchGateway('/api/qr');
       if (data?.qr_image) {
         setQrImageData(data.qr_image);
+        setIsRealQr(true);
       }
       if (data?.qr_code) {
         setQrCodeData(data.qr_code);
+        setIsRealQr(true);
       }
+      if (data?.status) setQrGatewayStatus(data.status);
+      if (data?.user) setQrConnectedUser(data.user);
     } catch (_) {}
+  };
+
+  const handleUnlinkAndScanNew = async () => {
+    setIsUnlinking(true);
+    setQrCodeData('');
+    setQrImageData('');
+    setIsRealQr(false);
+    try {
+      await fetchApi('/whatsapp/gateway/logout', { method: 'POST' });
+    } catch (_) {}
+    try {
+      await fetchGateway('/api/logout', { method: 'POST' });
+    } catch (_) {}
+
+    setTimeout(async () => {
+      setIsUnlinking(false);
+      await handleRefreshQr(true);
+      await loadChannels();
+    }, 2500);
   };
 
   const handleConfirmPairing = async () => {
@@ -1162,33 +1222,51 @@ export default function WhatsAppPage() {
 
             {/* Right: Account Dropdown & Action Buttons (Strictly Inline) */}
             <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
-              {/* Channel Selector */}
-              <div className="flex items-center gap-1.5 bg-[#0D1E38] border border-[#1E3A66] px-2.5 py-1.5 rounded-md">
-                <Smartphone className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
-                <span className="text-[11px] font-semibold text-[#B0C0D8]">Account:</span>
-                <select
-                  value={selectedChannelId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSelectedChannelId(val);
-                    if (val !== 'all') {
-                      const targetCh = channels.find((c) => String(c.id) === String(val));
-                      if (targetCh && targetCh.status !== 'connected') {
-                        handleOpenQrModal(targetCh.id);
+              {/* Channel Selector: Only Super Admin gets multi-account dropdown */}
+              {isSuperAdminUser ? (
+                <div className="flex items-center gap-1.5 bg-[#0D1E38] border border-[#1E3A66] px-2.5 py-1.5 rounded-md">
+                  <Smartphone className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                  <span className="text-[11px] font-semibold text-[#B0C0D8]">Account:</span>
+                  <select
+                    value={selectedChannelId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedChannelId(val);
+                      if (val !== 'all') {
+                        const targetCh = channels.find((c) => String(c.id) === String(val));
+                        if (targetCh && targetCh.status !== 'connected') {
+                          handleOpenQrModal(targetCh.id);
+                        }
                       }
-                    }
-                    setTimeout(() => loadChats(), 50);
-                  }}
-                  className="bg-transparent text-white text-[11px] font-bold focus:outline-none cursor-pointer pr-1"
-                >
-                  <option value="all" className="bg-[#081428]">All 6 Active Accounts (Admin View)</option>
-                  {channels.map((ch) => (
-                    <option key={ch.id} value={ch.id} className="bg-[#081428]">
-                      {ch.agent_name} ({ch.status === 'connected' ? `🟢 ${ch.phone_number || 'Online'}` : '⚪ Disconnected - Click to Scan'})
-                    </option>
-                  ))}
-                </select>
-              </div>
+                      setTimeout(() => loadChats(), 50);
+                    }}
+                    className="bg-transparent text-white text-[11px] font-bold focus:outline-none cursor-pointer pr-1"
+                  >
+                    <option value="all" className="bg-[#081428]">All Accounts ({channels.length}) (Admin View)</option>
+                    {channels.map((ch) => (
+                      <option key={ch.id} value={ch.id} className="bg-[#081428]">
+                        {ch.agent_name} ({ch.status === 'connected' ? `🟢 ${ch.phone_number || 'Online'}` : '⚪ Disconnected - Click to Scan'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                /* Individual User: Fixed Account Badge (No Dropdown) */
+                <div className="flex items-center gap-1.5 bg-[#0D1E38] border border-[#1E3A66] px-2.5 py-1.5 rounded-md">
+                  <Smartphone className="w-3.5 h-3.5 text-[#25D366] shrink-0" />
+                  <span className="text-[11px] font-semibold text-[#B0C0D8]">My Account:</span>
+                  <span className="text-white text-[11px] font-bold">
+                    {channels[0]?.agent_name || currentUser?.name || 'Personal Account'}
+                  </span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    channels[0]?.status === 'connected'
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                      : 'bg-slate-800 text-slate-400 border border-slate-700'
+                  }`}>
+                    {channels[0]?.status === 'connected' ? '🟢 Online' : '⚪ Offline'}
+                  </span>
+                </div>
+              )}
 
               {/* Link Device Button */}
               <button
@@ -2030,11 +2108,53 @@ export default function WhatsAppPage() {
               </div>
             </div>
 
+            {/* Active Session Warning Banner (If gateway is already paired with another account) */}
+            {qrGatewayStatus === 'connected' && (
+              <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-[#081428]">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4 text-amber-600" />
+                    <span>Already Paired: {qrConnectedUser?.name || 'Active Mobile Session'} ({qrConnectedUser?.phone || 'Connected'})</span>
+                  </span>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    Online
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  A WhatsApp account is currently paired. To link <strong>your personal phone</strong> or another account, click below to disconnect the existing session and generate a fresh QR code.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleUnlinkAndScanNew}
+                  disabled={isUnlinking}
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{isUnlinking ? 'Disconnecting & Generating New QR...' : 'Disconnect Current Session & Scan New WhatsApp'}</span>
+                </button>
+              </div>
+            )}
+
             {/* QR Code Canvas & Instructions Box */}
             <div className="flex flex-col sm:flex-row items-center gap-6 bg-[#081428] p-6 rounded-xl text-white">
               
               {/* QR Container */}
               <div className="relative p-3 bg-white rounded-lg shadow-md shrink-0 flex flex-col items-center">
+                {/* Real / Mock QR Badge */}
+                <div className="mb-2">
+                  {isRealQr ? (
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                      Authentic WhatsApp QR
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-medium text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                      {isUnlinking ? 'Resetting Session...' : 'Generating Pairing Session...'}
+                    </span>
+                  )}
+                </div>
+
                 {qrImageData ? (
                   <img
                     src={qrImageData}
@@ -2094,22 +2214,37 @@ export default function WhatsAppPage() {
 
             {/* Test Simulation & Actions */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-              <button
-                type="button"
-                onClick={handleConfirmPairing}
-                disabled={pairingLoading}
-                className="w-full sm:w-auto px-4 py-2.5 bg-[#25D366] hover:bg-[#1EBE5D] text-[#081428] font-bold text-xs rounded-md shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Smartphone className="w-4 h-4" />
-                <span>{pairingLoading ? 'Pairing Mobile Device...' : 'Simulate Mobile Scan & Pair (1-Click Test)'}</span>
-              </button>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={handleConfirmPairing}
+                  disabled={pairingLoading}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-[#25D366] hover:bg-[#1EBE5D] text-[#081428] font-bold text-xs rounded-md shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Smartphone className="w-4 h-4" />
+                  <span>{pairingLoading ? 'Pairing Mobile Device...' : 'Simulate Mobile Scan & Pair (1-Click Test)'}</span>
+                </button>
+                {qrGatewayStatus === 'connected' && (
+                  <button
+                    type="button"
+                    onClick={handleUnlinkAndScanNew}
+                    disabled={isUnlinking}
+                    className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                    title="Disconnect and get new QR"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Unlink</span>
+                  </button>
+                )}
+              </div>
 
               <button
                 type="button"
-                onClick={handleRefreshQr}
+                onClick={() => handleRefreshQr(true)}
+                disabled={isUnlinking}
                 className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded transition-colors flex items-center gap-1.5 cursor-pointer"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className={`w-3.5 h-3.5 ${isUnlinking ? 'animate-spin' : ''}`} />
                 <span>Refresh QR</span>
               </button>
             </div>
