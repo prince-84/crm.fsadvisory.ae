@@ -23,7 +23,8 @@ import {
   MessageSquare,
   Building2,
   ShieldCheck,
-  Flame 
+  Flame,
+  Database
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
 import { isSuperUser } from '@/lib/permissions';
@@ -104,8 +105,9 @@ function SidebarInner() {
     {
       title: 'SALES',
       items: [
-        { key: 'lead_pool', name: 'Leads', href: '/', icon: Users, permission: 'leads.view' },
+        { key: 'leads', name: 'Leads', href: '/', icon: Flame, permission: 'leads.view' },
         { key: 'owner_data', name: 'Owner Data', href: '/owner-data', icon: Building2, permission: 'owner_data.view' },
+        { key: 'lead_pool', name: 'Lead Pool', href: '/lead-pool', icon: Database, permission: 'leads.view' },
         { key: 'opportunities', name: 'Opportunities', href: '/opportunities', icon: Briefcase, permission: 'deals.view' },
         { key: 'appointments', name: 'Appointments', href: '/calendar', icon: CalendarDays, permission: 'queue.calendar' },
         { key: 'recordings', name: 'Recordings', href: '/recordings', icon: Mic, permission: 'calls.listen_recordings' },
@@ -180,7 +182,7 @@ function SidebarInner() {
                   >
                     <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#081428]' : 'text-[#8A9AB5]'}`} />
                     <span className="flex-1">{item.name}</span>
-                    {(item.key === 'lead_pool' || item.key === 'new_leads') && newLeadsCount > 0 ? (
+                    {item.href === '/' && newLeadsCount > 0 ? (
                       <span
                         className={`min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center transition-colors shadow-xs ${
                           isActive

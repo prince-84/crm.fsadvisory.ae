@@ -214,6 +214,7 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::post('/distribution/agent/{id}/config', [LeadDistributionController::class, 'updateAgentConfig']);
     Route::post('/distribution/run/lead-pool', [LeadDistributionController::class, 'runLeadPoolDistribution']);
     Route::post('/distribution/run/owner-data', [LeadDistributionController::class, 'runOwnerDataDistribution']);
+    Route::post('/distribution/process-idle-leads', [LeadDistributionController::class, 'processIdleLeads']);
     Route::post('/distribution/reset-counters', [LeadDistributionController::class, 'resetTodayCounters']);
 });
 

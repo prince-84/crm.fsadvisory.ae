@@ -82,6 +82,10 @@ class LeadDistributionController extends Controller
             'apply_to_owner_data' => 'nullable|boolean',
             'fallback_user_name' => 'nullable|string',
             'max_daily_leads_per_agent' => 'nullable|integer|min:1',
+            'auto_reassign_idle_leads' => 'nullable|boolean',
+            'inactivity_reassign_days' => 'nullable|integer|min:1|max:60',
+            'auto_recycle_dormant_leads' => 'nullable|boolean',
+            'recycle_to_pool_days' => 'nullable|integer|min:7|max:365',
         ]);
 
         $settings = LeadDistributionService::getSettings();
@@ -103,6 +107,23 @@ class LeadDistributionController extends Controller
             'success' => true,
             'message' => 'Lead distribution rules updated successfully.',
             'settings' => $settings->fresh(),
+        ]);
+    }
+
+    /**
+     * Trigger on-demand check for 3-day inactive lead re-assignment and 45-day dormancy recycling
+     */
+    public function processIdleLeads()
+    {
+        $result = LeadDistributionService::processIdleAndDormantLeads();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Inactivity check complete: {$result['reassigned_count']} idle leads re-assigned to new agents, {$result['recycled_count']} dormant leads recycled back to Lead Pool.",
+            'reassigned_count' => $result['reassigned_count'],
+            'recycled_count' => $result['recycled_count'],
+            'reassigned' => $result['reassigned'],
+            'recycled' => $result['recycled'],
         ]);
     }
 

@@ -65,13 +65,15 @@ class ContactController extends Controller
                 });
             });
         } elseif ($tab === 'new' || $tab === 'uncontacted') {
-            // New / Inbound: Strictly external leads arriving from outside (Meta Ads, Portals, Webhooks: is_imported = false) not called yet
-            $query->where('contacts.is_imported', false)
-                  ->whereDoesntHave('activities', function($actQ) {
-                      $actQ->where('type', 'call');
-                  })->whereDoesntHave('opportunities.activities', function($actQ) {
-                      $actQ->where('type', 'call');
-                  });
+            // New / Uncontacted: Leads that have not been called yet
+            if (!$request->boolean('leads_desk') && !$request->boolean('imported_only')) {
+                $query->where('contacts.is_imported', false);
+            }
+            $query->whereDoesntHave('activities', function($actQ) {
+                $actQ->where('type', 'call');
+            })->whereDoesntHave('opportunities.activities', function($actQ) {
+                $actQ->where('type', 'call');
+            });
         } elseif ($tab === 'contacted') {
             // Contacted: At least 1 call activity logged
             $query->where(function($q) {
@@ -115,8 +117,20 @@ class ContactController extends Controller
             // 'all' tab displays all leads (primary and duplicate inquiries)
         }
 
-        // Filter by Inbound Only (non-imported leads: portals, campaign landing pages, webhooks, manual entries)
-        if ($request->boolean('inbound_only') || $request->get('source_type') === 'inbound') {
+        // Filter by Leads Desk, Inbound Only, or Imported Only
+        if ($request->boolean('leads_desk')) {
+            // Leads Desk shows: all live inbound leads + any imported leads that have been assigned to an advisor
+            $query->where(function ($q) {
+                $q->where('contacts.is_imported', false)
+                  ->orWhereNull('contacts.is_imported')
+                  ->orWhere(function ($sub) {
+                      $sub->where('contacts.is_imported', true)
+                          ->whereNotNull('contacts.assigned_to')
+                          ->where('contacts.assigned_to', '!=', '')
+                          ->where('contacts.assigned_to', '!=', 'Unassigned');
+                  });
+            });
+        } elseif ($request->boolean('inbound_only') || $request->get('source_type') === 'inbound') {
             $query->where('contacts.is_imported', false);
         } elseif ($request->boolean('imported_only') || $request->get('source_type') === 'imported') {
             $query->where('contacts.is_imported', true);
@@ -450,10 +464,25 @@ class ContactController extends Controller
         $contacts = $query->paginate($perPage);
 
         // Stats calculation for Top KPI Cards & Tab Badge Counts
+        $isLeadsDesk = $request->boolean('leads_desk');
         $isInboundOnly = $request->boolean('inbound_only') || $request->get('source_type') === 'inbound';
+        $isImportedOnly = $request->boolean('imported_only') || $request->get('source_type') === 'imported';
         $baseCountQuery = Contact::query();
-        if ($isInboundOnly) {
+        if ($isLeadsDesk) {
+            $baseCountQuery->where(function ($q) {
+                $q->where('is_imported', false)
+                  ->orWhereNull('is_imported')
+                  ->orWhere(function ($sub) {
+                      $sub->where('is_imported', true)
+                          ->whereNotNull('assigned_to')
+                          ->where('assigned_to', '!=', '')
+                          ->where('assigned_to', '!=', 'Unassigned');
+                  });
+            });
+        } elseif ($isInboundOnly) {
             $baseCountQuery->where('is_imported', false);
+        } elseif ($isImportedOnly) {
+            $baseCountQuery->where('is_imported', true);
         }
         if ($targetOwner !== null) {
             if ($targetOwner === 'unassigned') {
@@ -508,12 +537,16 @@ class ContactController extends Controller
             });
         })->count();
 
-        $newUncontactedCount = (clone $baseCountQuery)->where('is_imported', false)
+        $newUncontactedQuery = (clone $baseCountQuery)
             ->whereDoesntHave('activities', function($actQ) {
                 $actQ->where('type', 'call');
             })->whereDoesntHave('opportunities.activities', function($actQ) {
                 $actQ->where('type', 'call');
-            })->count();
+            });
+        if (!$isLeadsDesk && !$isImportedOnly) {
+            $newUncontactedQuery->where('is_imported', false);
+        }
+        $newUncontactedCount = $newUncontactedQuery->count();
 
         $contactedCount = (clone $baseCountQuery)->where(function($q) {
             $q->whereHas('activities', function($actQ) {
@@ -588,8 +621,21 @@ class ContactController extends Controller
         ];
 
         $deletedQuery = Contact::onlyTrashed();
-        if ($isInboundOnly) {
+        if ($isLeadsDesk) {
+            $deletedQuery->where(function ($q) {
+                $q->where('is_imported', false)
+                  ->orWhereNull('is_imported')
+                  ->orWhere(function ($sub) {
+                      $sub->where('is_imported', true)
+                          ->whereNotNull('assigned_to')
+                          ->where('assigned_to', '!=', '')
+                          ->where('assigned_to', '!=', 'Unassigned');
+                  });
+            });
+        } elseif ($isInboundOnly) {
             $deletedQuery->where('is_imported', false);
+        } elseif ($isImportedOnly) {
+            $deletedQuery->where('is_imported', true);
         }
         if ($targetOwner !== null && $targetOwner !== 'unassigned') {
             $deletedQuery->where(function($q) use ($targetOwner) {

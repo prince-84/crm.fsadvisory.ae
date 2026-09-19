@@ -20,6 +20,10 @@ class LeadDistributionSetting extends Model
         'apply_to_owner_data' => 'boolean',
         'max_daily_leads_per_agent' => 'integer',
         'last_assigned_user_id' => 'integer',
+        'inactivity_reassign_days' => 'integer',
+        'recycle_to_pool_days' => 'integer',
+        'auto_reassign_idle_leads' => 'boolean',
+        'auto_recycle_dormant_leads' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -37,6 +41,10 @@ class LeadDistributionSetting extends Model
             'apply_to_owner_data' => true,
             'fallback_user_name' => 'Faraz Shafi',
             'max_daily_leads_per_agent' => null,
+            'inactivity_reassign_days' => 3,
+            'recycle_to_pool_days' => 45,
+            'auto_reassign_idle_leads' => true,
+            'auto_recycle_dormant_leads' => true,
         ]);
     }
 }

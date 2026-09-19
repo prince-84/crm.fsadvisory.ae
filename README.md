@@ -118,6 +118,21 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Individual User Channel Isolation**: Non-super-admin users (Sales Consultants, Telesales Agents, Advisors) are strictly locked to their own individual account. The switcher dropdown is automatically hidden and replaced with a personal account status badge (`My Account: [Agent Name] (🟢 Online / ⚪ Offline)`).
   - **Backend Access Scoping & Auto-Provisioning**: Enforced database-level scoping in `WhatsAppController@channels` and `WhatsAppController@chats`, preventing cross-account conversation snooping. Automatically auto-provisions and links a dedicated channel record for each CRM user upon login.
   - **Session Unlinking & Re-Pairing Workflow**: Integrated disconnect proxy endpoint (`/api/whatsapp/gateway/logout`) allowing users to unlink existing paired sessions and generate fresh QR codes without manual backend intervention.
+- **40 — Dedicated Lead Pool Page (`/lead-pool`) & Clean Separation from Inbound Leads**:
+  - **Sidebar Menu Navigation Order**: Positioned **Lead Pool** (`/lead-pool`) directly after **Owner Data** (`/owner-data`) under the SALES navigation group (`Leads` -> `Owner Data` -> `Lead Pool`), restoring the dedicated master imported database archive.
+  - **Clean Separation (Imported Only vs Inbound Live Leads)**:
+    - **Lead Pool (`/lead-pool`)**: Strictly filters by `imported_only=1` (`contacts.is_imported = true`), ensuring external leads from webhooks, portals, or advertising campaigns never contaminate the imported lead bank. Prominent "Import Leads (CSV / Excel)" action triggers the batch upload wizard directly into this pool.
+    - **Leads Desk (`/`)**: Strictly filters by `inbound_only=1` (`contacts.is_imported = false`), displaying exclusively fresh inbound prospects arriving from outside channels (Property Finder, Bayut, Dubizzle, Meta Ads, Google Ads, Website, 3CX).
+  - **Auto-Assignment On/Off Governance Verified**:
+    - Audited and verified `apply_to_lead_import` toggle in Lead Distribution settings and engine (`LeadDistributionService::autoAssignContact`).
+    - Configured default behavior to `apply_to_lead_import = false` so batch file imports into Lead Pool do not automatically assign across agents, remaining available/unassigned until explicitly allocated by managers or until auto-assignment is toggled ON in Settings.
+    - Fixed checkbox ternary operator and checked condition styling in [`settings/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/settings/page.tsx).
+    - Added `imported_only` support in `ContactController@index` for accurate `$baseCountQuery` and `$deletedQuery` tab stats.
+  - **Full Domain & Table Capabilities**:
+    - Dynamic column reordering and column visibility toggles saved in `lead_pool_column_order_v1` and `lead_pool_column_visibility_v1`.
+    - Mandatory permanent Action column (Call, WhatsApp, Edit, Drawer).
+    - Created Date (`created_at`) enabled by default and formatted with date and time (`YYYY-MM-DD HH:mm`).
+    - Floating bulk actions toolbar for selective assignment and bulk trash management.
 
 ### Enterprise Access, Governance & Distribution
 - **36 — Enterprise User Management & Granular Permission Matrix (`/users`)**:
@@ -1955,6 +1970,50 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - **Active Session Alert Card**: When an active session is detected on the gateway, the modal displays a clear notice with the paired account name/number and provides a dedicated **`[ Disconnect Current Session & Scan New WhatsApp ]`** action.
       - **Authentic QR Badge**: Dynamically displays a green **`Authentic WhatsApp QR`** badge when the QR code is generated directly from WhatsApp's cryptographic socket, ensuring advisors only scan real, functional QR codes.
       - **Automated Re-initialization**: Clicking "Unlink" or "Refresh QR" automatically purges stale tokens and re-generates an authentic live QR code within 2.5 seconds.
+- **152 — Lead Pool Dedicated Master Bank Page (`/lead-pool`), Streamlined Action Column & Assigned Lead Propagation (`frontend/src/app/lead-pool/page.tsx`, `frontend/src/app/page.tsx`, `Sidebar.tsx`, `ContactController.php`, `LeadDistributionService.php`)**:
+  - **Business Concept & Role of Lead Pool**:
+    - Lead Pool (`/lead-pool`) functions strictly as an unassigned **Master Data Bank** for bulk uploaded records (CSV/Excel batch imports).
+    - Unassigned batch-imported records remain isolated in Lead Pool awaiting allocation.
+    - **Assigned Lead Flow to Leads Desk**: When a Manager or Super Admin assigns a lead from Lead Pool to an advisor (`contacts.assigned_to IS NOT NULL`), that lead **automatically propagates to the primary Leads desk (`/`)** using `leads_desk=1`. This empowers the assigned agent to immediately manage calls, qualification deals, and WhatsApp communication from their active Leads desk.
+    - Unassigned imported files do not clutter the primary Leads desk until formally allocated.
+  - **Action Column Streamlining in Lead Pool**:
+    - Removed premature operational action buttons from the table's Action column in Lead Pool: **Call Log** (`PhoneCall`), **Create Opportunity** (`Briefcase`/`Plus`), and **WhatsApp Chat** (`MessageSquare`).
+    - Retained only administrative actions: **View Lead Drawer** (`Eye`), **Full Edit Page** (`Edit3`), and **Move to Trash** (`Trash2`).
+  - **Auto-Assignment & Scope Safety**:
+    - Guaranteed that imported leads do not auto-assign upon upload unless explicitly enabled in Master Settings (`apply_to_lead_import`).
+    - Verified strict boolean logic in `LeadDistributionService.php` and fixed ternary styling on the Settings page checkbox.
+  - **Database Purge of Legacy Test Records**:
+    - Executed clean database purge permanently deleting all legacy test import contacts (`is_imported = true`) and attached audit notes, setting the Lead Pool to a pristine 0-lead state awaiting genuine imports.
+    - Preserved 100% of authentic inbound contacts (`is_imported = false`), owner records, and system catalogs.
+
+- **153 — Lead Inactivity Auto-Rotation (3-Day Idle SLA) & Dormancy Pool Recycling (45-Day Inactivity Engine) (`backend/app/Services/LeadDistributionService.php`, `backend/app/Http/Controllers/Api/LeadDistributionController.php`, `backend/routes/api.php`, `backend/routes/console.php`, `frontend/src/app/settings/page.tsx`, `backend/database/migrations/2026_09_18_163500_add_inactivity_settings_to_lead_distribution_settings_table.php`)**:
+  - **Business Purpose & SLA Enforcement**:
+    - Protects the brokerage against lost deals caused by inactive agents holding assigned leads without prompt follow-up.
+    - Operates universally across both external inbound leads (Portals, Meta Ads, Webhooks) and leads assigned from the Lead Pool bank.
+  - **Rule 1: 3-Day Inactivity Dynamic Auto-Rotation**:
+    - Monitors assigned leads across all active sales advisors.
+    - If an advisor holds an assigned lead for $\ge 3$ days without any recorded activity, call logs (`calls`), contact updates, or pipeline interactions, the system automatically intervenes.
+    - **Intelligent Advisor Exclusion**: System excludes the current inactive advisor and dynamically calculates the next active advisor in rotation (`getNextAgentExcluding($currentOwner)`), respecting global daily capacity limits.
+    - **Single Ownership & Opportunity Sync**: Updates `contacts.assigned_to`, `contacts.assigned_at`, and `opportunities.current_owner_name` simultaneously, adhering strictly to the Single Ownership domain rule. Won/Closed deals (`closed_won`, `won`) are strictly safeguarded and never rotated.
+    - **Comprehensive Dual Audit Trail**:
+      - Records an `Activity` timeline item with type `ownership_change` (`"Lead auto-reassigned from Agent A to Agent B due to N days of advisor inactivity."`).
+      - Records an entry in `lead_distribution_logs` with strategy `inactivity_reassign_3d`.
+  - **Rule 2: 45-Day Total Inactivity Recycling to Lead Pool**:
+    - If an assigned lead has been in rotation across agents and experiences $\ge 45$ days of cumulative inactivity without progressing or closing, the lead is recycled back to the **Lead Pool** as fresh unassigned data.
+    - **Database State Transition**: Sets `contacts.assigned_to = NULL`, `contacts.assigned_at = NULL`, `contacts.state = 'available'`, and `contacts.is_imported = true`.
+    - **Immediate Isolation**: Because `contacts.assigned_to` is cleared and `contacts.is_imported = true`, the lead is automatically excluded from the active Leads desk (`leads_desk=1`) and appears immediately in `/lead-pool` as fresh unassigned data for re-evaluation and future reallocation.
+    - Logs an `ownership_change` event noting the 45-day dormancy recycling and prior agent attribution.
+  - **Artisan Scheduled Engine & API Integration**:
+    - **CLI Command (`routes/console.php`)**: Implemented `php artisan crm:process-idle-leads` with detailed console output and automated hourly execution via Laravel's task scheduler (`Schedule::command('crm:process-idle-leads')->hourly()`).
+    - **On-Demand REST Endpoint (`routes/api.php`)**: `POST /api/distribution/process-idle-leads` handled by `LeadDistributionController::processIdleLeads()` for instant manual checks by Super Admins.
+    - **Master Settings Configuration (`LeadDistributionSetting`)**:
+      - `auto_reassign_idle_leads` (boolean toggle, default `true`)
+      - `inactivity_reassign_days` (integer days threshold, default `3`)
+      - `auto_recycle_dormant_leads` (boolean toggle, default `true`)
+      - `recycle_to_pool_days` (integer days threshold, default `45`)
+  - **Frontend Master Settings Interface (`frontend/src/app/settings/page.tsx`)**:
+    - Added dedicated **"Lead SLA, Inactivity Rotation & Pool Recycling Rules"** configuration section with interactive toggles and customizable day counters.
+    - Added **"Run Inactivity & Recycling Engine"** on-demand execution button with SweetAlert2 detailed reporting modal displaying lists of rotated leads and recycled records.
 
 ---
 
@@ -2062,7 +2121,8 @@ FSadvisory-crm/
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── new-leads/page.tsx             # New Inbound Leads Allocation Desk
-│   │   │   ├── page.tsx                       # Lead Pool master table
+│   │   │   ├── page.tsx                       # Inbound Leads Desk (Portals, Meta, Webhooks)
+│   │   │   ├── lead-pool/page.tsx             # Lead Pool Master Imported Archive (Batch Files)
 │   │   │   ├── leads/create/page.tsx          # Full Create Lead Page
 │   │   │   ├── leads/[id]/edit/page.tsx       # Full Edit Lead Page
 │   │   │   ├── owner-data/page.tsx            # Title Deed Owner Registry

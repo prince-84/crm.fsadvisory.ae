@@ -107,9 +107,14 @@ function SettingsContent() {
     is_enabled: true,
     distribution_mode: 'round_robin',
     apply_to_lead_pool: true,
+    apply_to_lead_import: false,
     apply_to_owner_data: true,
     max_daily_leads_per_agent: '',
     fallback_user_name: 'Faraz Shafi',
+    auto_reassign_idle_leads: true,
+    inactivity_reassign_days: 3,
+    auto_recycle_dormant_leads: true,
+    recycle_to_pool_days: 45,
   });
   const [distAgents, setDistAgents] = useState<any[]>([]);
   const [unassignedLeadsCount, setUnassignedLeadsCount] = useState<number>(0);
@@ -128,6 +133,7 @@ function SettingsContent() {
   const [loadingLogs, setLoadingLogs] = useState<boolean>(false);
   const [savingDist, setSavingDist] = useState<boolean>(false);
   const [runningBatch, setRunningBatch] = useState<boolean>(false);
+  const [runningInactivityEngine, setRunningInactivityEngine] = useState<boolean>(false);
 
   // 8. Email & SMTP Configuration State
   const [emailSettings, setEmailSettings] = useState<any>({
@@ -283,12 +289,20 @@ function SettingsContent() {
         is_enabled: distSettings.is_enabled !== undefined ? distSettings.is_enabled : true,
         distribution_mode: distSettings.distribution_mode || 'round_robin',
         apply_to_lead_pool: Boolean(distSettings.apply_to_lead_pool),
-        apply_to_lead_import: distSettings.apply_to_lead_import !== undefined ? Boolean(distSettings.apply_to_lead_import) : true,
+        apply_to_lead_import: distSettings.apply_to_lead_import !== undefined ? Boolean(distSettings.apply_to_lead_import) : false,
         apply_to_owner_data: Boolean(distSettings.apply_to_owner_data),
         fallback_user_name: distSettings.fallback_user_name || 'Faraz Shafi',
         max_daily_leads_per_agent: distSettings.max_daily_leads_per_agent !== '' && distSettings.max_daily_leads_per_agent !== null && distSettings.max_daily_leads_per_agent !== undefined
           ? Number(distSettings.max_daily_leads_per_agent)
           : null,
+        auto_reassign_idle_leads: distSettings.auto_reassign_idle_leads !== undefined ? Boolean(distSettings.auto_reassign_idle_leads) : true,
+        inactivity_reassign_days: distSettings.inactivity_reassign_days !== '' && distSettings.inactivity_reassign_days !== null && distSettings.inactivity_reassign_days !== undefined
+          ? Number(distSettings.inactivity_reassign_days)
+          : 3,
+        auto_recycle_dormant_leads: distSettings.auto_recycle_dormant_leads !== undefined ? Boolean(distSettings.auto_recycle_dormant_leads) : true,
+        recycle_to_pool_days: distSettings.recycle_to_pool_days !== '' && distSettings.recycle_to_pool_days !== null && distSettings.recycle_to_pool_days !== undefined
+          ? Number(distSettings.recycle_to_pool_days)
+          : 45,
       };
 
       const res = await fetchApi('/distribution/settings', {
@@ -303,7 +317,7 @@ function SettingsContent() {
       Swal.fire({
         icon: 'success',
         title: 'Rules Saved!',
-        text: 'Lead Distribution rules updated successfully.',
+        text: 'Lead Distribution and Inactivity rules updated successfully.',
         timer: 1600,
         showConfirmButton: false,
       });
@@ -375,6 +389,65 @@ function SettingsContent() {
       Swal.fire('Error', e.message || 'Distribution failed', 'error');
     } finally {
       setRunningBatch(false);
+    }
+  };
+
+  const handleRunInactivityEngine = async () => {
+    setRunningInactivityEngine(true);
+    try {
+      const res = await fetchApi('/distribution/process-idle-leads', { method: 'POST' });
+      const reassigned = res.reassigned || [];
+      const recycled = res.recycled || [];
+
+      let detailsHtml = `
+        <div style="text-align:left; font-size:12px; line-height:1.6;">
+          <p><strong>3-Day Idle Leads Rotated:</strong> <span style="color:#B45309; font-weight:bold;">${res.reassigned_count || 0}</span></p>
+          <p><strong>45-Day Dormant Leads Recycled to Pool:</strong> <span style="color:#1D4ED8; font-weight:bold;">${res.recycled_count || 0}</span></p>
+      `;
+
+      if (reassigned.length > 0) {
+        detailsHtml += `
+          <div style="margin-top:8px; padding:8px; background:#FEF3C7; border-radius:6px; border:1px solid #FDE68A;">
+            <b style="color:#92400E;">Dynamically Re-assigned Leads:</b>
+            <ul style="padding-left:18px; margin-top:4px; font-size:11px;">
+              ${reassigned.map((r: any) => `<li><b>${r.name}</b>: ${r.from_owner} → <span style="color:#047857;">${r.to_owner}</span> (${r.days_inactive}d idle)</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      }
+
+      if (recycled.length > 0) {
+        detailsHtml += `
+          <div style="margin-top:8px; padding:8px; background:#DBEAFE; border-radius:6px; border:1px solid #BFDBFE;">
+            <b style="color:#1E40AF;">Recycled back to Lead Pool (Fresh):</b>
+            <ul style="padding-left:18px; margin-top:4px; font-size:11px;">
+              ${recycled.map((c: any) => `<li><b>${c.name}</b> from ${c.previous_owner} (${c.dormant_days}d dormant)</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      }
+
+      if (reassigned.length === 0 && recycled.length === 0) {
+        detailsHtml += `
+          <p style="margin-top:8px; color:#6B7280;">All assigned leads are currently active within their 3-day SLA window. No idle leads required rotation.</p>
+        `;
+      }
+
+      detailsHtml += `</div>`;
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Inactivity & Recycling Engine Complete',
+        html: detailsHtml,
+        confirmButtonColor: '#081428',
+      });
+
+      fetchDistLogs(1, distLogsPerPage);
+      loadData();
+    } catch (e: any) {
+      Swal.fire('Error', e.message || 'Failed to run inactivity engine', 'error');
+    } finally {
+      setRunningInactivityEngine(false);
     }
   };
 
@@ -2096,11 +2169,11 @@ function SettingsContent() {
 
                         {/* Scope 2: Lead Pool File Imports */}
                         <label className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer ${
-                          distSettings.apply_to_lead_import !== undefined ? Boolean(distSettings.apply_to_lead_import) : true ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
+                          Boolean(distSettings.apply_to_lead_import) ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
                         }`}>
                           <input
                             type="checkbox"
-                            checked={distSettings.apply_to_lead_import !== undefined ? Boolean(distSettings.apply_to_lead_import) : true}
+                            checked={Boolean(distSettings.apply_to_lead_import)}
                             onChange={(e) => setDistSettings((prev: any) => ({ ...prev, apply_to_lead_import: e.target.checked }))}
                             className="mt-0.5 rounded text-[#C9A84C] focus:ring-[#C9A84C] cursor-pointer"
                           />
@@ -2164,6 +2237,95 @@ function SettingsContent() {
                       </div>
                     </div>
 
+                    {/* Lead SLA, Inactivity Auto-Rotation & Pool Recycling */}
+                    <div className="pt-4 border-t border-[#E8E4DC] space-y-3">
+                      <div>
+                        <div className="text-xs font-bold text-[#081428] flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-[#C9A84C]" />
+                          <span>Lead SLA, Inactivity Rotation & Pool Recycling Rules</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Automated workflows preventing assigned leads from sitting dormant or forgotten with inactive sales advisors.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Rule 1: 3-Day Inactivity Auto-Rotation */}
+                        <div className={`p-3.5 rounded-xl border transition-all ${
+                          distSettings.auto_reassign_idle_leads !== false ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
+                        }`}>
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={distSettings.auto_reassign_idle_leads !== false}
+                              onChange={(e) => setDistSettings((prev: any) => ({ ...prev, auto_reassign_idle_leads: e.target.checked }))}
+                              className="mt-1 rounded text-[#C9A84C] focus:ring-[#C9A84C] cursor-pointer"
+                            />
+                            <div className="flex-1 space-y-2">
+                              <div>
+                                <div className="font-bold text-xs text-[#081428] flex items-center gap-1.5">
+                                  <span>Auto-Rotate Inactive Leads</span>
+                                  <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800">3 Days Default</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                                  If an advisor holds an assigned lead for 3+ days with no activity, call logs, or updates, dynamically re-assigns it to the next advisor with full audit history.
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <span className="text-[11px] font-bold text-slate-700">Reassign after:</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={30}
+                                  value={distSettings.inactivity_reassign_days ?? 3}
+                                  onChange={(e) => setDistSettings((prev: any) => ({ ...prev, inactivity_reassign_days: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                  className="w-16 p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs font-bold text-center text-[#081428] focus:ring-1 focus:ring-[#C9A84C] focus:outline-none"
+                                />
+                                <span className="text-[11px] text-slate-600 font-medium">Days inactive</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Rule 2: 45-Day Dormancy Recycling to Lead Pool */}
+                        <div className={`p-3.5 rounded-xl border transition-all ${
+                          distSettings.auto_recycle_dormant_leads !== false ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-slate-50/70 border-[#E8E4DC] opacity-75'
+                        }`}>
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={distSettings.auto_recycle_dormant_leads !== false}
+                              onChange={(e) => setDistSettings((prev: any) => ({ ...prev, auto_recycle_dormant_leads: e.target.checked }))}
+                              className="mt-1 rounded text-[#C9A84C] focus:ring-[#C9A84C] cursor-pointer"
+                            />
+                            <div className="flex-1 space-y-2">
+                              <div>
+                                <div className="font-bold text-xs text-[#081428] flex items-center gap-1.5">
+                                  <span>Recycle Dormant Leads to Lead Pool</span>
+                                  <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-blue-100 text-blue-800">45 Days Default</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                                  If a lead has been in rotation across advisors for 45+ days without deal closing, resets it back into Lead Pool as fresh unassigned data.
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <span className="text-[11px] font-bold text-slate-700">Recycle after:</span>
+                                <input
+                                  type="number"
+                                  min={7}
+                                  max={365}
+                                  value={distSettings.recycle_to_pool_days ?? 45}
+                                  onChange={(e) => setDistSettings((prev: any) => ({ ...prev, recycle_to_pool_days: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                  className="w-16 p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs font-bold text-center text-[#081428] focus:ring-1 focus:ring-[#C9A84C] focus:outline-none"
+                                />
+                                <span className="text-[11px] text-slate-600 font-medium">Days total dormancy</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="flex justify-end pt-2">
                       <button
                         onClick={handleSaveDistSettings}
@@ -2181,17 +2343,17 @@ function SettingsContent() {
                     <div className="bg-white p-5 border border-[#E8E4DC] rounded-xl shadow-2xs space-y-4">
                       <h4 className="font-heading font-bold text-sm text-[#081428] flex items-center gap-2">
                         <Play className="w-4 h-4 text-[#C9A84C]" />
-                        <span>Manual Distribution Trigger</span>
+                        <span>Manual Automation Triggers</span>
                       </h4>
                       <p className="text-xs text-slate-500 leading-relaxed">
-                        Instantly run the active distribution algorithm to divide all currently unassigned records among active agents.
+                        Instantly run automated distribution, 3-day inactivity rotation, and 45-day dormancy pool recycling on demand.
                       </p>
 
                       <div className="space-y-3 pt-2">
                         <button
                           onClick={handleRunLeadPoolBatch}
-                          disabled={runningBatch}
-                          className="w-full p-3.5 bg-[#FAF8F4] hover:bg-[#081428] border border-[#C9A84C] text-[#081428] hover:text-[#C9A84C] font-bold text-xs rounded-xl shadow-2xs flex items-center justify-between group transition-all cursor-pointer"
+                          disabled={runningBatch || runningInactivityEngine}
+                          className="w-full p-3 bg-[#FAF8F4] hover:bg-[#081428] border border-[#C9A84C] text-[#081428] hover:text-[#C9A84C] font-bold text-xs rounded-xl shadow-2xs flex items-center justify-between group transition-all cursor-pointer"
                         >
                           <div className="text-left">
                             <div className="flex items-center gap-1.5">
@@ -2209,8 +2371,8 @@ function SettingsContent() {
 
                         <button
                           onClick={handleRunOwnerDataBatch}
-                          disabled={runningBatch}
-                          className="w-full p-3.5 bg-[#FAF8F4] hover:bg-[#081428] border border-[#C9A84C] text-[#081428] hover:text-[#C9A84C] font-bold text-xs rounded-xl shadow-2xs flex items-center justify-between group transition-all cursor-pointer"
+                          disabled={runningBatch || runningInactivityEngine}
+                          className="w-full p-3 bg-[#FAF8F4] hover:bg-[#081428] border border-[#C9A84C] text-[#081428] hover:text-[#C9A84C] font-bold text-xs rounded-xl shadow-2xs flex items-center justify-between group transition-all cursor-pointer"
                         >
                           <div className="text-left">
                             <div className="flex items-center gap-1.5">
@@ -2223,6 +2385,25 @@ function SettingsContent() {
                           </div>
                           <span className="px-2.5 py-1 rounded bg-[#081428] group-hover:bg-[#C9A84C] text-[#C9A84C] group-hover:text-[#081428] text-[10px] font-mono font-bold">
                             Run Now →
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={handleRunInactivityEngine}
+                          disabled={runningBatch || runningInactivityEngine}
+                          className="w-full p-3 bg-[#FAF8F4] hover:bg-[#081428] border border-amber-400 text-[#081428] hover:text-[#C9A84C] font-bold text-xs rounded-xl shadow-2xs flex items-center justify-between group transition-all cursor-pointer"
+                        >
+                          <div className="text-left">
+                            <div className="flex items-center gap-1.5">
+                              <RefreshCw className={`w-3.5 h-3.5 text-amber-600 group-hover:text-[#C9A84C] ${runningInactivityEngine ? 'animate-spin' : ''}`} />
+                              <span>Run Inactivity & Recycling Engine</span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 group-hover:text-slate-300 font-normal">
+                              3d idle rotation & 45d pool recycling
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 rounded bg-[#081428] group-hover:bg-[#C9A84C] text-[#C9A84C] group-hover:text-[#081428] text-[10px] font-mono font-bold">
+                            {runningInactivityEngine ? 'Checking...' : 'Run Now →'}
                           </span>
                         </button>
                       </div>

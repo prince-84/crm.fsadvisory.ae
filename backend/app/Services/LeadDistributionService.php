@@ -39,7 +39,7 @@ class LeadDistributionService
         if ($leadType === 'lead_pool' && !$settings->apply_to_lead_pool) {
             return null;
         }
-        if ($leadType === 'lead_import' && !($settings->apply_to_lead_import ?? $settings->apply_to_lead_pool)) {
+        if ($leadType === 'lead_import' && !($settings->apply_to_lead_import ?? false)) {
             return null;
         }
         if ($leadType === 'owner_data' && !$settings->apply_to_owner_data) {
@@ -226,7 +226,7 @@ class LeadDistributionService
         }
 
         $isScopeActive = ($scope === 'lead_import')
-            ? (bool) ($settings->apply_to_lead_import ?? $settings->apply_to_lead_pool)
+            ? (bool) ($settings->apply_to_lead_import ?? false)
             : (bool) $settings->apply_to_lead_pool;
 
         if (!$isScopeActive) {
@@ -349,6 +349,246 @@ class LeadDistributionService
         return [
             'assigned_count' => $assignedCount,
             'remaining_unassigned' => max(0, $totalUnassigned - $assignedCount),
+        ];
+    }
+
+    /**
+     * Pick the next active agent excluding a specific agent (for re-assigning idle leads)
+     */
+    public static function getNextAgentExcluding(string $excludeName, string $leadType = 'lead_pool'): ?User
+    {
+        $settings = static::getSettings();
+        if (!$settings->is_enabled) {
+            return null;
+        }
+
+        // Fetch all active sales advisors excluding the current owner
+        $candidates = User::where('is_active', true)
+            ->where('name', '!=', $excludeName)
+            ->get();
+
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        // Reset daily counts for users if their last assigned date was before today
+        foreach ($candidates as $candidate) {
+            if ($candidate->last_assigned_at && !Carbon::parse($candidate->last_assigned_at)->isToday()) {
+                $candidate->today_assigned_count = 0;
+                $candidate->save();
+            }
+        }
+
+        // Filter out agents who have reached the global daily lead capacity (if configured)
+        $globalCap = !empty($settings->max_daily_leads_per_agent) ? (int) $settings->max_daily_leads_per_agent : null;
+        $available = $candidates->filter(function ($agent) use ($globalCap) {
+            if ($globalCap === null || $globalCap <= 0) {
+                return true;
+            }
+            return $agent->today_assigned_count < $globalCap;
+        });
+
+        if ($available->isEmpty()) {
+            $available = $candidates;
+        }
+
+        $sorted = $available->sortBy('id')->values();
+        $lastId = $settings->last_assigned_user_id;
+
+        // Find candidate with ID strictly greater than lastId
+        $next = $sorted->first(fn($a) => $a->id > $lastId);
+        $chosenAgent = $next ?: $sorted->first();
+
+        if ($chosenAgent) {
+            $chosenAgent->increment('today_assigned_count');
+            $chosenAgent->update(['last_assigned_at' => Carbon::now()]);
+            $settings->update(['last_assigned_user_id' => $chosenAgent->id]);
+        }
+
+        return $chosenAgent;
+    }
+
+    /**
+     * Process 3-Day Inactivity Auto-Rotation & 45-Day Lead Pool Recycling
+     */
+    public static function processIdleAndDormantLeads(): array
+    {
+        $settings = static::getSettings();
+        $reassignDays = (int) ($settings->inactivity_reassign_days ?: 3);
+        $recycleDays = (int) ($settings->recycle_to_pool_days ?: 45);
+        $autoReassign = $settings->auto_reassign_idle_leads ?? true;
+        $autoRecycle = $settings->auto_recycle_dormant_leads ?? true;
+
+        $reassigned = [];
+        $recycled = [];
+
+        // 1. Fetch all assigned contacts (both inbound and imported)
+        $assignedContacts = Contact::whereNotNull('assigned_to')
+            ->where('assigned_to', '!=', '')
+            ->where('assigned_to', '!=', 'Unassigned')
+            ->where('state', '!=', 'duplicate')
+            ->get();
+
+        $now = Carbon::now();
+
+        foreach ($assignedContacts as $contact) {
+            $currentOwner = $contact->assigned_to;
+            $opp = $contact->opportunities()->first();
+
+            // Never re-assign or recycle Won deals
+            if ($opp && in_array(strtolower($opp->stage), ['closed_won', 'won'])) {
+                continue;
+            }
+
+            // Check genuine agent interactions (calls or non-system activities)
+            $lastCall = Activity::where('contact_id', $contact->id)
+                ->where('type', 'call')
+                ->latest('created_at')
+                ->first();
+
+            $lastGenuineActivity = Activity::where('contact_id', $contact->id)
+                ->where('type', '!=', 'ownership_change')
+                ->latest('created_at')
+                ->first();
+
+            $lastActionTime = $lastCall ? Carbon::parse($lastCall->created_at) : ($lastGenuineActivity ? Carbon::parse($lastGenuineActivity->created_at) : null);
+
+            // =========================================================================
+            // RULE 2: 45-Day Total Inactivity Recycling back to Lead Pool
+            // If lead has been assigned/in system for >= 45 days without work or won deal
+            // =========================================================================
+            $contactAgeDays = Carbon::parse($contact->created_at)->diffInDays($now);
+            $idleSinceDays = $lastActionTime ? $lastActionTime->diffInDays($now) : $contactAgeDays;
+            $idleSinceDaysInt = (int) round($idleSinceDays);
+
+            if ($autoRecycle && $idleSinceDays >= $recycleDays) {
+                // Recycle back to Lead Pool as fresh unassigned lead
+                $contact->update([
+                    'assigned_to' => null,
+                    'assigned_at' => null,
+                    'state'       => 'available',
+                    'is_imported' => true, // Places strictly in Lead Pool
+                ]);
+
+                if ($opp && !in_array(strtolower($opp->stage), ['closed_won', 'won'])) {
+                    $opp->update(['current_owner_name' => null]);
+                }
+
+                // Log Activity in Timeline
+                Activity::create([
+                    'contact_id'     => $contact->id,
+                    'opportunity_id' => $opp?->id,
+                    'user_name'      => 'System SLA Engine',
+                    'type'           => 'ownership_change',
+                    'description'    => "Lead recycled back to Lead Pool as fresh unassigned lead due to {$idleSinceDaysInt} days of dormancy without progress (previously assigned to {$currentOwner}).",
+                ]);
+
+                // Log in Lead Distribution Log
+                LeadDistributionLog::create([
+                    'lead_type'             => 'lead_pool',
+                    'record_id'             => $contact->id,
+                    'record_name'           => $contact->name . ' (' . ($contact->phone ?: $contact->email) . ')',
+                    'assigned_to_user_id'   => null,
+                    'assigned_to_user_name' => 'Lead Pool (Unassigned)',
+                    'strategy_used'         => "dormancy_recycle_{$recycleDays}d",
+                    'created_at'            => Carbon::now(),
+                ]);
+
+                $recycled[] = [
+                    'id' => $contact->id,
+                    'name' => $contact->name,
+                    'previous_owner' => $currentOwner,
+                    'dormant_days' => $idleSinceDaysInt,
+                ];
+
+                continue; // Successfully recycled, move to next lead
+            }
+
+            // =========================================================================
+            // RULE 1: 3-Day Inactivity Auto-Rotation
+            // If held by current agent for >= 3 days without any call/update, rotate to next agent
+            // =========================================================================
+            if (!$autoReassign) {
+                continue;
+            }
+
+            $assignedAt = $contact->assigned_at ? Carbon::parse($contact->assigned_at) : Carbon::parse($contact->updated_at);
+            $daysWithAgent = $assignedAt->diffInDays($now);
+
+            if ($daysWithAgent < $reassignDays) {
+                continue; // Still within grace period
+            }
+
+            // Check if agent performed any call or genuine update in the last 3 days
+            $hasRecentWork = Activity::where('contact_id', $contact->id)
+                ->where('type', '!=', 'ownership_change')
+                ->where('created_at', '>=', $now->copy()->subDays($reassignDays))
+                ->exists();
+
+            if ($hasRecentWork) {
+                continue; // Agent actively engaged with the lead
+            }
+
+            // Check if last_activity_at was recent
+            if ($contact->last_activity_at && Carbon::parse($contact->last_activity_at)->diffInDays($now) < $reassignDays) {
+                continue;
+            }
+
+            // Auto-reassign to next active advisor excluding current owner
+            $nextAgent = static::getNextAgentExcluding($currentOwner);
+            if (!$nextAgent || $nextAgent->name === $currentOwner) {
+                continue; // No other advisor available to take the lead
+            }
+
+            $daysWithAgentInt = (int) round($daysWithAgent);
+
+            // Update contact ownership
+            $contact->update([
+                'assigned_to' => $nextAgent->name,
+                'assigned_at' => Carbon::now(),
+                'state'       => 'assigned',
+            ]);
+
+            if ($opp && !in_array(strtolower($opp->stage), ['closed_won', 'won'])) {
+                $opp->update([
+                    'current_owner_name' => $nextAgent->name,
+                ]);
+            }
+
+            // Record Ownership Change Activity in Timeline
+            Activity::create([
+                'contact_id'     => $contact->id,
+                'opportunity_id' => $opp?->id,
+                'user_name'      => 'System SLA Engine',
+                'type'           => 'ownership_change',
+                'description'    => "Lead auto-reassigned from {$currentOwner} to {$nextAgent->name} due to {$daysWithAgentInt} days of advisor inactivity.",
+            ]);
+
+            // Record in Distribution Log
+            LeadDistributionLog::create([
+                'lead_type'             => 'lead_pool',
+                'record_id'             => $contact->id,
+                'record_name'           => $contact->name . ' (' . ($contact->phone ?: $contact->email) . ')',
+                'assigned_to_user_id'   => $nextAgent->id,
+                'assigned_to_user_name' => $nextAgent->name,
+                'strategy_used'         => "inactivity_reassign_{$reassignDays}d",
+                'created_at'            => Carbon::now(),
+            ]);
+
+            $reassigned[] = [
+                'id' => $contact->id,
+                'name' => $contact->name,
+                'from_owner' => $currentOwner,
+                'to_owner' => $nextAgent->name,
+                'days_inactive' => $daysWithAgentInt,
+            ];
+        }
+
+        return [
+            'reassigned_count' => count($reassigned),
+            'recycled_count'   => count($recycled),
+            'reassigned'       => $reassigned,
+            'recycled'         => $recycled,
         ];
     }
 }

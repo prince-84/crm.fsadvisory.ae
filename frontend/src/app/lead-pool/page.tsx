@@ -326,8 +326,8 @@ export default function LeadPoolPage() {
     return Object.values(advancedFilters).filter((v) => v && v.trim() !== '' && v !== 'all').length;
   }, [advancedFilters]);
 
-  const VISIBILITY_STORAGE_KEY = 'leads_column_visibility_v7';
-  const ORDER_STORAGE_KEY = 'leads_column_order_v7';
+  const VISIBILITY_STORAGE_KEY = 'lead_pool_column_visibility_v1';
+  const ORDER_STORAGE_KEY = 'lead_pool_column_order_v1';
 
   const DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = {
     name: true,
@@ -1062,35 +1062,7 @@ export default function LeadPoolPage() {
               </div>
             ) : (
               <div className="flex items-center justify-end gap-1.5">
-                {/* 1. Log Phone Call & Outcome */}
-                <button
-                  onClick={() => handleQuickCall(ct)}
-                  className="p-1.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 rounded border border-emerald-200 transition-colors cursor-pointer"
-                  title="Log Phone Call Outcome & Update SLA"
-                >
-                  <PhoneCall className="w-3.5 h-3.5" />
-                </button>
-
-                {/* 2. Open Deal / Create Opportunity */}
-                {opp && Number(opp.id) > 0 ? (
-                  <Link
-                    href={`/opportunities/${opp.id}`}
-                    className="p-1.5 bg-slate-50 hover:bg-[#081428] hover:text-[#C8A147] text-slate-600 rounded border border-slate-200 transition-colors cursor-pointer inline-flex items-center justify-center"
-                    title="Open Opportunity Deal Pipeline"
-                  >
-                    <Briefcase className="w-3.5 h-3.5 text-[#C8A147]" />
-                  </Link>
-                ) : (
-                  <button
-                    onClick={() => handleOpenOpportunityModalForContact(ct)}
-                    className="p-1.5 bg-[#C8A147]/10 hover:bg-[#C8A147] hover:text-[#081428] text-[#C8A147] rounded border border-[#C8A147]/30 transition-colors cursor-pointer"
-                    title="Create Opportunity from Lead"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                )}
-
-                {/* 3. View Lead Details */}
+                {/* 1. View Lead Details Drawer */}
                 <button
                   onClick={() => handleOpenDrawer(ct)}
                   className="p-1.5 bg-slate-50 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-500 rounded border border-slate-200 transition-colors cursor-pointer"
@@ -1099,16 +1071,7 @@ export default function LeadPoolPage() {
                   <Eye className="w-3.5 h-3.5" />
                 </button>
 
-                {/* 4. WhatsApp Direct Chat */}
-                <Link
-                  href={`/whatsapp?phone=${encodeURIComponent(ct.phone || '')}&name=${encodeURIComponent(ct.name || '')}`}
-                  className="p-1.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-600 rounded border border-emerald-200 transition-colors inline-flex items-center justify-center"
-                  title="Open WhatsApp Chat"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                </Link>
-
-                {/* 5. Edit Lead Profile (Full Page) */}
+                {/* 2. Edit Lead Profile (Full Page) */}
                 {mounted && hasPermission('leads.edit') && (
                   <Link
                     href={`/leads/${ct.id}/edit`}
@@ -1119,7 +1082,7 @@ export default function LeadPoolPage() {
                   </Link>
                 )}
 
-                {/* 6. Soft Delete / Trash Lead */}
+                {/* 3. Soft Delete / Trash Lead */}
                 {mounted && hasPermission('leads.delete') && (
                   <button
                     onClick={() => handleSoftDeleteContact(ct.id, ct.name)}
@@ -1349,7 +1312,7 @@ export default function LeadPoolPage() {
   ) => {
     setLoading(true);
     try {
-      let endpoint = `/contacts?leads_desk=1&page=${page}&per_page=${limit}&tab=${activeTab}&sort_by=${sBy}&sort_order=${sOrder}`;
+      let endpoint = `/contacts?imported_only=1&page=${page}&per_page=${limit}&tab=${activeTab}&sort_by=${sBy}&sort_order=${sOrder}`;
       if (searchQuery) {
         endpoint += `&search=${encodeURIComponent(searchQuery)}`;
       }
@@ -1843,7 +1806,7 @@ export default function LeadPoolPage() {
           <Sidebar />
           <div className="flex-1 pl-56 flex flex-col min-w-0">
             <Navbar />
-            <AccessDenied moduleName="Lead Pool & Master Directory" requiredPermission="leads.view" />
+            <AccessDenied moduleName="Lead Pool & Imported Lead Bank" requiredPermission="leads.view" />
           </div>
         </div>
       );
@@ -1935,10 +1898,10 @@ export default function LeadPoolPage() {
                   {hasPermission('leads.import') && (
                     <button 
                       onClick={() => setIsImportModalOpen(true)}
-                      className="px-3 py-1.5 bg-white border border-[#E8E4DC] rounded-md text-[#1A1A1A] hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer font-medium"
+                      className="px-3.5 py-1.5 bg-[#FAF8F5] border border-[#C8A147] hover:bg-[#FAF5E8] rounded-md text-[#081428] transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer font-bold"
                     >
-                      <Download className="w-3.5 h-3.5 text-[#6E6E6E]" />
-                      <span>Import CSV</span>
+                      <Download className="w-3.5 h-3.5 text-[#C8A147]" />
+                      <span>Import Leads (CSV / Excel)</span>
                     </button>
                   )}
                   {hasPermission('leads.export') && (
