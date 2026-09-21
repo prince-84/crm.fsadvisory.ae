@@ -1127,16 +1127,7 @@ export default function LeadPoolPage() {
                   </Link>
                 )}
 
-                {/* 5.5 Opportunity Quick View */}
-                {opp && Number(opp.id) > 0 && (
-                  <button
-                    onClick={() => handleOpenQuickView(ct)}
-                    className="p-1.5 bg-[#C8A147]/10 hover:bg-[#C8A147] hover:text-[#081428] text-[#C8A147] rounded border border-[#C8A147]/30 transition-colors cursor-pointer inline-flex items-center justify-center"
-                    title="Opportunity Quick View"
-                  >
-                    <Briefcase className="w-3.5 h-3.5" />
-                  </button>
-                )}
+
 
                 {/* 6. Soft Delete / Trash Lead */}
                 {mounted && hasPermission('leads.delete') && (
