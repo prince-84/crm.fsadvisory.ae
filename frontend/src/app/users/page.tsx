@@ -164,6 +164,24 @@ export default function UserManagementPage() {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [savingPermissions, setSavingPermissions] = useState(false);
 
+  // Helper: Extract all keys from matrix
+  const getAllMatrixKeys = (): string[] => {
+    const keys: string[] = [];
+    permMatrix.forEach((mod) => {
+      mod.permissions.forEach((p) => keys.push(p.key));
+    });
+    return keys;
+  };
+
+  // Helper: Expand '*' wildcard into explicit key list
+  const expandPermissions = (perms: string[]): string[] => {
+    if (!perms || perms.length === 0) return [];
+    if (perms.includes('*')) {
+      return getAllMatrixKeys();
+    }
+    return [...perms];
+  };
+
   // Fetch Data Functions
   const loadUsers = async () => {
     setLoading(true);
@@ -329,12 +347,49 @@ export default function UserManagementPage() {
   const handleOpenEditRole = (r: RoleItem) => {
     setRoleModalMode('edit');
     setActiveRoleId(r.id);
+    const expanded = expandPermissions(r.permissions || []);
     setRoleFormData({
       name: r.name,
       description: r.description || '',
-      permissions: r.permissions || [],
+      permissions: expanded,
     });
     setIsRoleModalOpen(true);
+  };
+
+  // Role Modal Permission Toggle Helpers
+  const handleRoleToggleKey = (key: string) => {
+    if (roleFormData.permissions.includes(key)) {
+      setRoleFormData({
+        ...roleFormData,
+        permissions: roleFormData.permissions.filter((k) => k !== key && k !== '*'),
+      });
+    } else {
+      setRoleFormData({
+        ...roleFormData,
+        permissions: [...roleFormData.permissions.filter((k) => k !== '*'), key],
+      });
+    }
+  };
+
+  const handleRoleSelectAllGlobal = () => {
+    setRoleFormData({ ...roleFormData, permissions: getAllMatrixKeys() });
+  };
+
+  const handleRoleDeselectAllGlobal = () => {
+    setRoleFormData({ ...roleFormData, permissions: [] });
+  };
+
+  const handleRoleToggleModule = (modKeys: string[]) => {
+    const allSelected = modKeys.every((k) => roleFormData.permissions.includes(k));
+    if (allSelected) {
+      setRoleFormData({
+        ...roleFormData,
+        permissions: roleFormData.permissions.filter((k) => !modKeys.includes(k) && k !== '*'),
+      });
+    } else {
+      const set = new Set([...roleFormData.permissions.filter((k) => k !== '*'), ...modKeys]);
+      setRoleFormData({ ...roleFormData, permissions: Array.from(set) });
+    }
   };
 
   const handleSubmitRoleForm = async (e: React.FormEvent) => {
@@ -475,19 +530,46 @@ export default function UserManagementPage() {
     }
   };
 
-  // Granular Permissions Handlers
+  // Granular Permissions Handlers (User Modal)
   const handleOpenPermModal = (u: UserItem) => {
     setPermTargetUser(u);
-    const existing = u.permissions || (u.role_model?.permissions) || [];
-    setSelectedPermissions([...existing]);
+    const raw = u.permissions || (u.role_model?.permissions) || [];
+    const expanded = expandPermissions(raw);
+    setSelectedPermissions(expanded);
     setIsPermModalOpen(true);
   };
 
   const handleTogglePermKey = (key: string) => {
     if (selectedPermissions.includes(key)) {
-      setSelectedPermissions(selectedPermissions.filter((k) => k !== key));
+      setSelectedPermissions(selectedPermissions.filter((k) => k !== key && k !== '*'));
     } else {
-      setSelectedPermissions([...selectedPermissions, key]);
+      setSelectedPermissions([...selectedPermissions.filter((k) => k !== '*'), key]);
+    }
+  };
+
+  const handleUserSelectAllGlobal = () => {
+    setSelectedPermissions(getAllMatrixKeys());
+  };
+
+  const handleUserDeselectAllGlobal = () => {
+    setSelectedPermissions([]);
+  };
+
+  const handleUserToggleModule = (modKeys: string[]) => {
+    const allSelected = modKeys.every((k) => selectedPermissions.includes(k));
+    if (allSelected) {
+      setSelectedPermissions(selectedPermissions.filter((k) => !modKeys.includes(k) && k !== '*'));
+    } else {
+      const set = new Set([...selectedPermissions.filter((k) => k !== '*'), ...modKeys]);
+      setSelectedPermissions(Array.from(set));
+    }
+  };
+
+  const handleApplyRolePresetInPermModal = (roleName: string) => {
+    const matchedRole = roles.find((r) => r.name.toLowerCase() === roleName.toLowerCase());
+    if (matchedRole) {
+      const expanded = expandPermissions(matchedRole.permissions || []);
+      setSelectedPermissions(expanded);
     }
   };
 
@@ -764,7 +846,6 @@ export default function UserManagementPage() {
                               {u.phone && <div className="text-[11px] text-slate-400">{u.phone}</div>}
                             </td>
 
-                            {/* Auto Lead Distribution Switch Column */}
                             <td className="py-3.5 px-4 text-center">
                               {inPool ? (
                                 <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200" title="Participates in Round-Robin, 3-day & 45-day rules">
@@ -1157,39 +1238,81 @@ export default function UserManagementPage() {
                 />
               </div>
 
-              {/* Module Permissions Checklist */}
+              {/* Module Permissions Checklist Header with Global Select All / Deselect All */}
               <div>
-                <label className="block font-bold text-[#081428] mb-2 uppercase tracking-wider text-[11px]">
-                  Module Permissions Preset
-                </label>
-                <div className="space-y-3 max-h-60 overflow-y-auto border border-[#E8E2D9] rounded-lg p-3 bg-[#FAF8F5]">
-                  {permMatrix.map((mod) => (
-                    <div key={mod.module} className="bg-white p-3 rounded border border-[#E8E2D9]">
-                      <div className="font-bold text-[#081428] text-xs mb-1.5">{mod.module}</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {mod.permissions.map((p) => {
-                          const checked = roleFormData.permissions.includes(p.key) || roleFormData.permissions.includes('*');
-                          return (
-                            <label key={p.key} className="flex items-center gap-2 cursor-pointer text-xs">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setRoleFormData({ ...roleFormData, permissions: [...roleFormData.permissions, p.key] });
-                                  } else {
-                                    setRoleFormData({ ...roleFormData, permissions: roleFormData.permissions.filter((k) => k !== p.key && k !== '*') });
-                                  }
-                                }}
-                                className="accent-[#C9A84C] rounded"
-                              />
-                              <span className="font-medium text-slate-700">{p.label}</span>
-                            </label>
-                          );
-                        })}
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block font-bold text-[#081428] uppercase tracking-wider text-[11px]">
+                    Module Permissions Preset ({roleFormData.permissions.length} Selected)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleRoleSelectAllGlobal}
+                      className="text-[11px] font-bold text-[#081428] hover:text-[#C9A84C] bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
+                    >
+                      ✓ Select All (All Modules)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRoleDeselectAllGlobal}
+                      className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
+                    >
+                      ✕ Deselect All
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3 max-h-72 overflow-y-auto border border-[#E8E2D9] rounded-lg p-3 bg-[#FAF8F5]">
+                  {permMatrix.map((mod) => {
+                    const modKeys = mod.permissions.map((p) => p.key);
+                    const allModSelected = modKeys.every((k) => roleFormData.permissions.includes(k));
+                    const selectedCount = modKeys.filter((k) => roleFormData.permissions.includes(k)).length;
+
+                    return (
+                      <div key={mod.module} className="bg-white p-3 rounded-lg border border-[#E8E2D9] space-y-2">
+                        <div className="flex items-center justify-between font-bold text-[#081428] text-xs border-b border-[#E8E2D9] pb-1.5">
+                          <span className="uppercase tracking-wider font-extrabold">{mod.module}</span>
+                          <div className="flex items-center gap-2 text-[10px]">
+                            <span className="text-[#C9A84C] font-mono font-bold">
+                              {selectedCount} / {modKeys.length} Selected
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRoleToggleModule(modKeys)}
+                              className="text-[10px] font-bold text-[#081428] hover:text-[#C9A84C] bg-[#FAF8F5] hover:bg-[#FAF5E8] px-2 py-0.5 rounded border border-[#E8E2D9] cursor-pointer transition-colors"
+                            >
+                              {allModSelected ? '✕ Deselect Module' : '✓ Select All Module'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {mod.permissions.map((p) => {
+                            const checked = roleFormData.permissions.includes(p.key);
+                            return (
+                              <label
+                                key={p.key}
+                                className={`p-2 rounded border transition-all cursor-pointer flex items-start gap-2 ${
+                                  checked ? 'bg-[#FAF8F4] border-[#C9A84C]' : 'bg-white border-[#E8E2D9]'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => handleRoleToggleKey(p.key)}
+                                  className="accent-[#C9A84C] rounded mt-0.5 cursor-pointer"
+                                />
+                                <div>
+                                  <div className="font-semibold text-slate-800 text-xs">{p.label}</div>
+                                  <div className="text-[10px] text-slate-400 font-mono">{p.key}</div>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1300,7 +1423,7 @@ export default function UserManagementPage() {
         </div>
       )}
 
-      {/* GRANULAR PERMISSION MATRIX CHECKBOX MODAL */}
+      {/* GRANULAR PERMISSION MATRIX CHECKBOX MODAL (USER MODAL) */}
       {isPermModalOpen && permTargetUser && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-4xl overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
@@ -1319,7 +1442,7 @@ export default function UserManagementPage() {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 mt-0.5">
-                    Toggle individual permission checkboxes across all CRM modules.
+                    Toggle individual permission checkboxes across all CRM modules or select all per section.
                   </p>
                 </div>
               </div>
@@ -1331,42 +1454,90 @@ export default function UserManagementPage() {
               </button>
             </div>
 
+            {/* Global Controls & Preset Bar */}
+            <div className="bg-[#FAF8F5] border-b border-[#E8E2D9] px-6 py-2.5 shrink-0 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-slate-600">Apply Role Preset:</span>
+                <select
+                  onChange={(e) => handleApplyRolePresetInPermModal(e.target.value)}
+                  className="px-2.5 py-1 border border-[#E8E2D9] rounded bg-white font-semibold cursor-pointer text-xs"
+                >
+                  <option value="">Select Role Preset...</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.name}>{r.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleUserSelectAllGlobal}
+                  className="text-[11px] font-bold text-[#081428] hover:text-[#C9A84C] bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
+                >
+                  ✓ Select All (All Modules)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUserDeselectAllGlobal}
+                  className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
+                >
+                  ✕ Deselect All
+                </button>
+              </div>
+            </div>
+
             <div className="p-6 overflow-y-auto space-y-4 text-xs flex-1">
-              {permMatrix.map((mod) => (
-                <div key={mod.module} className="bg-[#FAF8F5] p-4 rounded-xl border border-[#E8E2D9] space-y-3">
-                  <div className="flex items-center justify-between border-b border-[#E8E2D9] pb-2">
-                    <strong className="text-xs text-[#081428] font-bold uppercase tracking-wider">{mod.module}</strong>
-                    <span className="text-[10px] font-mono text-[#C9A84C] font-bold">
-                      {mod.permissions.length} Available Permissions
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {mod.permissions.map((p) => {
-                      const checked = selectedPermissions.includes(p.key) || selectedPermissions.includes('*');
-                      return (
-                        <label
-                          key={p.key}
-                          className={`p-2.5 rounded-lg border transition-all cursor-pointer flex items-start gap-2.5 ${
-                            checked ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-white/60 border-[#E8E2D9]'
-                          }`}
+              {permMatrix.map((mod) => {
+                const modKeys = mod.permissions.map((p) => p.key);
+                const allModSelected = modKeys.every((k) => selectedPermissions.includes(k));
+                const selectedCount = modKeys.filter((k) => selectedPermissions.includes(k)).length;
+
+                return (
+                  <div key={mod.module} className="bg-[#FAF8F5] p-4 rounded-xl border border-[#E8E2D9] space-y-3">
+                    <div className="flex items-center justify-between border-b border-[#E8E2D9] pb-2">
+                      <strong className="text-xs text-[#081428] font-bold uppercase tracking-wider">{mod.module}</strong>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono text-[#C9A84C] font-bold">
+                          {selectedCount} / {modKeys.length} Selected
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleUserToggleModule(modKeys)}
+                          className="text-[10px] font-bold text-[#081428] hover:text-[#C9A84C] bg-white px-2 py-0.5 rounded border border-[#E8E2D9] cursor-pointer transition-colors"
                         >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => handleTogglePermKey(p.key)}
-                            className="accent-[#C9A84C] rounded mt-0.5"
-                          />
-                          <div>
-                            <div className="font-bold text-[#081428]">{p.label}</div>
-                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">{p.key}</div>
-                            <div className="text-[11px] text-slate-600 mt-0.5">{p.desc}</div>
-                          </div>
-                        </label>
-                      );
-                    })}
+                          {allModSelected ? '✕ Deselect Module' : '✓ Select All Module'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {mod.permissions.map((p) => {
+                        const checked = selectedPermissions.includes(p.key);
+                        return (
+                          <label
+                            key={p.key}
+                            className={`p-2.5 rounded-lg border transition-all cursor-pointer flex items-start gap-2.5 ${
+                              checked ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-white/60 border-[#E8E2D9]'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => handleTogglePermKey(p.key)}
+                              className="accent-[#C9A84C] rounded mt-0.5 cursor-pointer"
+                            />
+                            <div>
+                              <div className="font-bold text-[#081428]">{p.label}</div>
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">{p.key}</div>
+                              <div className="text-[11px] text-slate-600 mt-0.5">{p.desc}</div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="bg-white border-t border-[#E8E2D9] px-6 py-3.5 shrink-0 flex items-center justify-between text-xs">
