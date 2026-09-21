@@ -46,8 +46,12 @@ class LeadDistributionService
             return null;
         }
 
-        // 3. Fetch all active sales advisors (all active users participate automatically in Round-Robin)
-        $candidates = User::where('is_active', true)->get();
+        // 3. Fetch all active users included in distribution pool
+        $candidates = User::where('is_active', true)
+            ->where(function ($q) {
+                $q->whereNull('in_distribution_pool')
+                  ->orWhere('in_distribution_pool', true);
+            })->get();
 
         // Reset daily counts for users if their last assigned date was before today
         foreach ($candidates as $candidate) {
@@ -362,9 +366,13 @@ class LeadDistributionService
             return null;
         }
 
-        // Fetch all active sales advisors excluding the current owner
+        // Fetch all active advisors excluding current owner who are included in distribution pool
         $candidates = User::where('is_active', true)
             ->where('name', '!=', $excludeName)
+            ->where(function ($q) {
+                $q->whereNull('in_distribution_pool')
+                  ->orWhere('in_distribution_pool', true);
+            })
             ->get();
 
         if ($candidates->isEmpty()) {

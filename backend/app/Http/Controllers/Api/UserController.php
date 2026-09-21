@@ -78,6 +78,7 @@ class UserController extends Controller
             'role_id' => 'nullable|integer',
             'permissions' => 'nullable|array',
             'is_active' => 'boolean',
+            'in_distribution_pool' => 'nullable|boolean',
             'password' => 'nullable|string|min:6',
         ]);
 
@@ -112,6 +113,7 @@ class UserController extends Controller
             'permissions' => $permissions ?? [],
             'initials' => $initials,
             'is_active' => $validated['is_active'] ?? true,
+            'in_distribution_pool' => $request->has('in_distribution_pool') ? $request->boolean('in_distribution_pool') : true,
             'password' => Hash::make($validated['password'] ?? 'password123'),
         ]);
 
@@ -135,6 +137,7 @@ class UserController extends Controller
             'role_id' => 'nullable|integer',
             'permissions' => 'nullable|array',
             'is_active' => 'boolean',
+            'in_distribution_pool' => 'nullable|boolean',
             'password' => 'nullable|string|min:6',
         ]);
 

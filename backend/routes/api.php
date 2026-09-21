@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\LeadDistributionController;
 use App\Http\Controllers\Api\EmailSettingsController;
 use App\Http\Controllers\Api\AppointmentController;
+use App\Http\Controllers\Api\DepartmentController;
 
 // Public Auth routes
 Route::post('/auth/login', [AuthController::class, 'login']);
@@ -60,6 +61,12 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::put('/roles/{id}', [RoleController::class, 'update']);
     Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
     Route::get('/permissions/matrix', [RoleController::class, 'permissionsMatrix']);
+
+    // Department Management CRUD
+    Route::get('/departments', [DepartmentController::class, 'index']);
+    Route::post('/departments', [DepartmentController::class, 'store']);
+    Route::put('/departments/{id}', [DepartmentController::class, 'update']);
+    Route::delete('/departments/{id}', [DepartmentController::class, 'destroy']);
 
     // Lead Pool Contacts CRUD & Assignment
     Route::get('/contacts', [ContactController::class, 'index']);

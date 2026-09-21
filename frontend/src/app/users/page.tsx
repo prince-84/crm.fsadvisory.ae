@@ -28,7 +28,9 @@ import {
   Layers,
   Sparkles,
   UserPlus,
-  CheckCircle2
+  CheckCircle2,
+  Building2,
+  HelpCircle
 } from 'lucide-react';
 import { hasAnyPermission } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
@@ -44,6 +46,7 @@ interface UserItem {
   permissions: string[] | null;
   initials: string;
   is_active: boolean;
+  in_distribution_pool?: boolean;
   created_at?: string;
   role_model?: any;
 }
@@ -55,6 +58,15 @@ interface RoleItem {
   description: string | null;
   permissions: string[];
   is_system: boolean;
+  users_count?: number;
+}
+
+interface DepartmentItem {
+  id: number;
+  name: string;
+  code: string | null;
+  description: string | null;
+  is_active: boolean;
   users_count?: number;
 }
 
@@ -83,12 +95,14 @@ export default function UserManagementPage() {
       window.removeEventListener('storage', checkPerms);
     };
   }, []);
-  // Tabs: 'users' | 'roles'
-  const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
 
-  // Users State
+  // Tabs: 'users' | 'roles' | 'departments'
+  const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'departments'>('users');
+
+  // Core Data States
   const [users, setUsers] = useState<UserItem[]>([]);
   const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
   const [permMatrix, setPermMatrix] = useState<PermissionCategory[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -105,15 +119,6 @@ export default function UserManagementPage() {
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
 
-  // Filter options
-  const [filterOptions, setFilterOptions] = useState<{
-    roles: string[];
-    departments: string[];
-  }>({
-    roles: [],
-    departments: [],
-  });
-
   // User Add/Edit Modal
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [userModalMode, setUserModalMode] = useState<'create' | 'edit'>('create');
@@ -122,12 +127,36 @@ export default function UserManagementPage() {
     name: '',
     email: '',
     phone: '',
-    role: 'Property Consultant',
-    department: 'Off-Plan Sales',
+    role: 'Telesales Agent',
+    department: 'Sales',
     password: '',
     is_active: true,
+    in_distribution_pool: true,
   });
   const [submittingUser, setSubmittingUser] = useState(false);
+
+  // Role Add/Edit Modal State
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  const [roleModalMode, setRoleModalMode] = useState<'create' | 'edit'>('create');
+  const [activeRoleId, setActiveRoleId] = useState<number | null>(null);
+  const [roleFormData, setRoleFormData] = useState({
+    name: '',
+    description: '',
+    permissions: [] as string[],
+  });
+  const [submittingRole, setSubmittingRole] = useState(false);
+
+  // Department Add/Edit Modal State
+  const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
+  const [deptModalMode, setDeptModalMode] = useState<'create' | 'edit'>('create');
+  const [activeDeptId, setActiveDeptId] = useState<number | null>(null);
+  const [deptFormData, setDeptFormData] = useState({
+    name: '',
+    code: '',
+    description: '',
+    is_active: true,
+  });
+  const [submittingDept, setSubmittingDept] = useState(false);
 
   // Granular Permissions Modal State
   const [isPermModalOpen, setIsPermModalOpen] = useState(false);
@@ -135,7 +164,7 @@ export default function UserManagementPage() {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [savingPermissions, setSavingPermissions] = useState(false);
 
-  // Fetch Data
+  // Fetch Data Functions
   const loadUsers = async () => {
     setLoading(true);
     try {
@@ -149,7 +178,6 @@ export default function UserManagementPage() {
       if (data.success) {
         setUsers(data.users || []);
         if (data.stats) setStats(data.stats);
-        if (data.filters) setFilterOptions(data.filters);
       }
     } catch (e) {
       console.error('Failed to load users', e);
@@ -164,11 +192,19 @@ export default function UserManagementPage() {
         fetchApi('/roles'),
         fetchApi('/permissions/matrix'),
       ]);
-
       if (rolesData.success) setRoles(rolesData.roles || []);
       if (matrixData.success) setPermMatrix(matrixData.matrix || []);
     } catch (e) {
       console.error('Failed to load roles and matrix', e);
+    }
+  };
+
+  const loadDepartments = async () => {
+    try {
+      const data = await fetchApi('/departments');
+      if (data.success) setDepartments(data.departments || []);
+    } catch (e) {
+      console.error('Failed to load departments', e);
     }
   };
 
@@ -178,6 +214,7 @@ export default function UserManagementPage() {
 
   useEffect(() => {
     loadRolesAndMatrix();
+    loadDepartments();
   }, []);
 
   // Debounced search
@@ -196,10 +233,11 @@ export default function UserManagementPage() {
       name: '',
       email: '',
       phone: '',
-      role: 'Property Consultant',
-      department: 'Off-Plan Sales',
+      role: roles.length > 0 ? roles[0].name : 'Telesales Agent',
+      department: departments.length > 0 ? departments[0].name : 'Sales',
       password: '',
       is_active: true,
+      in_distribution_pool: true,
     });
     setIsUserModalOpen(true);
   };
@@ -212,10 +250,11 @@ export default function UserManagementPage() {
       name: u.name || '',
       email: u.email || '',
       phone: u.phone || '',
-      role: u.role || 'Property Consultant',
+      role: u.role || 'Telesales Agent',
       department: u.department || 'Sales',
       password: '',
       is_active: u.is_active ?? true,
+      in_distribution_pool: u.in_distribution_pool ?? true,
     });
     setIsUserModalOpen(true);
   };
@@ -225,9 +264,7 @@ export default function UserManagementPage() {
     e.preventDefault();
     setSubmittingUser(true);
     try {
-      const path = userModalMode === 'create'
-        ? '/users'
-        : `/users/${activeUserId}`;
+      const path = userModalMode === 'create' ? '/users' : `/users/${activeUserId}`;
       const method = userModalMode === 'create' ? 'POST' : 'PUT';
 
       const data = await fetchApi(path, {
@@ -249,7 +286,7 @@ export default function UserManagementPage() {
         Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Operation failed.' });
       }
     } catch (err: any) {
-      Swal.fire({ icon: 'error', title: 'Request Failed', text: err.message });
+      Swal.fire({ icon: 'error', title: 'Submission Failed', text: err.message || 'Failed to submit user.' });
     } finally {
       setSubmittingUser(false);
     }
@@ -257,163 +294,203 @@ export default function UserManagementPage() {
 
   // Delete User
   const handleDeleteUser = async (id: number, name: string) => {
-    const confirm = await Swal.fire({
+    const res = await Swal.fire({
       title: 'Remove Team Member?',
-      text: `Are you sure you want to remove ${name}?`,
+      text: `Are you sure you want to remove user "${name}"?`,
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#E11D48',
-      cancelButtonColor: '#081428',
-      confirmButtonText: 'Yes, Remove',
+      confirmButtonColor: '#dc2626',
+      confirmButtonText: 'Yes, Remove User',
     });
 
-    if (confirm.isConfirmed) {
+    if (res.isConfirmed) {
       try {
         const data = await fetchApi(`/users/${id}`, { method: 'DELETE' });
         if (data.success) {
           Swal.fire({ icon: 'success', title: 'Removed!', text: data.message, timer: 1400, showConfirmButton: false });
           loadUsers();
         } else {
-          Swal.fire({ icon: 'error', title: 'Cannot Remove', text: data.message });
+          Swal.fire('Error', data.message || 'Failed to remove user', 'error');
         }
       } catch (err: any) {
-        Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+        Swal.fire('Error', err.message || 'Failed to remove user', 'error');
       }
     }
   };
 
-  // Activate Inactive User & Dispatch Activation Email
-  const handleActivateUser = async (user: UserItem) => {
-    const { value: formValues } = await Swal.fire({
-      title: `Approve & Activate Account?`,
-      html: `
-        <div class="text-left text-xs space-y-3 mt-2">
-          <p class="text-slate-600">Assign official Department and Role for <b>${user.name}</b> (${user.email}).</p>
-          <div class="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 font-medium">
-            ✉️ An official activation email with the direct login link will be dispatched from <b>notifications@crm.fsadvisory.ae</b>.
-          </div>
-          <div>
-            <label class="block font-bold text-slate-700 mb-1 uppercase text-[10px] tracking-wider">Department</label>
-            <select id="swal-dept" class="w-full p-2 border border-slate-300 rounded text-xs bg-white text-slate-800 font-medium">
-              <option value="TeleSales" ${user.department === 'TeleSales' ? 'selected' : ''}>TeleSales</option>
-              <option value="Off-Plan Sales" ${user.department === 'Off-Plan Sales' ? 'selected' : ''}>Off-Plan Sales</option>
-              <option value="Secondary & Luxury" ${user.department === 'Secondary & Luxury' ? 'selected' : ''}>Secondary & Luxury</option>
-              <option value="Executive Management" ${user.department === 'Executive Management' ? 'selected' : ''}>Executive Management</option>
-              <option value="Operations & Compliance" ${user.department === 'Operations & Compliance' ? 'selected' : ''}>Operations & Compliance</option>
-              <option value="Client Relations / Inbound" ${user.department === 'Client Relations / Inbound' ? 'selected' : ''}>Client Relations / Inbound</option>
-            </select>
-          </div>
-          <div>
-            <label class="block font-bold text-slate-700 mb-1 uppercase text-[10px] tracking-wider">Designated Role</label>
-            <select id="swal-role" class="w-full p-2 border border-slate-300 rounded text-xs bg-white text-slate-800 font-medium">
-              <option value="Telesales Agent">Telesales Agent</option>
-              <option value="Property Consultant">Property Consultant</option>
-              <option value="Senior Property Advisor">Senior Property Advisor</option>
-              <option value="Sales Manager">Sales Manager</option>
-              <option value="Operations Coordinator">Operations Coordinator</option>
-            </select>
-          </div>
-        </div>
-      `,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Approve & Send Activation Email',
-      confirmButtonColor: '#059669',
-      cancelButtonColor: '#6B7280',
-      preConfirm: () => {
-        return {
-          department: (document.getElementById('swal-dept') as HTMLSelectElement).value,
-          role: (document.getElementById('swal-role') as HTMLSelectElement).value,
-        };
-      },
+  // Role CRUD Handlers
+  const handleOpenCreateRole = () => {
+    setRoleModalMode('create');
+    setActiveRoleId(null);
+    setRoleFormData({ name: '', description: '', permissions: [] });
+    setIsRoleModalOpen(true);
+  };
+
+  const handleOpenEditRole = (r: RoleItem) => {
+    setRoleModalMode('edit');
+    setActiveRoleId(r.id);
+    setRoleFormData({
+      name: r.name,
+      description: r.description || '',
+      permissions: r.permissions || [],
     });
+    setIsRoleModalOpen(true);
+  };
 
-    if (!formValues) return;
-
+  const handleSubmitRoleForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingRole(true);
     try {
-      const data = await fetchApi(`/users/${user.id}/activate`, {
-        method: 'POST',
-        body: JSON.stringify(formValues),
+      const path = roleModalMode === 'create' ? '/roles' : `/roles/${activeRoleId}`;
+      const method = roleModalMode === 'create' ? 'POST' : 'PUT';
+
+      const data = await fetchApi(path, {
+        method,
+        body: JSON.stringify(roleFormData),
       });
+
       if (data.success) {
+        setIsRoleModalOpen(false);
         Swal.fire({
           icon: 'success',
-          title: 'Account Activated!',
+          title: roleModalMode === 'create' ? 'Role Created!' : 'Role Updated!',
           text: data.message,
-          timer: 2000,
+          timer: 1500,
           showConfirmButton: false,
         });
-        loadUsers();
+        loadRolesAndMatrix();
       } else {
-        Swal.fire({ icon: 'error', title: 'Activation Failed', text: data.message });
+        Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Role operation failed.' });
       }
     } catch (err: any) {
-      Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'Failed to activate account' });
+      Swal.fire({ icon: 'error', title: 'Failed', text: err.message || 'Operation failed.' });
+    } finally {
+      setSubmittingRole(false);
     }
   };
 
-  // Open Granular Permissions Modal
-  const handleOpenPermModal = (u: UserItem) => {
-    setPermTargetUser(u);
-    let perms = u.permissions || [];
-    // If empty, find role defaults
-    if (perms.length === 0 && u.role) {
-      const matchRole = roles.find((r) => r.name.toLowerCase() === u.role.toLowerCase());
-      if (matchRole && matchRole.permissions) {
-        perms = matchRole.permissions;
+  const handleDeleteRole = async (role: RoleItem) => {
+    if (role.is_system) {
+      Swal.fire('Restricted', 'System default roles cannot be deleted.', 'info');
+      return;
+    }
+    const res = await Swal.fire({
+      title: `Delete Role "${role.name}"?`,
+      text: 'Are you sure you want to remove this role?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      confirmButtonText: 'Yes, Delete Role',
+    });
+
+    if (res.isConfirmed) {
+      try {
+        const data = await fetchApi(`/roles/${role.id}`, { method: 'DELETE' });
+        if (data.success) {
+          Swal.fire({ icon: 'success', title: 'Deleted!', text: data.message, timer: 1400, showConfirmButton: false });
+          loadRolesAndMatrix();
+        } else {
+          Swal.fire('Error', data.message || 'Failed to delete role', 'error');
+        }
+      } catch (err: any) {
+        Swal.fire('Error', err.message || 'Failed to delete role', 'error');
       }
     }
-    setSelectedPermissions([...perms]);
+  };
+
+  // Department CRUD Handlers
+  const handleOpenCreateDept = () => {
+    setDeptModalMode('create');
+    setActiveDeptId(null);
+    setDeptFormData({ name: '', code: '', description: '', is_active: true });
+    setIsDeptModalOpen(true);
+  };
+
+  const handleOpenEditDept = (d: DepartmentItem) => {
+    setDeptModalMode('edit');
+    setActiveDeptId(d.id);
+    setDeptFormData({
+      name: d.name,
+      code: d.code || '',
+      description: d.description || '',
+      is_active: d.is_active ?? true,
+    });
+    setIsDeptModalOpen(true);
+  };
+
+  const handleSubmitDeptForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingDept(true);
+    try {
+      const path = deptModalMode === 'create' ? '/departments' : `/departments/${activeDeptId}`;
+      const method = deptModalMode === 'create' ? 'POST' : 'PUT';
+
+      const data = await fetchApi(path, {
+        method,
+        body: JSON.stringify(deptFormData),
+      });
+
+      if (data.success) {
+        setIsDeptModalOpen(false);
+        Swal.fire({
+          icon: 'success',
+          title: deptModalMode === 'create' ? 'Department Created!' : 'Department Updated!',
+          text: data.message,
+          timer: 1500,
+          showConfirmButton: false,
+        });
+        loadDepartments();
+      } else {
+        Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Department operation failed.' });
+      }
+    } catch (err: any) {
+      Swal.fire({ icon: 'error', title: 'Failed', text: err.message || 'Operation failed.' });
+    } finally {
+      setSubmittingDept(false);
+    }
+  };
+
+  const handleDeleteDept = async (dept: DepartmentItem) => {
+    const res = await Swal.fire({
+      title: `Delete Department "${dept.name}"?`,
+      text: 'Are you sure you want to remove this department?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      confirmButtonText: 'Yes, Delete Department',
+    });
+
+    if (res.isConfirmed) {
+      try {
+        const data = await fetchApi(`/departments/${dept.id}`, { method: 'DELETE' });
+        if (data.success) {
+          Swal.fire({ icon: 'success', title: 'Deleted!', text: data.message, timer: 1400, showConfirmButton: false });
+          loadDepartments();
+        } else {
+          Swal.fire('Error', data.message || 'Failed to delete department', 'error');
+        }
+      } catch (err: any) {
+        Swal.fire('Error', err.message || 'Failed to delete department', 'error');
+      }
+    }
+  };
+
+  // Granular Permissions Handlers
+  const handleOpenPermModal = (u: UserItem) => {
+    setPermTargetUser(u);
+    const existing = u.permissions || (u.role_model?.permissions) || [];
+    setSelectedPermissions([...existing]);
     setIsPermModalOpen(true);
   };
 
-  // Toggle single permission key
-  const togglePermission = (key: string) => {
-    setSelectedPermissions((prev) => {
-      // If super admin wildcard is active and unticking, remove wildcard
-      if (prev.includes('*')) {
-        const allKeys = permMatrix.flatMap((m) => m.permissions.map((p) => p.key));
-        return allKeys.filter((k) => k !== key);
-      }
-      return prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
-    });
-  };
-
-  // Toggle entire category
-  const toggleCategory = (cat: PermissionCategory) => {
-    const catKeys = cat.permissions.map((p) => p.key);
-    const hasAll = catKeys.every((k) => selectedPermissions.includes(k) || selectedPermissions.includes('*'));
-
-    setSelectedPermissions((prev) => {
-      let base = prev.includes('*') ? permMatrix.flatMap((m) => m.permissions.map((p) => p.key)) : [...prev];
-      if (hasAll) {
-        return base.filter((k) => !catKeys.includes(k));
-      } else {
-        return Array.from(new Set([...base, ...catKeys]));
-      }
-    });
-  };
-
-  // Copy permissions from Role preset
-  const handleApplyRolePreset = (roleSlug: string) => {
-    const r = roles.find((role) => role.slug === roleSlug);
-    if (r) {
-      setSelectedPermissions([...r.permissions]);
+  const handleTogglePermKey = (key: string) => {
+    if (selectedPermissions.includes(key)) {
+      setSelectedPermissions(selectedPermissions.filter((k) => k !== key));
+    } else {
+      setSelectedPermissions([...selectedPermissions, key]);
     }
   };
 
-  // Select all permissions
-  const handleSelectAll = () => {
-    const allKeys = permMatrix.flatMap((m) => m.permissions.map((p) => p.key));
-    setSelectedPermissions(allKeys);
-  };
-
-  // Clear all permissions
-  const handleClearAll = () => {
-    setSelectedPermissions([]);
-  };
-
-  // Save Permissions to Backend
   const handleSavePermissions = async () => {
     if (!permTargetUser) return;
     setSavingPermissions(true);
@@ -424,664 +501,462 @@ export default function UserManagementPage() {
       });
 
       if (data.success) {
-        // If current logged-in user's permissions were edited, sync immediately
-        try {
-          const raw = localStorage.getItem('crm_user');
-          if (raw) {
-            const current = JSON.parse(raw);
-            if (current.id === permTargetUser.id || current.email === permTargetUser.email) {
-              current.permissions = selectedPermissions;
-              localStorage.setItem('crm_user', JSON.stringify(current));
-              window.dispatchEvent(new Event('crm_user_updated'));
-            }
-          }
-        } catch (err) {
-          console.error(err);
-        }
-
         setIsPermModalOpen(false);
         Swal.fire({
           icon: 'success',
-          title: 'Permissions Saved!',
+          title: 'Permissions Updated!',
           text: data.message,
           timer: 1500,
           showConfirmButton: false,
         });
         loadUsers();
       } else {
-        Swal.fire({ icon: 'error', title: 'Save Failed', text: data.message });
+        Swal.fire('Error', data.message || 'Failed to save permissions', 'error');
       }
-    } catch (e: any) {
-      Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+    } catch (err: any) {
+      Swal.fire('Error', err.message || 'Failed to save permissions', 'error');
     } finally {
       setSavingPermissions(false);
     }
   };
 
-  // Helper to get total permission count for a user
-  const getUserPermCountText = (u: UserItem) => {
-    if (u.permissions && u.permissions.includes('*')) {
-      return 'Full Access (*)';
-    }
-    if (u.role === 'Super Admin') {
-      return 'Super Admin (*)';
-    }
-    const count = u.permissions?.length || 0;
-    return `${count} Perms`;
-  };
-
   if (canManageUsers === false) {
-    return (
-      <div className="flex h-screen bg-[#F8F9FA] text-[#1B2A4A] overflow-hidden font-sans">
-        <Sidebar />
-        <div className="flex-1 pl-56 flex flex-col h-screen overflow-hidden min-w-0">
-          <Navbar />
-          <AccessDenied moduleName="User & Role Management" requiredPermission="users.manage" />
-        </div>
-      </div>
-    );
+    return <AccessDenied moduleName="User Management & Access Governance" requiredPermission="users.manage" />;
   }
 
   return (
-    <div className="flex h-screen bg-[#F8F9FA] text-[#1B2A4A] overflow-hidden font-sans">
+    <div className="flex h-screen bg-[#FAF8F5] overflow-hidden font-sans">
       <Sidebar />
 
-      <div className="flex-1 pl-56 flex flex-col h-screen overflow-hidden min-w-0">
-        <Navbar />
+      <div className="flex-1 pl-56 flex flex-col min-w-0 overflow-hidden">
+        <Navbar title="User & Permissions Management" />
 
-        {/* 1. Page Header */}
-        <header className="bg-white border-b border-[#E8E2D9] px-6 py-4 shrink-0 flex flex-wrap items-center justify-between gap-4 shadow-2xs">
+        {/* Header Action Bar */}
+        <div className="bg-white border-b border-[#E8E2D9] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 shadow-2xs">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#081428] text-[#C9A84C] flex items-center justify-center font-bold shadow-sm">
-              <ShieldCheck className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-[#081428] text-[#C9A84C] flex items-center justify-center font-bold shadow-xs">
+              <Users className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-heading font-bold text-lg text-[#081428] tracking-tight">
-                  User Management & Roles
-                </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#081428] text-[#C9A84C]">
-                  Security Control
-                </span>
-              </div>
-              <p className="text-xs text-[#7A7A7A]">
-                Manage agent profiles, roles, and granular permission access matrices across all CRM modules
+              <h1 className="font-heading font-bold text-lg text-[#081428]">Team & Access Governance</h1>
+              <p className="text-xs text-slate-500">
+                Manage accounts, auto-lead distribution switches, dynamic roles, and departments
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            {/* Tab Switcher */}
-            <div className="flex bg-[#FAF8F5] border border-[#E8E2D9] rounded-md p-0.5">
+          <div className="flex items-center gap-2">
+            {activeTab === 'users' && (
               <button
-                onClick={() => setActiveTab('users')}
-                className={`px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'users'
-                    ? 'bg-[#081428] text-[#C9A84C] shadow-2xs'
-                    : 'text-[#7A7A7A] hover:text-[#081428]'
-                }`}
+                onClick={handleOpenCreateUser}
+                className="px-4 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold text-xs rounded-lg transition-all flex items-center gap-2 shadow-xs cursor-pointer"
               >
-                Team Members ({stats.total})
+                <UserPlus className="w-4 h-4" />
+                <span>+ Add Team Member</span>
               </button>
+            )}
+
+            {activeTab === 'roles' && (
               <button
-                onClick={() => setActiveTab('roles')}
-                className={`px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'roles'
-                    ? 'bg-[#081428] text-[#C9A84C] shadow-2xs'
-                    : 'text-[#7A7A7A] hover:text-[#081428]'
-                }`}
+                onClick={handleOpenCreateRole}
+                className="px-4 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold text-xs rounded-lg transition-all flex items-center gap-2 shadow-xs cursor-pointer"
               >
-                Roles & Matrix ({roles.length})
+                <Plus className="w-4 h-4" />
+                <span>+ Create New Role</span>
               </button>
-            </div>
+            )}
 
-            {/* Refresh */}
-            <button
-              onClick={loadUsers}
-              className="p-2 border border-[#E8E2D9] rounded-md hover:bg-slate-50 text-[#7A7A7A] hover:text-[#1B2A4A] transition-colors cursor-pointer"
-              title="Refresh"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-
-            {/* Add Member Button */}
-            <button
-              onClick={handleOpenCreateUser}
-              className="px-3.5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold text-xs rounded-md shadow-sm transition-all flex items-center gap-2 cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>Add Team Member</span>
-            </button>
+            {activeTab === 'departments' && (
+              <button
+                onClick={handleOpenCreateDept}
+                className="px-4 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold text-xs rounded-lg transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Create Department</span>
+              </button>
+            )}
           </div>
-        </header>
+        </div>
 
-        {/* 2. Top Stats KPI Cards */}
-        <div className="px-6 py-3.5 bg-[#FAF8F5] border-b border-[#E8E2D9] shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-white p-3 rounded-lg border border-[#E8E2D9] shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7A7A7A]">Total Team Members</div>
-              <div className="text-xl font-bold text-[#081428] mt-0.5">{stats.total}</div>
+        {/* 4 Summary Stats Cards */}
+        <div className="bg-white border-b border-[#E8E2D9] px-6 py-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+          <div className="bg-[#FAF8F5] border border-[#E8E2D9] rounded-xl p-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-[#081428]/10 text-[#081428] flex items-center justify-center font-bold">
+              <Users className="w-4 h-4 text-[#C9A84C]" />
             </div>
-            <div className="w-9 h-9 rounded-md bg-[#FAF8F5] border border-[#E8E2D9] flex items-center justify-center text-[#C9A84C]">
-              <Users className="w-4 h-4" />
+            <div>
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Total Members</span>
+              <span className="font-bold text-base text-[#081428]">{stats.total || users.length}</span>
             </div>
           </div>
 
-          <div className="bg-white p-3 rounded-lg border border-[#E8E2D9] shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7A7A7A]">Active Advisors</div>
-              <div className="text-xl font-bold text-emerald-700 mt-0.5">{stats.active}</div>
-            </div>
-            <div className="w-9 h-9 rounded-md bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+          <div className="bg-[#FAF8F5] border border-[#E8E2D9] rounded-xl p-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
               <UserCheck className="w-4 h-4" />
             </div>
+            <div>
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Active Accounts</span>
+              <span className="font-bold text-base text-emerald-700">{stats.active || users.filter(u => u.is_active).length}</span>
+            </div>
           </div>
 
-          <div className="bg-white p-3 rounded-lg border border-[#E8E2D9] shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7A7A7A]">Security Roles</div>
-              <div className="text-xl font-bold text-indigo-700 mt-0.5">{stats.roles_count}</div>
-            </div>
-            <div className="w-9 h-9 rounded-md bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+          <div className="bg-[#FAF8F5] border border-[#E8E2D9] rounded-xl p-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
               <ShieldCheck className="w-4 h-4" />
             </div>
+            <div>
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Configured Roles</span>
+              <span className="font-bold text-base text-indigo-900">{roles.length} Roles</span>
+            </div>
           </div>
 
-          <div className="bg-white p-3 rounded-lg border border-[#E8E2D9] shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[#7A7A7A]">Departments</div>
-              <div className="text-xl font-bold text-[#081428] mt-0.5">{stats.departments_count}</div>
+          <div className="bg-[#FAF8F5] border border-[#E8E2D9] rounded-xl p-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold">
+              <Building2 className="w-4 h-4" />
             </div>
-            <div className="w-9 h-9 rounded-md bg-[#FAF8F5] border border-[#E8E2D9] flex items-center justify-center text-[#1B2A4A]">
-              <Building className="w-4 h-4" />
+            <div>
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">Departments</span>
+              <span className="font-bold text-base text-purple-900">{departments.length} Depts</span>
             </div>
           </div>
         </div>
 
-        {/* 3. Main Body */}
+        {/* Tab Navigation */}
+        <div className="bg-white border-b border-[#E8E2D9] px-6 flex items-center gap-2 text-xs font-bold shrink-0">
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`py-3 px-4 border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'users'
+                ? 'border-[#C9A84C] text-[#081428]'
+                : 'border-transparent text-slate-500 hover:text-[#081428]'
+            }`}
+          >
+            <Users className="w-4 h-4 text-[#C9A84C]" />
+            <span>Team Members ({users.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('roles')}
+            className={`py-3 px-4 border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'roles'
+                ? 'border-[#C9A84C] text-[#081428]'
+                : 'border-transparent text-slate-500 hover:text-[#081428]'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 text-[#C9A84C]" />
+            <span>Roles & Permissions Matrix ({roles.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('departments')}
+            className={`py-3 px-4 border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'departments'
+                ? 'border-[#C9A84C] text-[#081428]'
+                : 'border-transparent text-slate-500 hover:text-[#081428]'
+            }`}
+          >
+            <Building2 className="w-4 h-4 text-[#C9A84C]" />
+            <span>Departments CRUD ({departments.length})</span>
+          </button>
+        </div>
+
+        {/* TAB 1: TEAM MEMBERS LIST */}
         {activeTab === 'users' ? (
           <>
             {/* Filter Bar */}
-            <div className="p-3 px-6 bg-white border-b border-[#E8E2D9] shrink-0 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
-                {/* Search */}
-                <div className="relative w-64 sm:w-72">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2" />
-                  <input
-                    type="text"
-                    placeholder="Search name, email, phone, role..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-8 py-1.5 text-xs bg-[#FAF8F5] border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] text-[#081428]"
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+            <div className="bg-white border-b border-[#E8E2D9] px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs shrink-0">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search user name, email, phone, role..."
+                  className="w-full pl-9 pr-3 py-1.5 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
+                />
+              </div>
 
-                {/* Role Filter */}
+              <div className="flex items-center gap-2">
                 <select
                   value={selectedRole}
                   onChange={(e) => setSelectedRole(e.target.value)}
-                  className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#E8E2D9] rounded-md text-xs font-semibold text-[#1B2A4A] focus:outline-none focus:border-[#C9A84C] cursor-pointer"
+                  className="px-3 py-1.5 border border-[#E8E2D9] rounded-md bg-white font-semibold cursor-pointer"
                 >
-                  <option value="all">All Roles ({filterOptions.roles.length})</option>
-                  {filterOptions.roles.map((r) => (
-                    <option key={r} value={r}>{r}</option>
+                  <option value="all">All Roles</option>
+                  {roles.map((r) => (
+                    <option key={r.slug} value={r.name}>{r.name}</option>
                   ))}
                 </select>
 
-                {/* Department Filter */}
                 <select
                   value={selectedDepartment}
                   onChange={(e) => setSelectedDepartment(e.target.value)}
-                  className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#E8E2D9] rounded-md text-xs font-semibold text-[#1B2A4A] focus:outline-none focus:border-[#C9A84C] cursor-pointer"
+                  className="px-3 py-1.5 border border-[#E8E2D9] rounded-md bg-white font-semibold cursor-pointer"
                 >
                   <option value="all">All Departments</option>
-                  {filterOptions.departments.map((d) => (
-                    <option key={d} value={d}>{d}</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
                 </select>
-
-                {/* Status Filter */}
-                <select
-                  value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value)}
-                  className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#E8E2D9] rounded-md text-xs font-semibold text-[#1B2A4A] focus:outline-none focus:border-[#C9A84C] cursor-pointer"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="active">Active Only</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-
-                {(searchQuery || selectedRole !== 'all' || selectedDepartment !== 'all' || selectedStatus !== 'all') && (
-                  <button
-                    onClick={() => {
-                      setSearchQuery('');
-                      setSelectedRole('all');
-                      setSelectedDepartment('all');
-                      setSelectedStatus('all');
-                    }}
-                    className="text-xs text-[#C8A147] font-bold hover:underline px-1 cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                )}
               </div>
             </div>
 
             {/* Users Table */}
-            <div className="flex-1 overflow-auto bg-white">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-[#FAF8F5] border-b border-[#E8E2D9] sticky top-0 z-10 text-[11px] font-bold uppercase tracking-wider text-[#7A7A7A]">
-                  <tr>
-                    <th className="py-3 px-4">Team Member</th>
-                    <th className="py-3 px-4">Role</th>
-                    <th className="py-3 px-4">Department</th>
-                    <th className="py-3 px-4">Phone / Mobile</th>
-                    <th className="py-3 px-4">Granular Permissions</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E8E2D9] text-xs">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={7} className="py-16 text-center text-slate-500">
-                        <RefreshCw className="w-6 h-6 animate-spin text-[#C9A84C] mx-auto mb-2" />
-                        <span>Loading team members...</span>
-                      </td>
+            <div className="flex-1 overflow-auto p-6 bg-[#FAF8F5]">
+              <div className="bg-white rounded-xl border border-[#E8E2D9] shadow-2xs overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#081428] text-white text-[11px] font-semibold uppercase tracking-wider">
+                      <th className="py-3 px-4">Member Name</th>
+                      <th className="py-3 px-4">Role & Permissions</th>
+                      <th className="py-3 px-4">Department</th>
+                      <th className="py-3 px-4">Contact Info</th>
+                      <th className="py-3 px-4 text-center">Auto-Lead Switch</th>
+                      <th className="py-3 px-4 text-center">Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
-                  ) : users.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-16 text-center text-slate-500">
-                        <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                        <p className="font-semibold text-slate-700">No Team Members Found</p>
-                        <p className="text-xs text-slate-400 mt-1">Try adjusting your filters or click Add Team Member.</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    users.map((u) => {
-                      const isSuperAdmin = u.role === 'Super Admin' || u.id === 1;
+                  </thead>
+                  <tbody className="divide-y divide-[#E8E2D9] text-xs">
+                    {loading ? (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-slate-400 font-semibold">
+                          <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-[#C9A84C]" />
+                          Loading team directory...
+                        </td>
+                      </tr>
+                    ) : users.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-slate-400 font-semibold">
+                          No team members found matching filter criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      users.map((u) => {
+                        const isSuperAdmin = u.role?.toLowerCase() === 'super admin' || u.id === 1;
+                        const inPool = u.in_distribution_pool ?? true;
 
-                      return (
-                        <tr key={u.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
-                          {/* 1. Member Profile */}
-                          <td className="py-3 px-4 font-semibold text-[#081428]">
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-[#081428] text-[#C9A84C] flex items-center justify-center font-bold text-xs shadow-2xs shrink-0">
-                                {u.initials || u.name.substring(0, 2).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="font-bold text-[#081428] flex items-center gap-1.5">
-                                  <span>{u.name}</span>
-                                  {isSuperAdmin && (
-                                    <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded font-bold">Root</span>
-                                  )}
+                        return (
+                          <tr key={u.id} className="hover:bg-[#FAF8F5]/60 transition-colors">
+                            <td className="py-3.5 px-4 font-semibold text-[#081428]">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-[#081428] text-[#C9A84C] font-bold text-xs flex items-center justify-center border border-[#C9A84C]/30">
+                                  {u.initials || u.name.slice(0, 2).toUpperCase()}
                                 </div>
-                                <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                                  <Mail className="w-3 h-3 text-slate-400" />
-                                  <span>{u.email}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* 2. Role */}
-                          <td className="py-3 px-4">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              u.role === 'Super Admin'
-                                ? 'bg-[#081428] text-[#C9A84C] border border-[#C9A84C]/40'
-                                : u.role === 'Sales Manager'
-                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                : u.role === 'Senior Property Advisor'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : u.role === 'Telesales Agent'
-                                ? 'bg-amber-50 text-amber-800 border border-amber-300 font-bold'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}>
-                              {u.role}
-                            </span>
-                          </td>
-
-                          {/* 3. Department */}
-                          <td className="py-3 px-4 text-slate-700 font-medium">
-                            {u.department ? (
-                              <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] text-slate-700 border border-slate-200">
-                                {u.department}
-                              </span>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-
-                          {/* 4. Phone */}
-                          <td className="py-3 px-4 font-mono text-slate-600 text-[11px]">
-                            {u.phone ? (
-                              <div className="flex items-center gap-1.5">
-                                <Phone className="w-3 h-3 text-slate-400" />
-                                <span>{u.phone}</span>
-                              </div>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-
-                          {/* 5. Granular Permissions Button */}
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => handleOpenPermModal(u)}
-                              className="px-2.5 py-1 bg-[#FAF8F5] hover:bg-[#C9A84C]/15 border border-[#E8E2D9] hover:border-[#C9A84C] rounded-md text-[11px] font-bold text-[#081428] flex items-center gap-1.5 transition-all cursor-pointer"
-                              title="Click to customize granular checkboxes"
-                            >
-                              <KeyRound className="w-3.5 h-3.5 text-[#C9A84C]" />
-                              <span>{getUserPermCountText(u)}</span>
-                            </button>
-                          </td>
-
-                          {/* 6. Active Status */}
-                          <td className="py-3 px-4">
-                            {u.is_active ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                Active
-                              </span>
-                            ) : (
-                              <div className="space-y-1.5">
-                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-50 text-amber-800 border border-amber-300 inline-block">
-                                  ⏳ Pending Review
-                                </span>
                                 <div>
-                                  <button
-                                    onClick={() => handleActivateUser(u)}
-                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold uppercase flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                                    title="Approve & Send Activation Email"
-                                  >
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>Approve & Activate</span>
-                                  </button>
+                                  <div className="font-bold text-sm text-[#081428]">{u.name}</div>
+                                  <div className="text-[10px] text-slate-400 font-mono">ID: #{u.id}</div>
                                 </div>
                               </div>
-                            )}
-                          </td>
+                            </td>
 
-                          {/* 7. Action Buttons */}
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => handleOpenPermModal(u)}
-                                className="p-1.5 bg-slate-100 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-600 rounded transition-colors cursor-pointer"
-                                title="Manage Permissions"
-                              >
-                                <KeyRound className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleOpenEditUser(u)}
-                                className="p-1.5 bg-slate-100 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-600 rounded transition-colors cursor-pointer"
-                                title="Edit Member Profile"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              {!isSuperAdmin && (
-                                <button
-                                  onClick={() => handleDeleteUser(u.id, u.name)}
-                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded transition-colors cursor-pointer"
-                                  title="Remove Member"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                            <td className="py-3.5 px-4">
+                              <span className="inline-block px-2.5 py-0.5 rounded font-bold text-[11px] bg-[#081428] text-[#C9A84C]">
+                                {u.role || 'Advisor'}
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-4 font-medium text-slate-700">
+                              {u.department || 'Sales'}
+                            </td>
+
+                            <td className="py-3.5 px-4 font-mono text-slate-600">
+                              <div>{u.email}</div>
+                              {u.phone && <div className="text-[11px] text-slate-400">{u.phone}</div>}
+                            </td>
+
+                            {/* Auto Lead Distribution Switch Column */}
+                            <td className="py-3.5 px-4 text-center">
+                              {inPool ? (
+                                <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200" title="Participates in Round-Robin, 3-day & 45-day rules">
+                                  ✓ Auto-Assign ON
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300" title="Reviewer/Auditor mode: Excluded from auto-assignment">
+                                  ✕ Auto-Assign OFF
+                                </span>
                               )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                            </td>
+
+                            <td className="py-3.5 px-4 text-center">
+                              {u.is_active ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                  Active
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
+                                  Inactive
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => handleOpenPermModal(u)}
+                                  className="p-1.5 bg-slate-100 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-600 rounded transition-colors cursor-pointer"
+                                  title="Manage Permissions Matrix"
+                                >
+                                  <KeyRound className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleOpenEditUser(u)}
+                                  className="p-1.5 bg-slate-100 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-600 rounded transition-colors cursor-pointer"
+                                  title="Edit Member Profile & Distribution Switch"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                {!isSuperAdmin && (
+                                  <button
+                                    onClick={() => handleDeleteUser(u.id, u.name)}
+                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded transition-colors cursor-pointer"
+                                    title="Remove Member"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
-        ) : (
-          /* Tab 2: Roles & Permission Matrix */
+        ) : activeTab === 'roles' ? (
+          /* TAB 2: DYNAMIC ROLES & PERMISSION MATRIX */
           <div className="flex-1 overflow-auto p-6 space-y-6 bg-[#FAF8F5]">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-base text-[#081428]">Configured System & Custom Roles</h2>
+                <p className="text-xs text-slate-500">Add, edit, or delete dynamic user roles with custom permission profiles</p>
+              </div>
+              <button
+                onClick={handleOpenCreateRole}
+                className="px-3.5 py-1.5 bg-[#C9A84C] hover:bg-[#b48e35] text-[#081428] font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Create Custom Role</span>
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {roles.map((r) => {
                 const isAll = r.permissions.includes('*');
                 return (
-                  <div key={r.id} className="bg-white rounded-xl border border-[#E8E2D9] p-5 shadow-2xs space-y-3">
+                  <div key={r.id} className="bg-white rounded-xl border border-[#E8E2D9] p-5 shadow-2xs space-y-3 relative group">
                     <div className="flex items-center justify-between">
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#081428] text-[#C9A84C]">
                         {r.slug}
                       </span>
-                      <span className="text-xs font-semibold text-slate-500">
-                        {r.users_count ?? 0} Users
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-500">
+                          {r.users_count ?? 0} Users
+                        </span>
+                        <button
+                          onClick={() => handleOpenEditRole(r)}
+                          className="p-1 text-slate-400 hover:text-[#081428] transition-colors cursor-pointer"
+                          title="Edit Role & Permissions"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        {!r.is_system && (
+                          <button
+                            onClick={() => handleDeleteRole(r)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Delete Role"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <h3 className="font-bold text-sm text-[#081428]">{r.name}</h3>
                       <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                        {r.description || 'System standard role.'}
+                        {r.description || 'Custom company role.'}
                       </p>
                     </div>
                     <div className="pt-2 border-t border-[#E8E2D9] flex items-center justify-between text-xs">
                       <span className="font-mono text-slate-600">
                         {isAll ? 'Full Access (*)' : `${r.permissions.length} Permissions`}
                       </span>
-                      <span className="text-emerald-700 font-bold text-[10px] uppercase bg-emerald-50 px-2 py-0.5 rounded">
-                        Configured
+                      <span className={`font-bold text-[10px] uppercase px-2 py-0.5 rounded ${r.is_system ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'}`}>
+                        {r.is_system ? 'System Default' : 'Custom Role'}
                       </span>
                     </div>
                   </div>
                 );
               })}
             </div>
-
-            {/* Matrix Documentation */}
-            <div className="bg-white rounded-xl border border-[#E8E2D9] p-6 shadow-2xs space-y-4">
-              <div className="flex items-center gap-2 border-b border-[#E8E2D9] pb-3">
-                <ShieldCheck className="w-5 h-5 text-[#C9A84C]" />
-                <h3 className="font-bold text-base text-[#081428]">
-                  Granular Permission Breakdown Across 8 CRM Modules
-                </h3>
+          </div>
+        ) : (
+          /* TAB 3: DYNAMIC DEPARTMENTS CRUD */
+          <div className="flex-1 overflow-auto p-6 space-y-6 bg-[#FAF8F5]">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-base text-[#081428]">Company Departments</h2>
+                <p className="text-xs text-slate-500">Manage company operational departments and team structures</p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                {permMatrix.map((mod) => (
-                  <div key={mod.module} className="bg-[#FAF8F5] p-3.5 rounded-lg border border-[#E8E2D9] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <strong className="text-xs text-[#081428] font-bold">{mod.module}</strong>
-                      <span className="text-[10px] font-mono text-[#C9A84C] font-bold">
-                        {mod.permissions.length} Keys
+              <button
+                onClick={handleOpenCreateDept}
+                className="px-3.5 py-1.5 bg-[#C9A84C] hover:bg-[#b48e35] text-[#081428] font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Create Department</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {departments.map((d) => (
+                <div key={d.id} className="bg-white rounded-xl border border-[#E8E2D9] p-5 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-100 text-purple-900 border border-purple-200">
+                      {d.code || 'DEPT'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-500 mr-1">
+                        {d.users_count ?? 0} Members
                       </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">{mod.description}</p>
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {mod.permissions.map((p) => (
-                        <span key={p.key} className="px-2 py-0.5 bg-white border border-[#E8E2D9] rounded text-[10px] font-mono text-slate-700">
-                          {p.key}
-                        </span>
-                      ))}
+                      <button
+                        onClick={() => handleOpenEditDept(d)}
+                        className="p-1 text-slate-400 hover:text-[#081428] transition-colors cursor-pointer"
+                        title="Edit Department"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDept(d)}
+                        className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                        title="Delete Department"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-                ))}
-              </div>
+
+                  <div>
+                    <h3 className="font-bold text-sm text-[#081428]">{d.name}</h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      {d.description || 'Company operational department.'}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#E8E2D9] flex items-center justify-between text-xs">
+                    <span className={`font-bold text-[10px] uppercase px-2 py-0.5 rounded ${d.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
+                      {d.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
       </div>
 
-      {/* 4. GRANULAR PERMISSION CHECKBOX MATRIX MODAL */}
-      {isPermModalOpen && permTargetUser && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-4xl overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
-            {/* Modal Header */}
-            <div className="bg-[#081428] text-white px-6 py-4 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-white/10 text-[#C9A84C] flex items-center justify-center font-bold text-sm">
-                  <KeyRound className="w-4 h-4 text-[#C9A84C]" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-heading font-bold text-base tracking-wide">
-                      Granular CRM Permissions: {permTargetUser.name}
-                    </h2>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#C9A84C] text-[#081428]">
-                      {permTargetUser.role}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 mt-0.5">
-                    Toggle individual permission checkboxes across all 8 CRM modules or copy presets from roles.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsPermModalOpen(false)}
-                className="text-slate-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Quick Action Preset Bar */}
-            <div className="bg-[#FAF8F5] border-b border-[#E8E2D9] px-6 py-2.5 shrink-0 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-600">Preset:</span>
-                <select
-                  onChange={(e) => handleApplyRolePreset(e.target.value)}
-                  defaultValue=""
-                  className="px-2.5 py-1 bg-white border border-[#E8E2D9] rounded text-xs font-semibold text-[#081428] cursor-pointer"
-                >
-                  <option value="" disabled>Apply Role Preset...</option>
-                  {roles.map((r) => (
-                    <option key={r.slug} value={r.slug}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  className="px-2.5 py-1 bg-white border border-[#E8E2D9] hover:bg-slate-50 text-[#081428] font-bold rounded text-[11px] transition-colors cursor-pointer"
-                >
-                  Select All
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClearAll}
-                  className="px-2.5 py-1 bg-white border border-[#E8E2D9] hover:bg-slate-50 text-slate-600 font-semibold rounded text-[11px] transition-colors cursor-pointer"
-                >
-                  Clear All
-                </button>
-                <span className="px-2 py-0.5 bg-[#081428] text-[#C9A84C] font-mono font-bold rounded text-[11px]">
-                  {selectedPermissions.includes('*') ? 'All (*)' : `${selectedPermissions.length} Active`}
-                </span>
-              </div>
-            </div>
-
-            {/* Modal Body: Module Checkbox Matrix */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
-              {permMatrix.map((cat) => {
-                const catKeys = cat.permissions.map((p) => p.key);
-                const isAllChecked = catKeys.every((k) => selectedPermissions.includes(k) || selectedPermissions.includes('*'));
-                const someChecked = catKeys.some((k) => selectedPermissions.includes(k)) && !isAllChecked;
-
-                return (
-                  <div key={cat.module} className="bg-white border border-[#E8E2D9] rounded-xl overflow-hidden shadow-2xs">
-                    {/* Category Header with Toggle */}
-                    <div
-                      onClick={() => toggleCategory(cat)}
-                      className="bg-[#FAF8F5] px-4 py-2.5 border-b border-[#E8E2D9] flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors select-none"
-                    >
-                      <div className="flex items-center gap-2">
-                        <button type="button" className="text-[#C9A84C] cursor-pointer">
-                          {isAllChecked ? (
-                            <CheckSquare className="w-4 h-4 text-[#C9A84C]" />
-                          ) : someChecked ? (
-                            <div className="w-4 h-4 rounded border-2 border-[#C9A84C] flex items-center justify-center">
-                              <div className="w-2 h-2 bg-[#C9A84C] rounded-xs" />
-                            </div>
-                          ) : (
-                            <Square className="w-4 h-4 text-slate-400" />
-                          )}
-                        </button>
-                        <strong className="text-xs text-[#081428] font-bold">{cat.module}</strong>
-                        <span className="text-[11px] text-slate-400 font-normal">— {cat.description}</span>
-                      </div>
-                      <span className="text-[10px] font-mono text-slate-500">
-                        {catKeys.filter((k) => selectedPermissions.includes(k) || selectedPermissions.includes('*')).length} / {catKeys.length}
-                      </span>
-                    </div>
-
-                    {/* Permissions Grid */}
-                    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {cat.permissions.map((p) => {
-                        const isChecked = selectedPermissions.includes(p.key) || selectedPermissions.includes('*');
-
-                        return (
-                          <label
-                            key={p.key}
-                            className={`p-2.5 rounded-lg border transition-all cursor-pointer select-none flex items-start gap-2.5 ${
-                              isChecked
-                                ? 'bg-[#C9A84C]/5 border-[#C9A84C]/40'
-                                : 'bg-white border-[#E8E2D9] hover:bg-slate-50'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => togglePermission(p.key)}
-                              className="mt-0.5 accent-[#C9A84C] rounded cursor-pointer"
-                            />
-                            <div className="min-w-0">
-                              <div className={`font-semibold text-xs ${isChecked ? 'text-[#081428]' : 'text-slate-700'}`}>
-                                {p.label}
-                              </div>
-                              <p className="text-[11px] text-slate-400 leading-tight mt-0.5">
-                                {p.desc}
-                              </p>
-                              <span className="font-mono text-[9px] text-slate-400 block mt-1">
-                                {p.key}
-                              </span>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-white border-t border-[#E8E2D9] px-6 py-3.5 shrink-0 flex items-center justify-between text-xs">
-              <div className="text-slate-500 text-[11px]">
-                Target: <strong className="text-[#081428]">{permTargetUser.name}</strong> ({permTargetUser.email})
-              </div>
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsPermModalOpen(false)}
-                  className="px-4 py-2 border border-[#E8E2D9] rounded-md text-slate-600 hover:bg-slate-50 font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSavePermissions}
-                  disabled={savingPermissions}
-                  className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded-md shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {savingPermissions ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  <span>Save Granular Permissions</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 5. ADD / EDIT TEAM MEMBER MODAL */}
+      {/* USER CREATE / EDIT MODAL */}
       {isUserModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-lg overflow-hidden animate-fade-in flex flex-col">
@@ -1110,7 +985,7 @@ export default function UserManagementPage() {
                   required
                   value={userFormData.name}
                   onChange={(e) => setUserFormData({ ...userFormData, name: e.target.value })}
-                  placeholder="e.g. Tariq Al-Mansoor"
+                  placeholder="e.g. Faraz Shafi"
                   className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] font-semibold text-[#081428]"
                 />
               </div>
@@ -1125,7 +1000,7 @@ export default function UserManagementPage() {
                     required
                     value={userFormData.email}
                     onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
-                    placeholder="e.g. tariq@fsadvisory.ae"
+                    placeholder="e.g. faraz@fsadvisory.ae"
                     className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
                   />
                 </div>
@@ -1151,7 +1026,7 @@ export default function UserManagementPage() {
                     className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] bg-white cursor-pointer font-semibold"
                   >
                     {roles.map((r) => (
-                      <option key={r.slug} value={r.name}>{r.name}</option>
+                      <option key={r.id} value={r.name}>{r.name}</option>
                     ))}
                     <option value="Telesales Agent">Telesales Agent</option>
                   </select>
@@ -1164,12 +1039,11 @@ export default function UserManagementPage() {
                     onChange={(e) => setUserFormData({ ...userFormData, department: e.target.value })}
                     className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] bg-white cursor-pointer font-semibold"
                   >
-                    <option value="TeleSales">TeleSales</option>
-                    <option value="Off-Plan Sales">Off-Plan Sales</option>
-                    <option value="Secondary & Luxury">Secondary & Luxury</option>
-                    <option value="Executive Management">Executive Management</option>
-                    <option value="Client Relations / Inbound">Client Relations / Inbound</option>
-                    <option value="Operations & Compliance">Operations & Compliance</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.name}>{d.name}</option>
+                    ))}
+                    <option value="Sales">Sales</option>
+                    <option value="Telesales">Telesales</option>
                   </select>
                 </div>
               </div>
@@ -1187,35 +1061,337 @@ export default function UserManagementPage() {
                 />
               </div>
 
+              {/* Status & Auto-Lead Distribution Switch Section */}
+              <div className="pt-3 border-t border-[#E8E2D9] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={userFormData.is_active}
+                      onChange={(e) => setUserFormData({ ...userFormData, is_active: e.target.checked })}
+                      className="accent-[#C9A84C] rounded w-4 h-4"
+                    />
+                    <span className="font-bold text-slate-800 text-xs">Active CRM Account</span>
+                  </label>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    id="auto_dist_switch"
+                    checked={userFormData.in_distribution_pool}
+                    onChange={(e) => setUserFormData({ ...userFormData, in_distribution_pool: e.target.checked })}
+                    className="accent-[#C9A84C] rounded w-4 h-4 mt-0.5 cursor-pointer"
+                  />
+                  <label htmlFor="auto_dist_switch" className="cursor-pointer">
+                    <span className="font-bold text-[#081428] block text-xs">
+                      Include in Auto-Lead Distribution (Round-Robin & 3-Day/45-Day Rules)
+                    </span>
+                    <span className="text-[10px] text-slate-600 block mt-0.5 leading-tight">
+                      Turn ON for working sales agents to receive automatic leads. Turn OFF for reviewers, auditors, or executives so zero leads get assigned to them.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#E8E2D9]">
+                <button
+                  type="button"
+                  onClick={() => setIsUserModalOpen(false)}
+                  className="px-3.5 py-1.5 border border-[#E8E2D9] rounded text-slate-600 hover:bg-slate-50 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingUser}
+                  className="px-4 py-1.5 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded shadow-sm transition-all"
+                >
+                  {submittingUser ? 'Saving...' : userModalMode === 'create' ? 'Create Member' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DYNAMIC ROLE CREATE / EDIT MODAL */}
+      {isRoleModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-2xl overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+            <div className="bg-[#081428] text-white px-6 py-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck className="w-5 h-5 text-[#C9A84C]" />
+                <h2 className="font-heading font-bold text-base">
+                  {roleModalMode === 'create' ? 'Create Custom Role' : 'Edit Role Details'}
+                </h2>
+              </div>
+              <button onClick={() => setIsRoleModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitRoleForm} className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Role Title Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={roleFormData.name}
+                  onChange={(e) => setRoleFormData({ ...roleFormData, name: e.target.value })}
+                  placeholder="e.g. Operations Coordinator"
+                  className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] font-semibold text-[#081428]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Role Description</label>
+                <textarea
+                  value={roleFormData.description}
+                  onChange={(e) => setRoleFormData({ ...roleFormData, description: e.target.value })}
+                  placeholder="Responsibilities and permission overview..."
+                  rows={2}
+                  className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
+                />
+              </div>
+
+              {/* Module Permissions Checklist */}
+              <div>
+                <label className="block font-bold text-[#081428] mb-2 uppercase tracking-wider text-[11px]">
+                  Module Permissions Preset
+                </label>
+                <div className="space-y-3 max-h-60 overflow-y-auto border border-[#E8E2D9] rounded-lg p-3 bg-[#FAF8F5]">
+                  {permMatrix.map((mod) => (
+                    <div key={mod.module} className="bg-white p-3 rounded border border-[#E8E2D9]">
+                      <div className="font-bold text-[#081428] text-xs mb-1.5">{mod.module}</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {mod.permissions.map((p) => {
+                          const checked = roleFormData.permissions.includes(p.key) || roleFormData.permissions.includes('*');
+                          return (
+                            <label key={p.key} className="flex items-center gap-2 cursor-pointer text-xs">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setRoleFormData({ ...roleFormData, permissions: [...roleFormData.permissions, p.key] });
+                                  } else {
+                                    setRoleFormData({ ...roleFormData, permissions: roleFormData.permissions.filter((k) => k !== p.key && k !== '*') });
+                                  }
+                                }}
+                                className="accent-[#C9A84C] rounded"
+                              />
+                              <span className="font-medium text-slate-700">{p.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#E8E2D9]">
+                <button
+                  type="button"
+                  onClick={() => setIsRoleModalOpen(false)}
+                  className="px-3.5 py-1.5 border border-[#E8E2D9] rounded text-slate-600 hover:bg-slate-50 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingRole}
+                  className="px-4 py-1.5 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded shadow-sm transition-all"
+                >
+                  {submittingRole ? 'Saving...' : roleModalMode === 'create' ? 'Create Role' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DYNAMIC DEPARTMENT CREATE / EDIT MODAL */}
+      {isDeptModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-md overflow-hidden animate-fade-in flex flex-col">
+            <div className="bg-[#081428] text-white px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Building2 className="w-5 h-5 text-[#C9A84C]" />
+                <h2 className="font-heading font-bold text-base">
+                  {deptModalMode === 'create' ? 'Create Department' : 'Edit Department'}
+                </h2>
+              </div>
+              <button onClick={() => setIsDeptModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitDeptForm} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Department Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={deptFormData.name}
+                  onChange={(e) => setDeptFormData({ ...deptFormData, name: e.target.value })}
+                  placeholder="e.g. Off-Plan Advisory"
+                  className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] font-semibold text-[#081428]"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Department Code</label>
+                <input
+                  type="text"
+                  value={deptFormData.code}
+                  onChange={(e) => setDeptFormData({ ...deptFormData, code: e.target.value })}
+                  placeholder="e.g. OFFPLAN"
+                  className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] font-mono uppercase"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Description</label>
+                <textarea
+                  value={deptFormData.description}
+                  onChange={(e) => setDeptFormData({ ...deptFormData, description: e.target.value })}
+                  placeholder="Department scope and objectives..."
+                  rows={2}
+                  className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
+                />
+              </div>
+
               <div className="pt-2 flex items-center justify-between border-t border-[#E8E2D9]">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={userFormData.is_active}
-                    onChange={(e) => setUserFormData({ ...userFormData, is_active: e.target.checked })}
+                    checked={deptFormData.is_active}
+                    onChange={(e) => setDeptFormData({ ...deptFormData, is_active: e.target.checked })}
                     className="accent-[#C9A84C] rounded"
                   />
-                  <span className="font-semibold text-slate-700">Active Account</span>
+                  <span className="font-semibold text-slate-700">Active Status</span>
                 </label>
 
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsUserModalOpen(false)}
+                    onClick={() => setIsDeptModalOpen(false)}
                     className="px-3.5 py-1.5 border border-[#E8E2D9] rounded text-slate-600 hover:bg-slate-50 font-semibold"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    disabled={submittingUser}
+                    disabled={submittingDept}
                     className="px-4 py-1.5 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded shadow-sm transition-all"
                   >
-                    {submittingUser ? 'Saving...' : userModalMode === 'create' ? 'Create Member' : 'Save Changes'}
+                    {submittingDept ? 'Saving...' : deptModalMode === 'create' ? 'Create Department' : 'Save Changes'}
                   </button>
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* GRANULAR PERMISSION MATRIX CHECKBOX MODAL */}
+      {isPermModalOpen && permTargetUser && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-4xl overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
+            <div className="bg-[#081428] text-white px-6 py-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-white/10 text-[#C9A84C] flex items-center justify-center font-bold text-sm">
+                  <KeyRound className="w-4 h-4 text-[#C9A84C]" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-heading font-bold text-base tracking-wide">
+                      Granular CRM Permissions: {permTargetUser.name}
+                    </h2>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#C9A84C] text-[#081428]">
+                      {permTargetUser.role}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    Toggle individual permission checkboxes across all CRM modules.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsPermModalOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 text-xs flex-1">
+              {permMatrix.map((mod) => (
+                <div key={mod.module} className="bg-[#FAF8F5] p-4 rounded-xl border border-[#E8E2D9] space-y-3">
+                  <div className="flex items-center justify-between border-b border-[#E8E2D9] pb-2">
+                    <strong className="text-xs text-[#081428] font-bold uppercase tracking-wider">{mod.module}</strong>
+                    <span className="text-[10px] font-mono text-[#C9A84C] font-bold">
+                      {mod.permissions.length} Available Permissions
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {mod.permissions.map((p) => {
+                      const checked = selectedPermissions.includes(p.key) || selectedPermissions.includes('*');
+                      return (
+                        <label
+                          key={p.key}
+                          className={`p-2.5 rounded-lg border transition-all cursor-pointer flex items-start gap-2.5 ${
+                            checked ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-white/60 border-[#E8E2D9]'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => handleTogglePermKey(p.key)}
+                            className="accent-[#C9A84C] rounded mt-0.5"
+                          />
+                          <div>
+                            <div className="font-bold text-[#081428]">{p.label}</div>
+                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">{p.key}</div>
+                            <div className="text-[11px] text-slate-600 mt-0.5">{p.desc}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-white border-t border-[#E8E2D9] px-6 py-3.5 shrink-0 flex items-center justify-between text-xs">
+              <div className="text-slate-500 text-[11px]">
+                Target: <strong className="text-[#081428]">{permTargetUser.name}</strong> ({permTargetUser.email})
+              </div>
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsPermModalOpen(false)}
+                  className="px-4 py-2 border border-[#E8E2D9] rounded-md text-slate-600 hover:bg-slate-50 font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSavePermissions}
+                  disabled={savingPermissions}
+                  className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded-md shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {savingPermissions ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Save Granular Permissions</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
