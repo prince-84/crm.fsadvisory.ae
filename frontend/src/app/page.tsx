@@ -8,6 +8,7 @@ import CreateContactModal from '@/components/CreateContactModal';
 import CreateLeadModal from '@/components/CreateLeadModal';
 import CreateOpportunityModal from '@/components/CreateOpportunityModal';
 import ImportLeadsModal from '@/components/ImportLeadsModal';
+import OpportunityQuickViewModal from '@/components/OpportunityQuickViewModal';
 import AdvancedFilterModal, { AdvancedFiltersState, INITIAL_ADVANCED_FILTERS } from '@/components/AdvancedFilterModal';
 import DateRangePicker, { DateRangeValue } from '@/components/DateRangePicker';
 import { fetchApi } from '@/lib/api';
@@ -296,9 +297,16 @@ export default function LeadPoolPage() {
       .catch(console.error);
   }, []);
 
-  // Top Tabs State: 'all' | 'new' | 'contacted' | 'overdue' | 'unassigned' | 'duplicate' | 'deleted'
-  const [activeTab, setActiveTab] = useState<'all' | 'new' | 'contacted' | 'overdue' | 'unassigned' | 'duplicate' | 'deleted'>('all');
-  const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, contacted: 0, overdue: 0, unassigned: 0, duplicate: 0, deleted: 0 });
+  // Top Tabs State: 'all' | 'new' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'
+  const [activeTab, setActiveTab] = useState<'all' | 'new' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'>('all');
+  const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, contacted: 0, overdue: 0, opportunities: 0, unassigned: 0, duplicate: 0, deleted: 0 });
+  const [isQuickViewModalOpen, setIsQuickViewModalOpen] = useState(false);
+  const [quickViewContact, setQuickViewContact] = useState<any | null>(null);
+
+  const handleOpenQuickView = (contact: any) => {
+    setQuickViewContact(contact);
+    setIsQuickViewModalOpen(true);
+  };
 
   // Sorting State connected to database (default: newest Created Date first)
   const [sortBy, setSortBy] = useState('created_at');
@@ -1119,6 +1127,17 @@ export default function LeadPoolPage() {
                   </Link>
                 )}
 
+                {/* 5.5 Opportunity Quick View */}
+                {opp && Number(opp.id) > 0 && (
+                  <button
+                    onClick={() => handleOpenQuickView(ct)}
+                    className="p-1.5 bg-[#C8A147]/10 hover:bg-[#C8A147] hover:text-[#081428] text-[#C8A147] rounded border border-[#C8A147]/30 transition-colors cursor-pointer inline-flex items-center justify-center"
+                    title="Opportunity Quick View"
+                  >
+                    <Briefcase className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
                 {/* 6. Soft Delete / Trash Lead */}
                 {mounted && hasPermission('leads.delete') && (
                   <button
@@ -1897,6 +1916,7 @@ export default function LeadPoolPage() {
                 { id: 'new', label: 'New', count: tabCounts.new },
                 { id: 'contacted', label: 'Contacted', count: tabCounts.contacted },
                 { id: 'overdue', label: 'Overdue', count: tabCounts.overdue },
+                { id: 'opportunities', label: 'Opportunity Quick View', count: tabCounts.opportunities || 0 },
                 { id: 'deleted', label: 'Deleted', count: tabCounts.deleted },
               ].map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -2696,6 +2716,15 @@ export default function LeadPoolPage() {
           </div>
         );
       })()}
+      {/* Opportunity Quick View Modal */}
+      <OpportunityQuickViewModal
+        isOpen={isQuickViewModalOpen}
+        onClose={() => {
+          setIsQuickViewModalOpen(false);
+          setQuickViewContact(null);
+        }}
+        contact={quickViewContact}
+      />
     </div>
   );
 }

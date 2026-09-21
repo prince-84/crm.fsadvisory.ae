@@ -6,6 +6,7 @@ import Navbar from '@/components/Navbar';
 import ContactDrawer from '@/components/ContactDrawer';
 import AdvancedFilterModal, { AdvancedFiltersState, INITIAL_ADVANCED_FILTERS } from '@/components/AdvancedFilterModal';
 import DateRangePicker, { DateRangeValue } from '@/components/DateRangePicker';
+import OpportunityQuickViewModal from '@/components/OpportunityQuickViewModal';
 import { fetchApi } from '@/lib/api';
 import Swal from 'sweetalert2';
 import { 
@@ -48,9 +49,16 @@ export default function NewLeadsPage() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // Top Tabs State: 'all' (Default) | 'unassigned' | 'duplicate' | 'deleted'
-  const [activeTab, setActiveTab] = useState<'all' | 'unassigned' | 'duplicate' | 'deleted'>('all');
-  const [tabCounts, setTabCounts] = useState({ all: 0, unassigned: 0, new: 0, assigned: 0, duplicate: 0, deleted: 0 });
+  // Top Tabs State: 'all' (Default) | 'unassigned' | 'opportunities' | 'duplicate' | 'deleted'
+  const [activeTab, setActiveTab] = useState<'all' | 'unassigned' | 'opportunities' | 'duplicate' | 'deleted'>('all');
+  const [tabCounts, setTabCounts] = useState({ all: 0, unassigned: 0, new: 0, assigned: 0, opportunities: 0, duplicate: 0, deleted: 0 });
+  const [isQuickViewModalOpen, setIsQuickViewModalOpen] = useState(false);
+  const [quickViewContact, setQuickViewContact] = useState<any | null>(null);
+
+  const handleOpenQuickView = (contact: any) => {
+    setQuickViewContact(contact);
+    setIsQuickViewModalOpen(true);
+  };
 
   // Sorting
   const [sortBy, setSortBy] = useState('updated_at');
@@ -1202,6 +1210,7 @@ export default function NewLeadsPage() {
             {[
               { id: 'all', label: 'All Leads', count: tabCounts.all, color: 'text-[#081428]' },
               { id: 'unassigned', label: 'New', count: tabCounts.unassigned ?? tabCounts.new, color: 'text-amber-800' },
+              { id: 'opportunities', label: 'Opportunity Quick View', count: tabCounts.opportunities || 0, color: 'text-[#C8A147]' },
               { id: 'duplicate', label: 'Duplicate', count: tabCounts.duplicate, color: 'text-purple-800' },
               { id: 'deleted', label: 'Deleted', count: tabCounts.deleted, color: 'text-red-800' },
             ].map((tab) => {
@@ -1649,6 +1658,16 @@ export default function NewLeadsPage() {
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         contact={selectedContact}
+      />
+
+      {/* Opportunity Quick View Modal */}
+      <OpportunityQuickViewModal
+        isOpen={isQuickViewModalOpen}
+        onClose={() => {
+          setIsQuickViewModalOpen(false);
+          setQuickViewContact(null);
+        }}
+        contact={quickViewContact}
       />
     </div>
   );

@@ -113,6 +113,8 @@ class ContactController extends Controller
             });
         } elseif ($tab === 'duplicate') {
             $query->where('contacts.state', 'duplicate');
+        } elseif ($tab === 'opportunities' || $tab === 'opp_quickview') {
+            $query->whereHas('opportunities');
         } elseif ($tab === 'all') {
             // 'all' tab displays all leads (primary and duplicate inquiries)
         }
@@ -655,6 +657,7 @@ class ContactController extends Controller
             'overdue' => $overdueCount,
             'assigned' => $assignedCount,
             'duplicate' => (clone $baseCountQuery)->where('state', 'duplicate')->count(),
+            'opportunities' => (clone $baseCountQuery)->whereHas('opportunities')->count(),
             'deleted' => $deletedCount,
         ];
 

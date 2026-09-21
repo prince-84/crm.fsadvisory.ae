@@ -56,8 +56,8 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
 - **24 — SweetAlert2 Integration for Lead Actions**: Modal confirmation popups on *Move to Trash*, *Restore Lead*, and *Permanent Purge* actions.
 - **25 — Interactive Database Column Sorting**: Multi-column sorting (*Client Contact Profile*, *Source Channel*, *Lifecycle State*) backed by Laravel dynamic `orderBy`.
 - **26 — Phone Number Password Masking & Eye Toggle**: Default bullet-style masking (`+971 •••• 567`) in the side Contact Drawer with interactive Eye / Eye-off unmasking toggle.
-- **27 — Dedicated Separate Full Lead Edit Page**: Full page editor (`/leads/[id]/edit`) pre-populating client personal details, origin sources, and opportunity qualifications.
 - **28 — Balanced Form Field Grid Layout**: Balanced 2-column and 3-column responsive grid layout across Create Lead and Edit Lead pages.
+- **38 — Opportunity Quick View Tab & Modal (`OpportunityQuickViewModal.tsx`)**: Positioned right before the *Deleted* tab across Lead Pool (`/`), Lead Pool page (`/lead-pool`), and Inbound Leads (`/new-leads`). Gives bosses, managers, and agents single-click access to filter leads with active opportunities and launch a high-density deal preview modal containing pipeline stage, deal value range, developer/project specs, qualification preferences, SLA status, notes, and direct action triggers.
 
 ### Telephony & Marketing Integrations
 - **29 — Campaigns & Marketing Module (`/campaigns`)**: Comprehensive marketing campaign management system with budget analytics, status toggles, platform attribution, and performance charts.
