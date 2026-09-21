@@ -1215,7 +1215,7 @@ export default function WhatsAppPage() {
                   )}
                 </div>
                 <p className="text-[10px] text-[#B0C0D8]">
-                  Direct sync for Advisors & Agency Owner
+                  Direct sync for Advisors & Super Admin
                 </p>
               </div>
             </div>

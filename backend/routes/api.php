@@ -65,6 +65,7 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::get('/contacts', [ContactController::class, 'index']);
     Route::get('/contacts/upcoming-alerts', [ContactController::class, 'upcomingAlerts']);
     Route::post('/contacts', [ContactController::class, 'store']);
+    Route::post('/webhooks/leads', [ContactController::class, 'store']);
     Route::post('/contacts/bulk-assign', [ContactController::class, 'bulkAssign']);
     Route::post('/contacts/bulk-delete', [ContactController::class, 'bulkDelete']);
     Route::post('/contacts/bulk-restore', [ContactController::class, 'bulkRestore']);

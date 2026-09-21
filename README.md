@@ -2015,6 +2015,18 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Added dedicated **"Lead SLA, Inactivity Rotation & Pool Recycling Rules"** configuration section with interactive toggles and customizable day counters.
     - Added **"Run Inactivity & Recycling Engine"** on-demand execution button with SweetAlert2 detailed reporting modal displaying lists of rotated leads and recycled records.
 
+- **154 — Inbound Webhook Ingestion, Route Aliasing & Config Cache-Safe Authentication (`backend/config/services.php`, `backend/app/Http/Middleware/CrmTokenAuth.php`, `backend/routes/api.php`)**:
+  - **The Issue**: When `php artisan config:cache` was executed on production, Laravel cleared raw `env()` access across middleware, resulting in `env('CRM_API_KEY')` evaluating to `null` and blocking external webhooks (n8n, Landing Page proxy `crm.php`) with `401 Unauthorized`.
+  - **Permanent Config Caching Fix**: Moved `CRM_API_KEY` and `WEBHOOK_TOKEN` into `config/services.php` (`services.crm.api_key` & `services.crm.webhook_token`), ensuring persistent access even when optimized configuration caching is enabled in production.
+  - **Unified Dual-Token Authorization**: `CrmTokenAuth.php` now accepts both the system master API key (`fsa_live_master_sec_2026_99xbc7104e`) and the landing page webhook token (`rf_webhook_...`).
+  - **Webhook Route Alias**: Added `POST /api/webhooks/leads` routing directly to `ContactController::store` alongside `POST /api/contacts`, preventing 404 Not Found errors on third-party webhook dispatchers.
+
+- **155 — Authentic WhatsApp Device Pairing & Dummy Channel Purge (`backend/app/Http/Controllers/Api/WhatsAppController.php`, `backend/database/migrations/2026_09_21_103000_purge_dummy_whatsapp_channels_and_reset_status.php`, `frontend/src/app/whatsapp/page.tsx`)**:
+  - **Purge of Legacy Placeholders**: Purged hardcoded dummy channels (`Agency Owner (Main Account)`, `Agency Owner`, `Mako Real Estate`, `Shafi Core`, `FA Advisory 3`) from database and backend controller.
+  - **Authentic CRM User Channel Mapping**: All WhatsApp channels are now strictly 1:1 mapped to genuine CRM users (`users` table), featuring `Faraz Shafi` as Super Admin rather than an ambiguous "Agency Owner".
+  - **Reset to Disconnected Status**: Cleared all fake green "connected" badges and sample phone numbers. Every channel starts in a clean `disconnected` state awaiting genuine QR device pairing by each advisor.
+  - **Disabled Demo Chat Seeding**: Removed artificial demo chat generation to ensure the chat timeline only displays authentic conversations mirrored from the advisor's linked physical mobile device.
+
 ---
 
 

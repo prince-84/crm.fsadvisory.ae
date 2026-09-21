@@ -16,18 +16,8 @@ use Illuminate\Support\Str;
 
 class WhatsAppController extends Controller
 {
-    // The exact 5 3CX Advisors + Agency Owner
-    public const DEFAULT_AGENTS = [
-        ['name' => 'Agency Owner (Main Account)', 'ext' => 'OWNER', 'phone' => '+971 50 123 4567'],
-        ['name' => 'Mako Real Estate', 'ext' => '1030', 'phone' => '+971 52 987 6543'],
-        ['name' => 'Shafi Core', 'ext' => '1031', 'phone' => '+971 55 597 7700'],
-        ['name' => 'Hiba Alam', 'ext' => '1033', 'phone' => '+971 58 441 2233'],
-        ['name' => 'Rayyan', 'ext' => '1034', 'phone' => '+971 56 946 8277'],
-        ['name' => 'FA Advisory 3', 'ext' => '1035', 'phone' => '+971 54 330 1035'],
-    ];
-
     /**
-     * Synchronize WhatsApp channels with CRM users in database
+     * Synchronize WhatsApp channels with authentic CRM users in database
      */
     protected function syncChannelsFromUsers(): void
     {
@@ -37,56 +27,46 @@ class WhatsAppController extends Controller
 
         $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
 
-        // 1. If database channels are empty, seed default agents
-        if (WhatsAppChannel::count() === 0) {
-            foreach (self::DEFAULT_AGENTS as $ag) {
-                WhatsAppChannel::create([
-                    'session_name' => $ag['name'],
-                    'agent_name' => $ag['name'],
-                    'agent_extension' => $ag['ext'],
-                    'phone_number' => $ag['phone'],
-                    'status' => 'disconnected',
-                    'platform' => 'WhatsApp Multi-Device',
-                    'battery_level' => 100,
-                ]);
-            }
-        }
+        // 1. Purge legacy dummy channels (Agency Owner, Mako Real Estate, Shafi Core, FA Advisory 3, or unlinked channels)
+        WhatsAppChannel::where(function ($q) {
+            $q->whereNull('user_id')
+              ->orWhere('agent_name', 'like', '%Agency Owner%')
+              ->orWhere('session_name', 'like', '%Agency Owner%')
+              ->orWhere('agent_name', 'like', '%Mako Real Estate%')
+              ->orWhere('agent_name', 'like', '%Shafi Core%')
+              ->orWhere('agent_name', 'like', '%FA Advisory 3%');
+        })->delete();
 
-        // 2. Link existing channels with CRM users or create dedicated channel for each user
+        // 2. Link or create dedicated channel for each real CRM user
         $users = User::all();
         foreach ($users as $crmUser) {
+            $userChan = null;
             if ($hasUserIdCol) {
                 $userChan = WhatsAppChannel::where('user_id', $crmUser->id)->first();
-                if ($userChan) {
-                    continue;
-                }
             }
 
-            // Attempt to link to an unlinked channel matching name or phone
-            $matched = WhatsAppChannel::where(function ($q) use ($crmUser) {
-                $q->where('agent_name', $crmUser->name)
-                  ->orWhere('session_name', $crmUser->name);
-                if (!empty($crmUser->phone)) {
-                    $cleanPhone = preg_replace('/[^0-9]/', '', $crmUser->phone);
-                    if (strlen($cleanPhone) >= 7) {
-                        $last7 = substr($cleanPhone, -7);
-                        $q->orWhere('phone_number', 'like', "%{$last7}%");
-                    }
-                }
-            })->first();
+            if (!$userChan) {
+                $userChan = WhatsAppChannel::where('agent_name', $crmUser->name)
+                    ->orWhere('session_name', $crmUser->name)
+                    ->first();
+            }
 
-            if ($matched) {
-                if ($hasUserIdCol && !$matched->user_id) {
-                    $matched->update(['user_id' => $crmUser->id]);
+            if ($userChan) {
+                $updates = [
+                    'agent_name' => $crmUser->name,
+                    'session_name' => $crmUser->name,
+                ];
+                if ($hasUserIdCol && !$userChan->user_id) {
+                    $updates['user_id'] = $crmUser->id;
                 }
+                $userChan->update($updates);
             } else {
-                // Auto-create a database channel for this CRM user
                 WhatsAppChannel::create([
                     'user_id' => $hasUserIdCol ? $crmUser->id : null,
                     'session_name' => $crmUser->name,
                     'agent_name' => $crmUser->name,
                     'agent_extension' => substr($crmUser->phone ?? '', -4) ?: '1000',
-                    'phone_number' => $crmUser->phone,
+                    'phone_number' => null,
                     'status' => 'disconnected',
                     'platform' => 'WhatsApp Multi-Device',
                     'battery_level' => 100,
@@ -196,11 +176,11 @@ class WhatsAppController extends Controller
         if (!$channel) {
             $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
             $channel = WhatsAppChannel::firstOrCreate(
-                ['session_name' => $request->input('session_name', $user ? $user->name : 'Agency Owner Main')],
+                ['session_name' => $request->input('session_name', $user ? $user->name : 'Faraz Shafi')],
                 [
                     'user_id' => ($hasUserIdCol && $user) ? $user->id : null,
-                    'agent_name' => $request->input('agent_name', $user ? $user->name : 'Agency Owner'),
-                    'agent_extension' => $request->input('agent_extension', 'OWNER'),
+                    'agent_name' => $request->input('agent_name', $user ? $user->name : 'Faraz Shafi'),
+                    'agent_extension' => $request->input('agent_extension', '1000'),
                     'status' => 'qr_ready',
                 ]
             );
@@ -1215,125 +1195,17 @@ class WhatsAppController extends Controller
     }
 
     /**
-     * Initial Seed data for channels
-     */
     private function seedInitialChannels()
     {
-        foreach (self::DEFAULT_AGENTS as $idx => $agent) {
-            $isOwner = $agent['ext'] === 'OWNER';
-            WhatsAppChannel::create([
-                'session_name' => $agent['name'],
-                'agent_name' => $agent['name'],
-                'agent_extension' => $agent['ext'],
-                'phone_number' => $agent['phone'],
-                'status' => $isOwner ? 'connected' : ($idx === 1 ? 'connected' : 'qr_ready'),
-                'platform' => $isOwner ? 'iOS (iPhone 16 Pro Max)' : 'Android (Samsung Galaxy S24)',
-                'battery_level' => rand(78, 98),
-                'connected_at' => $isOwner ? now()->subDays(3) : ($idx === 1 ? now()->subDay() : null),
-                'last_sync_at' => now(),
-            ]);
-        }
+        $this->syncChannelsFromUsers();
     }
 
     /**
-     * Seed initial realistic client conversations linked to CRM contacts
+     * Seed initial realistic client conversations linked to CRM contacts (Disabled - Authentic mirroring only)
      */
     private function seedInitialChats()
     {
-        if (WhatsAppChannel::where('status', 'connected')->exists()) {
-            return;
-        }
-
-        $channel = WhatsAppChannel::first();
-        if (!$channel) {
-            $this->seedInitialChannels();
-            $channel = WhatsAppChannel::first();
-        }
-
-        $contacts = Contact::with('opportunity')->take(6)->get();
-
-        $sampleConversations = [
-            [
-                'phone' => '+971 50 123 4567',
-                'name' => 'Alexander Volkov',
-                'unread' => 2,
-                'mins_ago' => 8,
-                'messages' => [
-                    ['text' => 'Hello! I saw the listing for the 3BR apartment in Downtown Dubai. Is it still available?', 'from_me' => false, 'mins' => 45],
-                    ['text' => 'Good afternoon Mr. Alexander! Yes, the 3BR unit with direct Burj Khalifa views is available. Would you like me to send the official payment plan brochure?', 'from_me' => true, 'mins' => 30],
-                    ['text' => 'Yes please, send the brochure and let me know if 80/20 payment plan is applicable.', 'from_me' => false, 'mins' => 8],
-                ]
-            ],
-            [
-                'phone' => '+971 52 987 6543',
-                'name' => 'Sarah Jenkins',
-                'unread' => 0,
-                'mins_ago' => 25,
-                'messages' => [
-                    ['text' => 'Hi, could you arrange a private viewing for the Palm Jumeirah Villa this Saturday?', 'from_me' => false, 'mins' => 90],
-                    ['text' => 'Certainly, Sarah! I have booked a VIP viewing slot for Saturday at 4:00 PM. Our luxury concierge will meet you at the main gate.', 'from_me' => true, 'mins' => 25],
-                ]
-            ],
-            [
-                'phone' => '+971 55 597 7700',
-                'name' => 'Fahad Al Otaibi',
-                'unread' => 1,
-                'mins_ago' => 50,
-                'messages' => [
-                    ['text' => 'Assalam o Alaikum, what is the expected gross rental yield for the 1BR off-plan in JVC?', 'from_me' => false, 'mins' => 50],
-                ]
-            ],
-            [
-                'phone' => '+971 58 441 2233',
-                'name' => 'Jean-Pierre Dupont',
-                'unread' => 0,
-                'mins_ago' => 120,
-                'messages' => [
-                    ['text' => 'Bonjour! Please send me the SPA Form F draft for review with my legal team.', 'from_me' => false, 'mins' => 180],
-                    ['text' => 'Bonjour Mr. Dupont, Form F has been sent to your registered email along with the payment schedule breakdown.', 'from_me' => true, 'mins' => 120],
-                ]
-            ],
-            [
-                'phone' => '+971 56 946 8277',
-                'name' => 'Elena Rostova',
-                'unread' => 3,
-                'mins_ago' => 15,
-                'messages' => [
-                    ['text' => 'Hi, we are looking for a ready penthouse in Dubai Marina with private pool. Budget around AED 25M.', 'from_me' => false, 'mins' => 15],
-                ]
-            ],
-        ];
-
-        foreach ($sampleConversations as $idx => $conv) {
-            $contact = $contacts->get($idx % max(1, $contacts->count()));
-            $chatName = $contact ? $contact->name : $conv['name'];
-            $chatPhone = $contact && $contact->phone ? $contact->phone : $conv['phone'];
-            $lastMsg = end($conv['messages']);
-
-            $chat = WhatsAppChat::create([
-                'channel_id' => $channel->id,
-                'phone' => $chatPhone,
-                'remote_jid' => preg_replace('/[^0-9]/', '', $chatPhone) . '@s.whatsapp.net',
-                'contact_id' => $contact ? $contact->id : null,
-                'contact_name' => $chatName,
-                'last_message' => $lastMsg['text'],
-                'last_message_at' => now()->subMinutes($conv['mins_ago']),
-                'unread_count' => $conv['unread'],
-                'avatar_url' => 'none',
-            ]);
-
-            foreach ($conv['messages'] as $mIdx => $m) {
-                WhatsAppMessage::create([
-                    'chat_id' => $chat->id,
-                    'message_id' => 'WA-SEED-' . $chat->id . '-' . $mIdx,
-                    'from_me' => $m['from_me'],
-                    'sender_name' => $m['from_me'] ? 'You' : $chatName,
-                    'text' => $m['text'],
-                    'status' => $m['from_me'] ? 'delivered' : 'read',
-                    'timestamp' => now()->subMinutes($m['mins']),
-                ]);
-            }
-        }
+        return;
     }
 
     /**

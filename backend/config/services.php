@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'crm' => [
+        'api_key' => env('CRM_API_KEY', 'fsa_live_master_sec_2026_99xbc7104e'),
+        'webhook_token' => env('WEBHOOK_TOKEN', 'rf_webhook_hOk5M02RLb0GuYePJV_VNQR7mdXu0vbg_DWi7WlfuJ1XTsFQ68bTBt8ySEuRTXsf'),
+    ],
+
 ];

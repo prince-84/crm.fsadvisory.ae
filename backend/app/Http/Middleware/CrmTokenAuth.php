@@ -40,9 +40,14 @@ class CrmTokenAuth
             ], 401);
         }
 
-        // 2. Check Master API Key (configured in .env CRM_API_KEY)
+        // 2. Check Master API Key or Webhook Token (configured in config/services.php or .env)
         $masterKey = config('services.crm.api_key') ?? env('CRM_API_KEY');
-        if (!empty($masterKey) && hash_equals($masterKey, $token)) {
+        $webhookKey = config('services.crm.webhook_token') ?? env('WEBHOOK_TOKEN');
+        
+        $isMasterAuth = (!empty($masterKey) && hash_equals($masterKey, $token)) 
+            || (!empty($webhookKey) && hash_equals($webhookKey, $token));
+
+        if ($isMasterAuth) {
             $superAdmin = User::where('role', 'Super Admin')->first() ?? User::first();
             if ($superAdmin) {
                 $request->setUserResolver(fn () => $superAdmin);
