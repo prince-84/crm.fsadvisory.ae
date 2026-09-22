@@ -650,6 +650,28 @@ export default function LeadPoolPage() {
         );
 
       case 'call_status': {
+        const oppCount = (Array.isArray(ct.opportunities) && ct.opportunities.length > 0)
+          ? ct.opportunities.length
+          : (ct.opportunities_count || (ct.active_opportunity ? 1 : 0));
+
+        if (oppCount > 0) {
+          return (
+            <td key={colKey} className="p-3">
+              <span 
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#081428] text-[#C8A147] border border-[#C8A147] shadow-xs cursor-pointer hover:bg-[#C8A147] hover:text-[#081428] transition-all"
+                title={`${oppCount} Deal / Opportunity created for this lead${ct.latest_call_outcome ? ` | Last Call: ${ct.latest_call_outcome}` : ''}. Click to open client profile.`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenDrawer(ct);
+                }}
+              >
+                <Briefcase className="w-3 h-3 text-[#C8A147] shrink-0" />
+                <span>Deal {oppCount}</span>
+              </span>
+            </td>
+          );
+        }
+
         const rawOutcome = ct.latest_call_outcome;
         const outcome = formatCallOutcome(rawOutcome);
         if (outcome) {
@@ -2070,6 +2092,7 @@ export default function LeadPoolPage() {
                   className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer max-w-[140px] truncate"
                 >
                   <option value="all">📞 All Outcomes</option>
+                  <option value="deal">💼 Deals / Opportunities</option>
                   <option value="uncontacted">🟢 New / Uncontacted</option>
                   <option value="Interested">Interested</option>
                   <option value="Callback">Callback</option>

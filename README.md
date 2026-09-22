@@ -2107,6 +2107,21 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Terminal Status Logic**: Categorized `"Real Estate Agent"` as a terminal outcome (alongside `Not Interested` and `Wrong Number`) so that external broker inquiries do not incorrectly trigger customer follow-up SLA alarms or clutter next-action schedules.
     - **Luxury Badge Styling**: Styled `"Real Estate Agent"` across tables and activity timelines with a distinct, royal purple badge (`bg-purple-50 text-purple-800 border-purple-300` / `bg-purple-100 text-purple-800`).
 
+- **159 — Opportunity Creation Indicator ("Deal [Count]") in Call Status Column & Deal Outcome Filtering (`frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Business Purpose**: When an agent converts an inbound lead or creates opportunities/deals against a client, the Call Status column now prominently signals this status so advisors and managers instantly recognize leads that have progressed to active deal negotiations without clicking into each individual lead.
+  - **Dynamic Deal Count Indicator (`Deal 1`, `Deal 2`, etc.)**:
+    - Evaluates total opportunities associated with the client (`ct.opportunities?.length || ct.opportunities_count`).
+    - If one or more opportunities exist (`oppCount > 0`), the Call Status column displays a luxury navy & gold pill badge: **`Deal [count]`** (e.g. `Deal 1`, `Deal 2`).
+    - Accompanied by a `Briefcase` icon and gold border (`bg-[#081428] text-[#C8A147] border border-[#C8A147]`).
+    - Clicking the badge opens the Contact profile drawer (`ContactDrawer.tsx`) to view the deal details and timeline immediately.
+    - Hovering over the badge displays a detailed tooltip showing the exact deal count and previous call outcome.
+    - If no opportunities have been created yet (`oppCount === 0`), the column gracefully displays the last call outcome badge or the pulsing `NEW` badge.
+  - **Backend API Query Optimization (`ContactController.php`)**:
+    - Added `->withCount('opportunities')` to `Contact::with(...)` queries so each contact carries an indexed integer count of active deals.
+    - Added `call_outcome=deal` query parameter handling (`$query->has('opportunities')`) to support server-side filtering of leads with active deals.
+  - **Call Outcome Dropdown Filter Expansion**:
+    - Added `<option value="deal">💼 Deals / Opportunities</option>` to the Call Outcome filter dropdown on both the Leads Desk (`page.tsx`) and Lead Pool (`lead-pool/page.tsx`).
+
 ---
 
 

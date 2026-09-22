@@ -35,7 +35,7 @@ class ContactController extends Controller
                 'activities' => function($q) {
                     $q->latest()->limit(5);
                 }
-            ]);
+            ])->withCount('opportunities');
         } else {
             $query = Contact::with([
                 'opportunities.buyerQualification',
@@ -45,7 +45,7 @@ class ContactController extends Controller
                 'activities' => function($q) {
                     $q->latest()->limit(5);
                 }
-            ]);
+            ])->withCount('opportunities');
         }
 
         // Apply Tab Filter Logic
@@ -245,7 +245,9 @@ class ContactController extends Controller
 
         // Call Outcome filter
         if ($request->filled('call_outcome') && $request->call_outcome !== 'all') {
-            if ($request->call_outcome === 'uncontacted') {
+            if ($request->call_outcome === 'deal') {
+                $query->has('opportunities');
+            } elseif ($request->call_outcome === 'uncontacted') {
                 $query->whereDoesntHave('activities', function($actQ) {
                     $actQ->where('type', 'call');
                 })->whereDoesntHave('opportunities.activities', function($actQ) {
