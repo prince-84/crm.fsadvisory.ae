@@ -124,6 +124,7 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - Replaced misleading global "WhatsApp Online" badge with accurate, account-specific status badges dynamically binding to the currently active channel.
   - Displays explicit disconnected indicators (`[Account Name] Disconnected · Click to Link`) with single-click QR pairing modal launcher.
   - Empty inbox state intelligently prompts advisors to scan the QR code and link their mobile handset to start mirroring live client conversations.
+  - **False-Positive Session Auto-Close Protection**: Resolved critical bug where an existing connected WhatsApp session on the gateway (e.g. `Kelly's Cajun Grill (+971503746140)`) would cause the QR modal to immediately auto-close after 1.5 seconds and falsely claim a new agent had linked. Added `wasConnectedOnOpenRef` guard preventing false-positive celebrations unless a genuine fresh mobile scan occurs, and prevented `generateQr` in `WhatsAppController.php` from falsely marking disconnected channels as connected.
 - **40 — Dedicated Lead Pool Page (`/lead-pool`) & Clean Separation from Inbound Leads**:
   - **Sidebar Menu Navigation Order**: Positioned **Lead Pool** (`/lead-pool`) directly after **Owner Data** (`/owner-data`) under the SALES navigation group (`Leads` -> `Owner Data` -> `Lead Pool`), restoring the dedicated master imported database archive.
   - **Clean Separation (Imported Only vs Inbound Live Leads)**:
