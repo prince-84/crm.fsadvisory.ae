@@ -262,6 +262,7 @@ export default function WhatsAppPage() {
   const [qrGatewayStatus, setQrGatewayStatus] = useState<string>('disconnected');
   const [qrConnectedUser, setQrConnectedUser] = useState<any>(null);
   const [isUnlinking, setIsUnlinking] = useState<boolean>(false);
+  const wasConnectedOnOpenRef = useRef<boolean>(false);
 
   // Template Replies & Emojis
   const [showTemplates, setShowTemplates] = useState(false);
@@ -891,16 +892,28 @@ export default function WhatsAppPage() {
       interval = setInterval(async () => {
         try {
           const data = await fetchGateway('/api/status');
+          if (data?.status) {
+            setQrGatewayStatus(data.status);
+            if (data.user) setQrConnectedUser(data.user);
+          }
+
           if (data?.status === 'connected') {
-            setIsQrModalOpen(false);
-            Swal.fire({
-              icon: 'success',
-              title: 'WhatsApp Mobile Linked!',
-              text: `Official WhatsApp session connected for ${data.user?.phone || 'Mobile Device'}!`,
-              confirmButtonColor: '#081428',
-            });
-            loadChannels();
-            loadChats();
+            // ONLY auto-close if this connection occurred AFTER opening the modal (genuine new scan!)
+            // If it was already connected before opening, do NOT false-close or show success popup
+            if (!wasConnectedOnOpenRef.current) {
+              setIsQrModalOpen(false);
+              Swal.fire({
+                icon: 'success',
+                title: 'WhatsApp Mobile Linked!',
+                text: `Official WhatsApp session connected for ${data.user?.phone || data.user?.name || 'Mobile Device'}!`,
+                confirmButtonColor: '#081428',
+              });
+              loadChannels();
+              loadChats();
+            }
+          } else {
+            // If status is disconnected or qr_ready, a fresh scan is now possible
+            wasConnectedOnOpenRef.current = false;
           }
         } catch (e) {
           // Gateway connecting
@@ -992,6 +1005,7 @@ export default function WhatsAppPage() {
     setQrImageData('');
     setQrCodeData('');
     setIsRealQr(false);
+    wasConnectedOnOpenRef.current = (qrGatewayStatus === 'connected' || gatewayStatus === 'connected');
     setIsQrModalOpen(true);
 
     // 1. Immediately request QR from CRM Backend API (Ultra-fast <100ms, guaranteed on Vercel & HTTPS)
@@ -1010,7 +1024,12 @@ export default function WhatsAppPage() {
         setQrCodeData(backendRes.qr_code);
       }
       if (backendRes?.is_real) setIsRealQr(true);
-      if (backendRes?.gateway_status) setQrGatewayStatus(backendRes.gateway_status);
+      if (backendRes?.gateway_status) {
+        setQrGatewayStatus(backendRes.gateway_status);
+        if (backendRes.gateway_status === 'connected') {
+          wasConnectedOnOpenRef.current = true;
+        }
+      }
       if (backendRes?.connected_user) setQrConnectedUser(backendRes.connected_user);
     } catch (err) {
       console.warn('Backend QR fetch failed', err);
@@ -1027,7 +1046,12 @@ export default function WhatsAppPage() {
         setQrCodeData(data.qr_code);
         setIsRealQr(true);
       }
-      if (data?.status) setQrGatewayStatus(data.status);
+      if (data?.status) {
+        setQrGatewayStatus(data.status);
+        if (data.status === 'connected') {
+          wasConnectedOnOpenRef.current = true;
+        }
+      }
       if (data?.user) setQrConnectedUser(data.user);
     } catch (_) {}
   };
@@ -1074,8 +1098,11 @@ export default function WhatsAppPage() {
 
   const handleUnlinkAndScanNew = async () => {
     setIsUnlinking(true);
+    wasConnectedOnOpenRef.current = false;
     setQrCodeData('');
     setQrImageData('');
+    setQrConnectedUser(null);
+    setQrGatewayStatus('disconnected');
     setIsRealQr(false);
     try {
       await fetchApi('/whatsapp/gateway/logout', { method: 'POST' });

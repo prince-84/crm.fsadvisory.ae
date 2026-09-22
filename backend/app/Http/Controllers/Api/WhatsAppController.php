@@ -229,9 +229,19 @@ class WhatsAppController extends Controller
         $isReal = !empty($realQrCode) || !empty($realQrImage);
         $qrPayload = $realQrCode ?? ($isReal ? '' : ('2@' . Str::random(44) . ',' . Str::random(32) . ',' . time() . ',1'));
 
+        // Only mark this channel connected if its own phone matches the connected gateway session
+        $isThisChannelConnected = false;
+        if ($gatewayStatus === 'connected' && $connectedUser && !empty($connectedUser['phone'])) {
+            $gwPhone = preg_replace('/[^0-9]/', '', $connectedUser['phone']);
+            $chanPhone = preg_replace('/[^0-9]/', '', $channel->phone_number ?? '');
+            if ($gwPhone && $chanPhone && (str_contains($chanPhone, substr($gwPhone, -7)) || str_contains($gwPhone, substr($chanPhone, -7)))) {
+                $isThisChannelConnected = true;
+            }
+        }
+
         $channel->update([
             'qr_code' => $qrPayload,
-            'status' => $gatewayStatus === 'connected' ? 'connected' : 'qr_ready',
+            'status' => $isThisChannelConnected ? 'connected' : ($isReal && $gatewayStatus === 'qr_ready' ? 'qr_ready' : 'disconnected'),
             'last_sync_at' => now(),
         ]);
 
