@@ -134,6 +134,9 @@ export default function CallActivityPage() {
       return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700">Note / Call</span>;
     }
 
+    if (outcome.includes('Real Estate Agent') || outcome.includes('Real Estate') || outcome.includes('Agent') || outcome.includes('Broker')) {
+      return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-300">Real Estate Agent 🏢</span>;
+    }
     if (outcome.includes('Not Interested')) {
       return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-300">Not Interested ❌</span>;
     }
@@ -330,6 +333,7 @@ export default function CallActivityPage() {
                 <option value="No Answer">No Answer</option>
                 <option value="Not Interested">Not Interested</option>
                 <option value="Wrong Number">Wrong Number</option>
+                <option value="Real Estate Agent">Real Estate Agent</option>
               </select>
 
               {/* Agent Filter */}

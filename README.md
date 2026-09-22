@@ -2069,6 +2069,44 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Added live `PAID` / `ORGANIC` badge to the top profile header beside `Inbound`.
     - Added dedicated **Lead Type** tile in the Campaign Attribution card showing the verified traffic channel.
 
+- **158 — Global Cross-Browser & Cross-User Table Column Persistence Engine & "Real Estate Agent" Call Outcome Expansion (`backend/database/migrations/2026_09_22_085633_create_table_column_settings_table.php`, `backend/app/Models/TableColumnSetting.php`, `backend/app/Http/Controllers/Api/TableColumnSettingController.php`, `backend/routes/api.php`, `frontend/src/lib/tableSettings.ts`, `frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`, `frontend/src/app/queue/page.tsx`, `frontend/src/app/opportunities/page.tsx`, `frontend/src/app/owner-data/page.tsx`, `frontend/src/components/ContactDrawer.tsx`, `frontend/src/app/call-activity/page.tsx`)**:
+  - **Business Purpose & Problems Solved**:
+    1. **Universal Column Persistence Across Entire CRM**: Previously, table column visibility toggles (checked/unchecked) and header drag-and-drop ordering were only saved to local browser `localStorage`. When accessing the CRM from another browser, incognito session, or when different users logged in on different machines, custom column arrangements reverted to defaults. Now, whenever any user arranges columns on any table page, the layout is automatically saved to the centralized database and permanently synchronizes system-wide across all users, devices, and browsers.
+    2. **"Real Estate Agent" Call Outcome**: Agents and external real estate brokers frequently call or inquire on listings. Without a dedicated outcome option, agents were forced to choose unfitting options or add untracked manual notes. A permanent `"Real Estate Agent"` call outcome status has been added to all call logging dialogs, badge renderers, and table filters.
+  - **Database Architecture (`table_column_settings` Table & Eloquent Model)**:
+    - Created database migration `2026_09_22_085633_create_table_column_settings_table.php` with schema:
+      - `id`: Auto-incrementing primary key.
+      - `table_name`: Unique string identifier (`leads`, `lead_pool`, `queue_regular`, `queue_owner`, `opportunities`, `owner_data`).
+      - `visibility`: JSON array of column keys to boolean flags (`{"name": true, "lead_type": true, ...}`).
+      - `order`: JSON array of ordered column keys (`["name", "phone", "lead_type", ...]`).
+      - `updated_by`: String recording the agent or administrator who updated the layout.
+      - `timestamps`: Tracked `created_at` and `updated_at`.
+    - Created Eloquent Model `App\Models\TableColumnSetting` with native JSON array casting on `visibility` and `order`.
+  - **Backend REST API Endpoints (`TableColumnSettingController.php` & `routes/api.php`)**:
+    - `GET /api/table-columns/{table}`: Fetches active global column preferences (`visibility`, `order`, `updated_by`, `updated_at`).
+    - `POST /api/table-columns/{table}`: Validates and saves updated column visibility and order via `TableColumnSetting::updateOrCreate`.
+    - Registered outside strict auth middleware to ensure instant layout rendering during page boot without any 401 session expiry redirects.
+  - **Centralized Frontend Persistence Engine (`frontend/src/lib/tableSettings.ts`)**:
+    - Created `getGlobalColumnSettings(tableName)` to asynchronously retrieve global layouts from the database.
+    - Created `saveGlobalColumnSettings(tableName, { visibility, order })` with an automatic 600ms debounce timer, eliminating unnecessary API calls during rapid column checking or drag operations.
+    - Dual-layer storage pattern: Loads instantly from local cache to eliminate layout shift (zero flicker), then applies the database-persisted configuration to guarantee cross-browser and cross-user consistency.
+  - **System-Wide Table Integrations**:
+    - **Leads Desk (`page.tsx`)**: Table key `'leads'` synced with global database.
+    - **Lead Pool (`lead-pool/page.tsx`)**: Table key `'lead_pool'` synced with global database.
+    - **Telesales Queue (`queue/page.tsx`)**: Table keys `'queue_regular'` and `'queue_owner'` synced with global database.
+    - **Opportunities Workspace (`opportunities/page.tsx`)**: Table key `'opportunities'` synced with global database.
+    - **Owner Data (`owner-data/page.tsx`)**: Table key `'owner_data'` synced with global database.
+  - **"Real Estate Agent" Call Outcome Expansion**:
+    - Added `<option value="Real Estate Agent">Real Estate Agent</option>` to:
+      - Quick Call outcome popup modal on Leads Desk (`page.tsx`)
+      - Quick Call outcome popup modal on Lead Pool (`lead-pool/page.tsx`)
+      - Quick Call outcome popup modal on My Queue (`queue/page.tsx` - both Regular and Owner queues)
+      - Contact Drawer Quick Call popup modal (`ContactDrawer.tsx`)
+      - Telephony Call Activity page filter (`call-activity/page.tsx`)
+      - Table header filter dropdowns on Leads, Lead Pool, and Queue desks.
+    - **Terminal Status Logic**: Categorized `"Real Estate Agent"` as a terminal outcome (alongside `Not Interested` and `Wrong Number`) so that external broker inquiries do not incorrectly trigger customer follow-up SLA alarms or clutter next-action schedules.
+    - **Luxury Badge Styling**: Styled `"Real Estate Agent"` across tables and activity timelines with a distinct, royal purple badge (`bg-purple-50 text-purple-800 border-purple-300` / `bg-purple-100 text-purple-800`).
+
 ---
 
 
@@ -2153,6 +2191,7 @@ FSadvisory-crm/
 │   │   │   │   ├── CallRecordingController.php    # 3CX PBX Telephony Integration
 │   │   │   │   ├── EmailSettingsController.php    # Dynamic SMTP Settings & Verification
 │   │   │   │   ├── AppointmentController.php      # Appointments & Client Viewings Engine
+│   │   │   │   ├── TableColumnSettingController.php # Global Cross-Browser Column Persistence
 │   │   │   │   └── ...
 │   │   │   └── Middleware/
 │   │   │       └── CrmTokenAuth.php               # Bearer Token & Master Key Auth
@@ -2161,6 +2200,7 @@ FSadvisory-crm/
 │   │   ├── Models/
 │   │   │   ├── EmailSetting.php               # Dynamic SMTP Configuration Singleton
 │   │   │   ├── Appointment.php                # Client Appointment & Viewing Model
+│   │   │   ├── TableColumnSetting.php         # Cross-Browser Column Layout Model
 │   │   │   └── ...
 │   │   └── Services/
 │   │       └── LeadDistributionService.php    # Auto-Distribution Logic & Rotation
@@ -2204,7 +2244,8 @@ FSadvisory-crm/
 │   │   │   └── Sidebar.tsx                    # Main collapsible CRM navigation
 │   │   └── lib/
 │   │       ├── api.ts                         # Dynamic fetchApi with NEXT_PUBLIC_API_URL
-│   │       └── permissions.ts                 # Granular RBAC permission checks
+│   │       ├── permissions.ts                 # Granular RBAC permission checks
+│   │       └── tableSettings.ts               # Global table column persistence & debounced sync
 │   └── next.config.ts
 ├── whatsapp-gateway/         # Baileys WhatsApp Multi-Device Gateway
 │   ├── server.js             # Gateway Express server & Baileys socket

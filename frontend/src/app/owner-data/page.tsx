@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import Swal from 'sweetalert2';
 import { API_BASE_URL } from '@/lib/api';
+import { getGlobalColumnSettings, saveGlobalColumnSettings } from '@/lib/tableSettings';
 import { 
   Building2, 
   Search, 
@@ -295,6 +296,23 @@ export default function OwnerDataPage() {
         });
       }
     } catch (_) {}
+
+    getGlobalColumnSettings('owner_data').then((res) => {
+      if (res && res.visibility) {
+        setColumnVisibility({
+          ...DEFAULT_OWNER_COLUMN_VISIBILITY,
+          ...res.visibility,
+          created_at: true,
+        });
+        try {
+          localStorage.setItem('owner_data_column_visibility', JSON.stringify({
+            ...DEFAULT_OWNER_COLUMN_VISIBILITY,
+            ...res.visibility,
+            created_at: true,
+          }));
+        } catch (_) {}
+      }
+    });
   }, []);
 
   const updateColumnVisibility = (newVisibility: Record<string, boolean>) => {
@@ -302,6 +320,7 @@ export default function OwnerDataPage() {
     try {
       localStorage.setItem('owner_data_column_visibility', JSON.stringify(newVisibility));
     } catch (_) {}
+    saveGlobalColumnSettings('owner_data', { visibility: newVisibility });
   };
 
   // Sorting & Pagination

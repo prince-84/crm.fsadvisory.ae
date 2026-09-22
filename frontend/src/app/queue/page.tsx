@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import { fetchApi } from '@/lib/api';
+import { getGlobalColumnSettings, saveGlobalColumnSettings } from '@/lib/tableSettings';
 import { hasPermission, isSuperUser } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 import ContactDetailModal from '@/components/ContactDetailModal';
@@ -296,6 +297,7 @@ function MyQueueContent() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('queue_regular_column_visibility', JSON.stringify(newVisibility));
     }
+    saveGlobalColumnSettings('queue_regular', { visibility: newVisibility, order: regularColumnOrder });
   };
 
   const updateOwnerColumnVisibility = (newVisibility: Record<string, boolean>) => {
@@ -303,6 +305,7 @@ function MyQueueContent() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('queue_owner_column_visibility', JSON.stringify(newVisibility));
     }
+    saveGlobalColumnSettings('queue_owner', { visibility: newVisibility, order: ownerColumnOrder });
   };
 
   const updateRegularColumnOrder = (newOrder: string[]) => {
@@ -310,6 +313,7 @@ function MyQueueContent() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('queue_regular_column_order', JSON.stringify(newOrder));
     }
+    saveGlobalColumnSettings('queue_regular', { visibility: regularColumnVisibility, order: newOrder });
   };
 
   const updateOwnerColumnOrder = (newOrder: string[]) => {
@@ -317,6 +321,7 @@ function MyQueueContent() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('queue_owner_column_order', JSON.stringify(newOrder));
     }
+    saveGlobalColumnSettings('queue_owner', { visibility: ownerColumnVisibility, order: newOrder });
   };
 
   // Drag and Drop States for Header Reordering
@@ -491,6 +496,61 @@ function MyQueueContent() {
       }
     }
 
+    // Global Database Column Persistence (cross-browser / cross-user)
+    getGlobalColumnSettings('queue_regular').then((res) => {
+      if (!res) return;
+      if (res.visibility) {
+        const clean: Record<string, boolean> = { ...DEFAULT_REGULAR_COLUMNS };
+        Object.keys(DEFAULT_REGULAR_COLUMNS).forEach((k) => {
+          if (k in res.visibility!) clean[k] = !!res.visibility![k];
+        });
+        clean.created_at = true;
+        clean.call_outcome = res.visibility.call_outcome !== undefined ? !!res.visibility.call_outcome : true;
+        setRegularColumnVisibility(clean);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('queue_regular_column_visibility', JSON.stringify(clean));
+        }
+      }
+      if (res.order && Array.isArray(res.order) && res.order.length > 0) {
+        let sanitized = res.order.filter((k: string) => DEFAULT_REGULAR_COLUMN_ORDER.includes(k) && k !== 'actions');
+        if (!sanitized.includes('created_at')) sanitized.push('created_at');
+        if (!sanitized.includes('call_outcome')) sanitized.push('call_outcome');
+        const missing = DEFAULT_REGULAR_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
+        const finalOrder = [...sanitized, ...missing, 'actions'];
+        setRegularColumnOrder(finalOrder);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('queue_regular_column_order', JSON.stringify(finalOrder));
+        }
+      }
+    });
+
+    getGlobalColumnSettings('queue_owner').then((res) => {
+      if (!res) return;
+      if (res.visibility) {
+        const clean: Record<string, boolean> = { ...DEFAULT_OWNER_COLUMNS };
+        Object.keys(DEFAULT_OWNER_COLUMNS).forEach((k) => {
+          if (k in res.visibility!) clean[k] = !!res.visibility![k];
+        });
+        clean.created_at = true;
+        clean.call_outcome = res.visibility.call_outcome !== undefined ? !!res.visibility.call_outcome : true;
+        setOwnerColumnVisibility(clean);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('queue_owner_column_visibility', JSON.stringify(clean));
+        }
+      }
+      if (res.order && Array.isArray(res.order) && res.order.length > 0) {
+        let sanitized = res.order.filter((k: string) => DEFAULT_OWNER_COLUMN_ORDER.includes(k) && k !== 'actions');
+        if (!sanitized.includes('created_at')) sanitized.push('created_at');
+        if (!sanitized.includes('call_outcome')) sanitized.push('call_outcome');
+        const missing = DEFAULT_OWNER_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
+        const finalOrder = [...sanitized, ...missing, 'actions'];
+        setOwnerColumnOrder(finalOrder);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('queue_owner_column_order', JSON.stringify(finalOrder));
+        }
+      }
+    });
+
     fetchApi('/users')
       .then((data) => {
         const rawUsers = Array.isArray(data) ? data : (data?.users || []);
@@ -600,6 +660,7 @@ function MyQueueContent() {
               <option value="No Answer">No Answer</option>
               <option value="Not Interested">Not Interested</option>
               <option value="Wrong Number">Wrong Number</option>
+              <option value="Real Estate Agent">Real Estate Agent</option>
             </select>
           </div>
           <div id="swal-next-schedule-container">
@@ -647,7 +708,7 @@ function MyQueueContent() {
         if (outcomeSelect && scheduleContainer) {
           const toggleSchedule = () => {
             const val = outcomeSelect.value || '';
-            const isTerminal = val.includes('Not Interested') || val.includes('Wrong Number');
+            const isTerminal = val.includes('Not Interested') || val.includes('Wrong Number') || val.includes('Real Estate Agent');
             scheduleContainer.style.display = isTerminal ? 'none' : 'block';
           };
           outcomeSelect.addEventListener('change', toggleSchedule);
@@ -663,7 +724,7 @@ function MyQueueContent() {
           Swal.showValidationMessage('Please enter call notes / summary before saving.');
           return false;
         }
-        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number');
+        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number') || outcome?.includes('Real Estate Agent');
 
         if (!isTerminal && schedule === 'custom') {
           if (!customDateTime) {
@@ -753,6 +814,7 @@ function MyQueueContent() {
               <option value="No Answer">No Answer</option>
               <option value="Not Interested">Not Interested</option>
               <option value="Wrong Number">Wrong Number</option>
+              <option value="Real Estate Agent">Real Estate Agent</option>
             </select>
           </div>
           <div>
@@ -779,7 +841,7 @@ function MyQueueContent() {
     });
 
     if (formValues) {
-      const isTerminal = formValues.outcome?.includes('Not Interested') || formValues.outcome?.includes('Wrong Number');
+      const isTerminal = formValues.outcome?.includes('Not Interested') || formValues.outcome?.includes('Wrong Number') || formValues.outcome?.includes('Real Estate Agent');
       try {
         await fetchApi('/activities', {
           method: 'POST',
@@ -1499,6 +1561,13 @@ function MyQueueContent() {
       return <span className="text-slate-400 font-mono text-[11px]">—</span>;
     }
     const o = outcome.trim();
+    if (o.includes('Real Estate Agent') || o.includes('Real Estate') || o.includes('Agent') || o.includes('Broker')) {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-300 whitespace-nowrap">
+          Real Estate Agent
+        </span>
+      );
+    }
     if (o.includes('Not Interested') || o.includes('Rented')) {
       return (
         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-300 whitespace-nowrap">
@@ -2471,6 +2540,7 @@ function MyQueueContent() {
                   <option value="No Answer">No Answer</option>
                   <option value="Not Interested">Not Interested</option>
                   <option value="Wrong Number">Wrong Number</option>
+                  <option value="Real Estate Agent">Real Estate Agent</option>
                 </select>
               </div>
 

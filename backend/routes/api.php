@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\LeadDistributionController;
 use App\Http\Controllers\Api\EmailSettingsController;
 use App\Http\Controllers\Api\AppointmentController;
 use App\Http\Controllers\Api\DepartmentController;
+use App\Http\Controllers\Api\TableColumnSettingController;
 
 // Public Auth routes
 Route::post('/auth/login', [AuthController::class, 'login']);
@@ -39,7 +40,9 @@ Route::post('/whatsapp/webhook', [WhatsAppController::class, 'webhook']);
 Route::post('/whatsapp/sync-phone-data', [WhatsAppController::class, 'syncPhoneData']);
 Route::post('/whatsapp/channels/{id}/pair-confirm', [WhatsAppController::class, 'pairConfirm']);
 Route::post('/whatsapp/channels/{id}/disconnect', [WhatsAppController::class, 'disconnect']);
-Route::delete('/whatsapp/chats/purge-seed', [WhatsAppController::class, 'purgeSeedChats']);
+// Global Table Column Persistence Settings (Cross-User & Cross-Browser)
+Route::get('/table-columns/{table}', [TableColumnSettingController::class, 'getSettings']);
+Route::post('/table-columns/{table}', [TableColumnSettingController::class, 'saveSettings']);
 
 // ==========================================
 // PROTECTED CRM ROUTES (Requires Bearer Token or API Key)

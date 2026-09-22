@@ -12,6 +12,7 @@ import OpportunityQuickViewModal from '@/components/OpportunityQuickViewModal';
 import AdvancedFilterModal, { AdvancedFiltersState, INITIAL_ADVANCED_FILTERS } from '@/components/AdvancedFilterModal';
 import DateRangePicker, { DateRangeValue } from '@/components/DateRangePicker';
 import { fetchApi } from '@/lib/api';
+import { getGlobalColumnSettings, saveGlobalColumnSettings } from '@/lib/tableSettings';
 import Swal from 'sweetalert2';
 import { 
   Search, Download, Upload, Plus, Users, CheckCircle2, Briefcase, 
@@ -28,6 +29,7 @@ const formatCallOutcome = (outcome: string | null | undefined): string => {
   if (!outcome) return '';
   const o = outcome.trim();
   if (o.includes('Not Interested')) return 'Not Interested';
+  if (o.includes('Real Estate Agent') || o.includes('Real Estate') || o.includes('Agent') || o.includes('Broker')) return 'Real Estate Agent';
   if (o.includes('Interested') || o.includes('Viewing') || o.includes('Meeting')) return 'Interested';
   if (o.includes('Callback')) return 'Callback';
   if (o.includes('Follow-up') || o.includes('Follow up')) return 'Follow-up';
@@ -63,6 +65,9 @@ const getStageBadgeInfo = (stage: string | null | undefined) => {
 
 const getOutcomeBadgeClass = (outcome: string | null | undefined) => {
   if (!outcome) return 'bg-slate-100 text-slate-700 border-slate-200';
+  if (outcome.includes('Real Estate Agent') || outcome.includes('Real Estate') || outcome.includes('Agent') || outcome.includes('Broker')) {
+    return 'bg-purple-50 text-purple-800 border-purple-300';
+  }
   if (outcome.includes('Not Interested') || outcome.includes('Wrong Number') || outcome.includes('Invalid')) {
     return 'bg-slate-100 text-slate-700 border-slate-300';
   }
@@ -376,6 +381,7 @@ export default function LeadPoolPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem(VISIBILITY_STORAGE_KEY, JSON.stringify(newVisibility));
     }
+    saveGlobalColumnSettings('leads', { visibility: newVisibility, order: columnOrder });
   };
 
   const DEFAULT_COLUMN_ORDER = [
@@ -408,7 +414,7 @@ export default function LeadPoolPage() {
     'actions',
   ];
 
-  // Drag & Drop Column Order State (Persisted in localStorage)
+  // Drag & Drop Column Order State (Persisted in localStorage & Database)
   const [columnOrder, setColumnOrder] = useState<string[]>(DEFAULT_COLUMN_ORDER);
 
   const updateColumnOrder = (newOrder: string[]) => {
@@ -416,64 +422,85 @@ export default function LeadPoolPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(newOrder));
     }
+    saveGlobalColumnSettings('leads', { visibility: columnVisibility, order: newOrder });
   };
 
-  // Load saved column preferences from localStorage after client hydration
+  // Load saved column preferences from localStorage & Global Database
   useEffect(() => {
+    const validKeys = ALL_COLUMNS.map((c) => c.key);
+
+    const applyVisibility = (rawVis: any) => {
+      const cleanVis: Record<string, boolean> = { ...DEFAULT_COLUMN_VISIBILITY };
+      validKeys.forEach((k) => {
+        if (k in rawVis) {
+          cleanVis[k] = !!rawVis[k];
+        }
+      });
+      cleanVis.created_at = true; // By default Created Date must be visible
+      cleanVis.lead_type = rawVis.lead_type !== undefined ? !!rawVis.lead_type : true;
+      cleanVis.actions = true;
+      setColumnVisibility(cleanVis);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(VISIBILITY_STORAGE_KEY, JSON.stringify(cleanVis));
+      }
+    };
+
+    const applyOrder = (rawOrder: any) => {
+      if (Array.isArray(rawOrder) && rawOrder.length > 0) {
+        let sanitized = rawOrder.filter((k: string) => validKeys.includes(k) && k !== 'actions');
+        if (!sanitized.includes('created_at')) {
+          sanitized.push('created_at');
+        }
+        if (!sanitized.includes('updated_at')) {
+          sanitized.push('updated_at');
+        }
+        if (!sanitized.includes('lead_type')) {
+          const pIdx = sanitized.indexOf('phone');
+          if (pIdx !== -1) {
+            sanitized.splice(pIdx + 1, 0, 'lead_type');
+          } else {
+            sanitized.splice(2, 0, 'lead_type');
+          }
+        }
+        const missing = DEFAULT_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
+        const finalOrder = Array.from(new Set([...sanitized, ...missing, 'actions']));
+        setColumnOrder(finalOrder);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(finalOrder));
+        }
+      }
+    };
+
+    // 1. Instant fallback from localStorage
     if (typeof window !== 'undefined') {
-      const validKeys = ALL_COLUMNS.map((c) => c.key);
       const savedVis = localStorage.getItem(VISIBILITY_STORAGE_KEY);
       if (savedVis) {
         try {
-          const parsedVis = JSON.parse(savedVis);
-          const cleanVis: Record<string, boolean> = { ...DEFAULT_COLUMN_VISIBILITY };
-          validKeys.forEach((k) => {
-            if (k in parsedVis) {
-              cleanVis[k] = !!parsedVis[k];
-            }
-          });
-          cleanVis.created_at = true; // By default Created Date must be visible
-          cleanVis.lead_type = parsedVis.lead_type !== undefined ? !!parsedVis.lead_type : true;
-          cleanVis.actions = true;
-          setColumnVisibility(cleanVis);
+          applyVisibility(JSON.parse(savedVis));
         } catch (e) {
           console.error('Error parsing column visibility:', e);
         }
-      } else {
-        setColumnVisibility({ ...DEFAULT_COLUMN_VISIBILITY });
       }
       const savedOrder = localStorage.getItem(ORDER_STORAGE_KEY);
       if (savedOrder) {
         try {
-          const parsed = JSON.parse(savedOrder);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            let sanitized = parsed.filter((k: string) => validKeys.includes(k) && k !== 'actions');
-            if (!sanitized.includes('created_at')) {
-              sanitized.push('created_at');
-            }
-            if (!sanitized.includes('updated_at')) {
-              sanitized.push('updated_at');
-            }
-            if (!sanitized.includes('lead_type')) {
-              const pIdx = sanitized.indexOf('phone');
-              if (pIdx !== -1) {
-                sanitized.splice(pIdx + 1, 0, 'lead_type');
-              } else {
-                sanitized.splice(2, 0, 'lead_type');
-              }
-            }
-            const missing = DEFAULT_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
-            const finalOrder = Array.from(new Set([...sanitized, ...missing, 'actions']));
-            setColumnOrder(finalOrder);
-            localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(finalOrder));
-          }
+          applyOrder(JSON.parse(savedOrder));
         } catch (e) {
           console.error('Error parsing column order:', e);
         }
-      } else {
-        setColumnOrder([...DEFAULT_COLUMN_ORDER]);
       }
     }
+
+    // 2. Fetch global database configuration (cross-browser / cross-user)
+    getGlobalColumnSettings('leads').then((globalSettings) => {
+      if (!globalSettings) return;
+      if (globalSettings.visibility) {
+        applyVisibility(globalSettings.visibility);
+      }
+      if (globalSettings.order) {
+        applyOrder(globalSettings.order);
+      }
+    });
   }, []);
 
   // Drag and Drop States for Header Reordering
@@ -1251,6 +1278,7 @@ export default function LeadPoolPage() {
               <option value="No Answer">No Answer</option>
               <option value="Not Interested">Not Interested</option>
               <option value="Wrong Number">Wrong Number</option>
+              <option value="Real Estate Agent">Real Estate Agent</option>
             </select>
           </div>
           <div id="swal-next-schedule-container">
@@ -1299,7 +1327,7 @@ export default function LeadPoolPage() {
         if (outcomeSelect && scheduleContainer) {
           const toggleSchedule = () => {
             const val = outcomeSelect.value || '';
-            const isTerminal = val.includes('Not Interested') || val.includes('Wrong Number');
+            const isTerminal = val.includes('Not Interested') || val.includes('Wrong Number') || val.includes('Real Estate Agent');
             scheduleContainer.style.display = isTerminal ? 'none' : 'block';
           };
           outcomeSelect.addEventListener('change', toggleSchedule);
@@ -1315,7 +1343,7 @@ export default function LeadPoolPage() {
           Swal.showValidationMessage('Please enter call notes / summary before saving.');
           return false;
         }
-        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number');
+        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number') || outcome?.includes('Real Estate Agent');
 
         if (!isTerminal && schedule === 'custom') {
           if (!customDateTime) {
@@ -2086,6 +2114,7 @@ export default function LeadPoolPage() {
                   <option value="No Answer">No Answer</option>
                   <option value="Not Interested">Not Interested</option>
                   <option value="Wrong Number">Wrong Number</option>
+                  <option value="Real Estate Agent">Real Estate Agent</option>
                 </select>
               </div>
 

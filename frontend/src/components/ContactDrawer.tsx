@@ -397,6 +397,7 @@ export default function ContactDrawer({
               <option value="No Answer">No Answer</option>
               <option value="Not Interested">Not Interested</option>
               <option value="Wrong Number">Wrong Number</option>
+              <option value="Real Estate Agent">Real Estate Agent</option>
             </select>
           </div>
           <div id="drawer-swal-schedule-box">
@@ -444,7 +445,7 @@ export default function ContactDrawer({
 
         if (outcomeSel && scheduleBox) {
           const toggle = () => {
-            const isTerminal = outcomeSel.value.includes('Not Interested') || outcomeSel.value.includes('Wrong Number');
+            const isTerminal = outcomeSel.value.includes('Not Interested') || outcomeSel.value.includes('Wrong Number') || outcomeSel.value.includes('Real Estate Agent');
             scheduleBox.style.display = isTerminal ? 'none' : 'block';
           };
           outcomeSel.addEventListener('change', toggle);
@@ -460,7 +461,7 @@ export default function ContactDrawer({
           Swal.showValidationMessage('Please enter call notes before saving.');
           return false;
         }
-        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number');
+        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number') || outcome?.includes('Real Estate Agent');
 
         if (!isTerminal && schedule === 'custom') {
           if (!customDateTime) {
@@ -546,6 +547,9 @@ export default function ContactDrawer({
   // Outcome badge styling
   const getOutcomeBadgeClass = (outcome: string | null | undefined) => {
     if (!outcome) return 'bg-slate-100 text-slate-700 border-slate-200';
+    if (outcome.includes('Real Estate Agent') || outcome.includes('Real Estate') || outcome.includes('Agent') || outcome.includes('Broker')) {
+      return 'bg-purple-50 text-purple-800 border-purple-300';
+    }
     if (outcome.includes('Not Interested') || outcome.includes('Wrong Number')) {
       return 'bg-slate-100 text-slate-700 border-slate-300';
     }

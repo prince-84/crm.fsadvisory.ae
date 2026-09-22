@@ -5,6 +5,7 @@ import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import CreateOpportunityModal from '@/components/CreateOpportunityModal';
 import { fetchApi } from '@/lib/api';
+import { getGlobalColumnSettings, saveGlobalColumnSettings } from '@/lib/tableSettings';
 import { hasPermission, isSuperUser } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 import { 
@@ -260,6 +261,7 @@ export default function OpportunitiesPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem(OPP_VISIBILITY_STORAGE_KEY, JSON.stringify(newVisibility));
     }
+    saveGlobalColumnSettings('opportunities', { visibility: newVisibility, order: columnOrder });
   };
 
   const updateColumnOrder = (newOrder: string[]) => {
@@ -267,25 +269,45 @@ export default function OpportunitiesPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem(OPP_ORDER_STORAGE_KEY, JSON.stringify(newOrder));
     }
+    saveGlobalColumnSettings('opportunities', { visibility: columnVisibility, order: newOrder });
   };
 
-  // Load saved column preferences from localStorage
+  // Load saved column preferences from localStorage & Global Database
   useEffect(() => {
+    const validKeys = ALL_OPP_COLUMNS.map((c) => c.key);
+
+    const applyVisibility = (rawVis: any) => {
+      const cleanVis: Record<string, boolean> = { ...DEFAULT_OPP_COLUMN_VISIBILITY };
+      validKeys.forEach((k) => {
+        if (k in rawVis) {
+          cleanVis[k] = !!rawVis[k];
+        }
+      });
+      cleanVis.created_at = true; // By default Created Date must be enabled
+      cleanVis.actions = true;
+      setColumnVisibility(cleanVis);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(OPP_VISIBILITY_STORAGE_KEY, JSON.stringify(cleanVis));
+      }
+    };
+
+    const applyOrder = (rawOrder: any) => {
+      if (Array.isArray(rawOrder) && rawOrder.length > 0) {
+        let sanitized = rawOrder.filter((k: string) => validKeys.includes(k) && k !== 'actions');
+        if (!sanitized.includes('created_at')) sanitized.push('created_at');
+        sanitized.push('actions');
+        setColumnOrder(sanitized);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(OPP_ORDER_STORAGE_KEY, JSON.stringify(sanitized));
+        }
+      }
+    };
+
     if (typeof window !== 'undefined') {
-      const validKeys = ALL_OPP_COLUMNS.map((c) => c.key);
       const savedVis = localStorage.getItem(OPP_VISIBILITY_STORAGE_KEY);
       if (savedVis) {
         try {
-          const parsedVis = JSON.parse(savedVis);
-          const cleanVis: Record<string, boolean> = { ...DEFAULT_OPP_COLUMN_VISIBILITY };
-          validKeys.forEach((k) => {
-            if (k in parsedVis) {
-              cleanVis[k] = !!parsedVis[k];
-            }
-          });
-          cleanVis.created_at = true; // By default Created Date must be enabled
-          cleanVis.actions = true;
-          setColumnVisibility(cleanVis);
+          applyVisibility(JSON.parse(savedVis));
         } catch (e) {
           console.error('Error parsing opportunities column visibility:', e);
         }
@@ -294,18 +316,23 @@ export default function OpportunitiesPage() {
       const savedOrder = localStorage.getItem(OPP_ORDER_STORAGE_KEY);
       if (savedOrder) {
         try {
-          const parsed = JSON.parse(savedOrder);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            let sanitized = parsed.filter((k: string) => validKeys.includes(k) && k !== 'actions');
-            if (!sanitized.includes('created_at')) sanitized.push('created_at');
-            sanitized.push('actions');
-            setColumnOrder(sanitized);
-          }
+          applyOrder(JSON.parse(savedOrder));
         } catch (e) {
           console.error('Error parsing opportunities column order:', e);
         }
       }
     }
+
+    // Global Database Persistence (cross-browser / cross-user)
+    getGlobalColumnSettings('opportunities').then((res) => {
+      if (!res) return;
+      if (res.visibility) {
+        applyVisibility(res.visibility);
+      }
+      if (res.order) {
+        applyOrder(res.order);
+      }
+    });
   }, []);
 
   useEffect(() => {
