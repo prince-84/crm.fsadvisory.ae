@@ -207,6 +207,15 @@ export default function WhatsAppPage() {
   // State
   const [channels, setChannels] = useState<any[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<string>('all');
+
+  const activeChannel = useMemo(() => {
+    if (selectedChannelId === 'all') return null;
+    return channels.find((c) => String(c.id) === String(selectedChannelId));
+  }, [channels, selectedChannelId]);
+
+  const connectedChannelsCount = useMemo(() => {
+    return channels.filter((c) => c.status === 'connected').length;
+  }, [channels]);
   const [chats, setChats] = useState<any[]>([]);
   const [selectedChat, setSelectedChat] = useState<any>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -1202,16 +1211,33 @@ export default function WhatsAppPage() {
                   <h1 className="font-heading font-bold text-sm text-white tracking-wide">
                     WhatsApp Web Mirroring
                   </h1>
-                  {gatewayStatus === 'connected' ? (
+                  {selectedChannelId === 'all' ? (
+                    connectedChannelsCount > 0 ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-[#25D366]/20 text-[#25D366] border border-[#25D366]/30 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] animate-pulse"></span>
+                        {connectedChannelsCount} / {channels.length} Online
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-slate-500/20 text-slate-300 border border-slate-500/30 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                        All Disconnected
+                      </span>
+                    )
+                  ) : activeChannel?.status === 'connected' ? (
                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-[#25D366]/20 text-[#25D366] border border-[#25D366]/30 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] animate-pulse"></span>
-                      WhatsApp Online
+                      {activeChannel.agent_name} Online
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenQrModal(activeChannel?.id)}
+                      className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center gap-1 cursor-pointer transition-colors"
+                      title="Device disconnected. Click to scan QR code and link."
+                    >
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                      Device Disconnected
-                    </span>
+                      {activeChannel?.agent_name || 'Account'} Disconnected · Click to Link
+                    </button>
                   )}
                 </div>
                 <p className="text-[10px] text-[#B0C0D8]">
@@ -1381,9 +1407,36 @@ export default function WhatsAppPage() {
                 <p className="font-semibold text-slate-600">
                   {searchQuery ? `No chats matching "${searchQuery}"` : 'No WhatsApp Chats Found'}
                 </p>
-                <p className="text-[11px] mt-1">
-                  {searchQuery ? 'Try searching with another name or phone number.' : 'Link a WhatsApp device to mirror incoming client conversations.'}
+                <p className="text-[11px] mt-1 text-slate-500">
+                  {searchQuery 
+                    ? 'Try searching with another name or phone number.' 
+                    : activeChannel && activeChannel.status !== 'connected'
+                    ? `${activeChannel.agent_name}'s WhatsApp is disconnected. Scan QR code to link mobile device and mirror conversations.`
+                    : 'Link a WhatsApp device to mirror incoming client conversations.'}
                 </p>
+                {activeChannel && activeChannel.status !== 'connected' && !searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenQrModal(activeChannel.id)}
+                    className="mt-3.5 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#25D366] hover:bg-[#1EBE5D] text-[#081428] rounded-md font-bold text-xs transition-colors cursor-pointer shadow-sm"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>Link {activeChannel.agent_name}'s WhatsApp</span>
+                  </button>
+                )}
+                {selectedChannelId === 'all' && connectedChannelsCount === 0 && !searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const farazCh = channels.find((c) => c.agent_name?.toLowerCase().includes('faraz')) || channels[0];
+                      if (farazCh) handleOpenQrModal(farazCh.id);
+                    }}
+                    className="mt-3.5 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#25D366] hover:bg-[#1EBE5D] text-[#081428] rounded-md font-bold text-xs transition-colors cursor-pointer shadow-sm"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>Scan QR to Link Faraz Shafi's WhatsApp</span>
+                  </button>
+                )}
               </div>
             ) : (
               filteredChats.map((chat) => {

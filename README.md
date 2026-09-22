@@ -120,6 +120,10 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Individual User Channel Isolation**: Non-super-admin users (Sales Consultants, Telesales Agents, Advisors) are strictly locked to their own individual account. The switcher dropdown is automatically hidden and replaced with a personal account status badge (`My Account: [Agent Name] (🟢 Online / ⚪ Offline)`).
   - **Backend Access Scoping & Auto-Provisioning**: Enforced database-level scoping in `WhatsAppController@channels` and `WhatsAppController@chats`, preventing cross-account conversation snooping. Automatically auto-provisions and links a dedicated channel record for each CRM user upon login.
   - **Session Unlinking & Re-Pairing Workflow**: Integrated disconnect proxy endpoint (`/api/whatsapp/gateway/logout`) allowing users to unlink existing paired sessions and generate fresh QR codes without manual backend intervention.
+- **41 — Contextual WhatsApp Device Status Badge & In-Line QR Linking**:
+  - Replaced misleading global "WhatsApp Online" badge with accurate, account-specific status badges dynamically binding to the currently active channel.
+  - Displays explicit disconnected indicators (`[Account Name] Disconnected · Click to Link`) with single-click QR pairing modal launcher.
+  - Empty inbox state intelligently prompts advisors to scan the QR code and link their mobile handset to start mirroring live client conversations.
 - **40 — Dedicated Lead Pool Page (`/lead-pool`) & Clean Separation from Inbound Leads**:
   - **Sidebar Menu Navigation Order**: Positioned **Lead Pool** (`/lead-pool`) directly after **Owner Data** (`/owner-data`) under the SALES navigation group (`Leads` -> `Owner Data` -> `Lead Pool`), restoring the dedicated master imported database archive.
   - **Clean Separation (Imported Only vs Inbound Live Leads)**:
