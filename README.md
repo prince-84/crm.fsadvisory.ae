@@ -2143,6 +2143,16 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Contact Drawer Header Sanitization (`ContactDrawer.tsx`)**:
     - Removed redundant `Expat / UAE Resident · English / Arabic` subtitle below the lead name and badges for a sleeker, cleaner profile header.
 
+- **162 — Lead Type Filter Dropdown (Paid / Organic) & Database Query Optimization (`frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Lead Type Filter Dropdown**:
+    - Added a dedicated **Lead Type** filter dropdown (`⚡ All Lead Types`, `⚡ Paid`, `🌿 Organic`) positioned prominently before "All Stages" in the filter toolbar on both Leads Desk (`page.tsx`) and Lead Pool (`lead-pool/page.tsx`).
+    - Styled with gold `Zap` icon and active state synchronization.
+  - **Database Query Filtering (`ContactController.php`)**:
+    - Upgraded `lead_type` query filter in `ContactController@index`:
+      - Selecting `Paid` queries all contacts with `lead_type = 'Paid'`.
+      - Selecting `Organic` queries contacts with `lead_type = 'Organic'`, as well as legacy records where `lead_type IS NULL` or empty, guaranteeing 100% data fidelity without skipping older records.
+    - Integrated with `loadData`, `useEffect`, and `handleResetFilters`.
+
 ---
 
 

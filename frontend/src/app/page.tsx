@@ -319,6 +319,7 @@ export default function LeadPoolPage() {
 
   // Secondary Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedLeadType, setSelectedLeadType] = useState<string>('all');
   const [selectedStage, setSelectedStage] = useState<string>('all');
   const [selectedCallOutcome, setSelectedCallOutcome] = useState<string>('all');
   const [opportunityModalContact, setOpportunityModalContact] = useState<any | null>(null);
@@ -1454,6 +1455,9 @@ export default function LeadPoolPage() {
       if (searchQuery) {
         endpoint += `&search=${encodeURIComponent(searchQuery)}`;
       }
+      if (selectedLeadType && selectedLeadType !== 'all') {
+        endpoint += `&lead_type=${encodeURIComponent(selectedLeadType)}`;
+      }
       if (selectedStage && selectedStage !== 'all') {
         endpoint += `&stage=${encodeURIComponent(selectedStage)}`;
       }
@@ -1754,7 +1758,7 @@ export default function LeadPoolPage() {
   useEffect(() => {
     setCurrentPage(1);
     loadData(1, perPage, sortBy, sortOrder, selectedOwner);
-  }, [activeTab, searchQuery, selectedOwner, selectedStage, selectedCallOutcome, advancedFilters, dateRange]);
+  }, [activeTab, searchQuery, selectedOwner, selectedLeadType, selectedStage, selectedCallOutcome, advancedFilters, dateRange]);
 
   const handleSort = (columnKey: string) => {
     let newOrder: 'asc' | 'desc' = 'asc';
@@ -1790,6 +1794,7 @@ export default function LeadPoolPage() {
     setActiveTab('all');
     const canViewAll = isSuperUser(currentUser) || hasPermission('leads.view_all');
     setSelectedOwner(canViewAll ? 'all' : (currentUser?.name || 'Unassigned'));
+    setSelectedLeadType('all');
     setSelectedStage('all');
     setSelectedCallOutcome('all');
     setAdvancedFilters(INITIAL_ADVANCED_FILTERS);
@@ -2093,6 +2098,23 @@ export default function LeadPoolPage() {
                   setCurrentPage(1);
                 }}
               />
+
+              {/* Lead Type Filter Dropdown (Paid / Organic) */}
+              <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
+                <Zap className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                <select
+                  value={selectedLeadType}
+                  onChange={(e) => {
+                    setSelectedLeadType(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer max-w-[140px] truncate"
+                >
+                  <option value="all">⚡ All Lead Types</option>
+                  <option value="Paid">⚡ Paid</option>
+                  <option value="Organic">🌿 Organic</option>
+                </select>
+              </div>
 
               {/* Pipeline Stage Filter Dropdown */}
               <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">

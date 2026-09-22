@@ -295,7 +295,16 @@ class ContactController extends Controller
 
         // Lead Type filter (Paid / Organic)
         if ($request->filled('lead_type') && $request->lead_type !== 'all') {
-            $query->where('contacts.lead_type', $request->lead_type);
+            $lt = trim($request->lead_type);
+            if (strtolower($lt) === 'organic') {
+                $query->where(function($q) {
+                    $q->where('contacts.lead_type', 'like', 'Organic')
+                      ->orWhereNull('contacts.lead_type')
+                      ->orWhere('contacts.lead_type', '');
+                });
+            } else {
+                $query->where('contacts.lead_type', 'like', "%{$lt}%");
+            }
         }
 
         // Advanced Lead Origin & Channel Source filters
