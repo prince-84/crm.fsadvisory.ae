@@ -134,6 +134,9 @@ export default function CallActivityPage() {
       return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700">Note / Call</span>;
     }
 
+    if (outcome.includes('Not Interested')) {
+      return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-300">Not Interested ❌</span>;
+    }
     if (outcome.includes('Interested') || outcome.includes('Viewing')) {
       return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">Interested 🎯</span>;
     }
@@ -145,9 +148,6 @@ export default function CallActivityPage() {
     }
     if (outcome.includes('No Answer') || outcome.includes('Voicemail')) {
       return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-300">No Answer ⏳</span>;
-    }
-    if (outcome.includes('Not Interested')) {
-      return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-300">Not Interested ❌</span>;
     }
     return <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700">{outcome}</span>;
   };

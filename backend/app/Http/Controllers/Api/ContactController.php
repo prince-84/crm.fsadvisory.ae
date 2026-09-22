@@ -251,6 +251,34 @@ class ContactController extends Controller
                 })->whereDoesntHave('opportunities.activities', function($actQ) {
                     $actQ->where('type', 'call');
                 });
+            } elseif ($request->call_outcome === 'Not Interested') {
+                $query->where(function($q) {
+                    $q->whereHas('activities', function($actQ) {
+                        $actQ->where('type', 'call')->where('call_outcome', 'like', '%Not Interested%');
+                    })->orWhereHas('opportunities.activities', function($actQ) {
+                        $actQ->where('type', 'call')->where('call_outcome', 'like', '%Not Interested%');
+                    });
+                });
+            } elseif ($request->call_outcome === 'Interested') {
+                $query->where(function($q) {
+                    $q->whereHas('activities', function($actQ) {
+                        $actQ->where('type', 'call')
+                             ->where(function($sub) {
+                                 $sub->where('call_outcome', 'like', '%Interested%')
+                                     ->orWhere('call_outcome', 'like', '%Viewing%')
+                                     ->orWhere('call_outcome', 'like', '%Meeting%');
+                             })
+                             ->where('call_outcome', 'not like', '%Not Interested%');
+                    })->orWhereHas('opportunities.activities', function($actQ) {
+                        $actQ->where('type', 'call')
+                             ->where(function($sub) {
+                                 $sub->where('call_outcome', 'like', '%Interested%')
+                                     ->orWhere('call_outcome', 'like', '%Viewing%')
+                                     ->orWhere('call_outcome', 'like', '%Meeting%');
+                             })
+                             ->where('call_outcome', 'not like', '%Not Interested%');
+                    });
+                });
             } else {
                 $outcome = $request->call_outcome;
                 $query->where(function($q) use ($outcome) {

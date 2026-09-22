@@ -546,6 +546,9 @@ export default function ContactDrawer({
   // Outcome badge styling
   const getOutcomeBadgeClass = (outcome: string | null | undefined) => {
     if (!outcome) return 'bg-slate-100 text-slate-700 border-slate-200';
+    if (outcome.includes('Not Interested') || outcome.includes('Wrong Number')) {
+      return 'bg-slate-100 text-slate-700 border-slate-300';
+    }
     if (outcome.includes('Interested') || outcome.includes('Viewing')) {
       return 'bg-emerald-50 text-emerald-800 border-emerald-300';
     }
@@ -557,9 +560,6 @@ export default function ContactDrawer({
     }
     if (outcome.includes('No Answer') || outcome.includes('Voicemail')) {
       return 'bg-rose-50 text-rose-800 border-rose-300';
-    }
-    if (outcome.includes('Not Interested') || outcome.includes('Wrong Number')) {
-      return 'bg-slate-100 text-slate-700 border-slate-300';
     }
     return 'bg-amber-50 text-amber-800 border-amber-200';
   };

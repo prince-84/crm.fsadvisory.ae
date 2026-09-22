@@ -27,11 +27,11 @@ import AccessDenied from '@/components/AccessDenied';
 const formatCallOutcome = (outcome: string | null | undefined): string => {
   if (!outcome) return '';
   const o = outcome.trim();
+  if (o.includes('Not Interested')) return 'Not Interested';
   if (o.includes('Interested') || o.includes('Viewing') || o.includes('Meeting')) return 'Interested';
   if (o.includes('Callback')) return 'Callback';
   if (o.includes('Follow-up') || o.includes('Follow up')) return 'Follow-up';
   if (o.includes('No Answer') || o.includes('Voicemail')) return 'No Answer';
-  if (o.includes('Not Interested')) return 'Not Interested';
   if (o.includes('Wrong Number') || o.includes('Invalid')) return 'Wrong Number';
   return o;
 };
@@ -63,7 +63,10 @@ const getStageBadgeInfo = (stage: string | null | undefined) => {
 
 const getOutcomeBadgeClass = (outcome: string | null | undefined) => {
   if (!outcome) return 'bg-slate-100 text-slate-700 border-slate-200';
-  if (outcome.includes('Interested') || outcome.includes('Viewing')) {
+  if (outcome.includes('Not Interested') || outcome.includes('Wrong Number') || outcome.includes('Invalid')) {
+    return 'bg-slate-100 text-slate-700 border-slate-300';
+  }
+  if (outcome.includes('Interested') || outcome.includes('Viewing') || outcome.includes('Meeting')) {
     return 'bg-emerald-50 text-emerald-800 border-emerald-300';
   }
   if (outcome.includes('Callback')) {
@@ -74,9 +77,6 @@ const getOutcomeBadgeClass = (outcome: string | null | undefined) => {
   }
   if (outcome.includes('No Answer') || outcome.includes('Voicemail')) {
     return 'bg-rose-50 text-rose-800 border-rose-300';
-  }
-  if (outcome.includes('Not Interested') || outcome.includes('Wrong Number')) {
-    return 'bg-slate-100 text-slate-700 border-slate-300';
   }
   return 'bg-amber-50 text-amber-800 border-amber-200';
 };

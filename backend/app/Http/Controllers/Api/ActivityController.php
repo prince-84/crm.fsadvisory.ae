@@ -132,10 +132,14 @@ class ActivityController extends Controller
 
         if ($request->has('call_outcome') && $request->call_outcome !== 'all') {
             $outcome = $request->call_outcome;
-            if (str_contains($outcome, 'Interested') || str_contains($outcome, 'Viewing')) {
+            if (str_contains($outcome, 'Not Interested')) {
+                $query->where('call_outcome', 'like', '%Not Interested%');
+            } elseif (str_contains($outcome, 'Interested') || str_contains($outcome, 'Viewing')) {
                 $query->where(function ($q) {
-                    $q->where('call_outcome', 'like', '%Interested%')
-                      ->orWhere('call_outcome', 'like', '%Viewing%');
+                    $q->where(function ($sub) {
+                        $sub->where('call_outcome', 'like', '%Interested%')
+                            ->orWhere('call_outcome', 'like', '%Viewing%');
+                    })->where('call_outcome', 'not like', '%Not Interested%');
                 });
             } elseif (str_contains($outcome, 'Callback')) {
                 $query->where('call_outcome', 'like', '%Callback%');
@@ -144,8 +148,6 @@ class ActivityController extends Controller
                     $q->where('call_outcome', 'like', '%No Answer%')
                       ->orWhere('call_outcome', 'like', '%Voicemail%');
                 });
-            } elseif (str_contains($outcome, 'Not Interested')) {
-                $query->where('call_outcome', 'like', '%Not Interested%');
             } elseif (str_contains($outcome, 'Follow-up')) {
                 $query->where('call_outcome', 'like', '%Follow-up%');
             } else {
@@ -180,12 +182,16 @@ class ActivityController extends Controller
         $callsToday = (clone $baseCallQuery)->whereDate('created_at', $today)->count();
 
         $interestedTotal = (clone $baseCallQuery)->where(function ($q) {
-            $q->where('call_outcome', 'like', '%Interested%')
-              ->orWhere('call_outcome', 'like', '%Viewing%');
+            $q->where(function ($sub) {
+                $sub->where('call_outcome', 'like', '%Interested%')
+                    ->orWhere('call_outcome', 'like', '%Viewing%');
+            })->where('call_outcome', 'not like', '%Not Interested%');
         })->count();
         $interestedToday = (clone $baseCallQuery)->where(function ($q) {
-            $q->where('call_outcome', 'like', '%Interested%')
-              ->orWhere('call_outcome', 'like', '%Viewing%');
+            $q->where(function ($sub) {
+                $sub->where('call_outcome', 'like', '%Interested%')
+                    ->orWhere('call_outcome', 'like', '%Viewing%');
+            })->where('call_outcome', 'not like', '%Not Interested%');
         })->whereDate('created_at', $today)->count();
 
         $callbackTotal = (clone $baseCallQuery)->where('call_outcome', 'like', '%Callback%')->count();

@@ -1499,6 +1499,20 @@ function MyQueueContent() {
       return <span className="text-slate-400 font-mono text-[11px]">—</span>;
     }
     const o = outcome.trim();
+    if (o.includes('Not Interested') || o.includes('Rented')) {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-300 whitespace-nowrap">
+          Not Interested
+        </span>
+      );
+    }
+    if (o.includes('Wrong Number') || o.includes('Invalid')) {
+      return (
+        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-rose-100 text-rose-800 border border-rose-300 whitespace-nowrap">
+          Wrong Number
+        </span>
+      );
+    }
     if (o.includes('Interested') || o.includes('Viewing') || o.includes('List') || o.includes('Valuation')) {
       return (
         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 whitespace-nowrap">
@@ -1524,20 +1538,6 @@ function MyQueueContent() {
       return (
         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-300 whitespace-nowrap">
           No Answer
-        </span>
-      );
-    }
-    if (o.includes('Not Interested') || o.includes('Rented')) {
-      return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-300 whitespace-nowrap">
-          Not Interested
-        </span>
-      );
-    }
-    if (o.includes('Wrong Number') || o.includes('Invalid')) {
-      return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-rose-100 text-rose-800 border border-rose-300 whitespace-nowrap">
-          Wrong Number
         </span>
       );
     }

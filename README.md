@@ -2034,6 +2034,18 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Reset to Disconnected Status**: Cleared all fake green "connected" badges and sample phone numbers. Every channel starts in a clean `disconnected` state awaiting genuine QR device pairing by each advisor.
   - **Disabled Demo Chat Seeding**: Removed artificial demo chat generation to ensure the chat timeline only displays authentic conversations mirrored from the advisor's linked physical mobile device.
 
+- **156 — Call Outcome "Not Interested" Status Resolution & Substring Match Isolation (`frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`, `frontend/src/app/queue/page.tsx`, `frontend/src/components/ContactDrawer.tsx`, `frontend/src/app/call-activity/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`, `backend/app/Http/Controllers/Api/ActivityController.php`)**:
+  - **Bug Diagnosed**: On the Leads desk (`/`), Lead Pool (`/lead-pool`), My Queue (`/queue`), and Contact Drawer, logging a call outcome as "Not Interested" caused the table row and drawer badge to display as **`Interested`** (with green emerald badge styling) instead of **`Not Interested`** (slate/red badge styling).
+  - **Root Cause Analysis**:
+    - In `formatCallOutcome()` and `getOutcomeBadgeClass()`, the conditional check `o.includes('Interested')` preceded `o.includes('Not Interested')`.
+    - In JavaScript, `'Not Interested'.includes('Interested') === true`. Because `Interested` was evaluated first, every `Not Interested` call outcome matched the `Interested` branch and immediately returned `'Interested'` with green emerald badge styles (`bg-emerald-50 text-emerald-800`).
+    - The same substring collision was present in `queue/page.tsx` (`renderCallOutcomeBadge`), `ContactDrawer.tsx` (`getOutcomeBadgeClass`), `call-activity/page.tsx` (`getOutcomeBadge`), `ContactController.php` (`like '%Interested%'` query filter), and `ActivityController.php` (`str_contains($outcome, 'Interested')`).
+  - **Technical Upgrades**:
+    - **Reordered Condition Hierarchy Across All Frontend Components**: In `page.tsx`, `lead-pool/page.tsx`, `queue/page.tsx`, `ContactDrawer.tsx`, and `call-activity/page.tsx`, `Not Interested` is now evaluated **strictly before** `Interested`.
+    - **Backend Database Query Isolation (`ContactController.php` & `ActivityController.php`)**:
+      - Updated `ContactController.php` `call_outcome` filter: when filtering by `Interested`, explicitly added `where('call_outcome', 'not like', '%Not Interested%')` so that leads with `Not Interested` outcomes are never erroneously returned when filtering for interested clients.
+      - Updated `ActivityController.php` filter and KPI summary aggregations (`$interestedTotal`, `$interestedToday`): checked `Not Interested` first and excluded `Not Interested` from the `like '%Interested%'` count.
+
 ---
 
 
