@@ -177,9 +177,28 @@ class UserController extends Controller
         $user->permissions = $validated['permissions'];
         $user->save();
 
+        // Bidirectional sync: sync to user's assigned Role so Edit Role Details reflects this change
+        $role = $user->role_id ? Role::find($user->role_id) : Role::where('name', $user->role)->first();
+        if ($role) {
+            $role->permissions = $validated['permissions'];
+            $role->save();
+
+            // Sync to all other users assigned to this role
+            User::where('role_id', $role->id)
+                ->orWhere('role', $role->name)
+                ->get()
+                ->each(function ($u) use ($role, $validated) {
+                    $u->update([
+                        'role_id' => $role->id,
+                        'role' => $role->name,
+                        'permissions' => $validated['permissions'],
+                    ]);
+                });
+        }
+
         return response()->json([
             'success' => true,
-            'message' => "Granular permissions updated for {$user->name}.",
+            'message' => "Granular permissions updated and synced with {$user->role} role.",
             'permissions' => $user->permissions,
         ]);
     }

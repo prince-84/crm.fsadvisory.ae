@@ -347,10 +347,11 @@ export default function UserManagementPage() {
   const handleOpenEditRole = (r: RoleItem) => {
     setRoleModalMode('edit');
     setActiveRoleId(r.id);
-    const expanded = expandPermissions(r.permissions || []);
+    const freshRole = roles.find((item) => item.id === r.id) || r;
+    const expanded = expandPermissions(freshRole.permissions || []);
     setRoleFormData({
-      name: r.name,
-      description: r.description || '',
+      name: freshRole.name,
+      description: freshRole.description || '',
       permissions: expanded,
     });
     setIsRoleModalOpen(true);
@@ -598,6 +599,7 @@ export default function UserManagementPage() {
           showConfirmButton: false,
         });
         loadUsers();
+        loadRolesAndMatrix();
       } else {
         Swal.fire('Error', data.message || 'Failed to save permissions', 'error');
       }
