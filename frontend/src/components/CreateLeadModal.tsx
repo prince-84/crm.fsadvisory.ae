@@ -746,13 +746,13 @@ export default function CreateLeadModal({ isOpen, onClose, onSuccess }: CreateLe
             </div>
 
             <div>
-              <label className="block text-[#081428] font-semibold mb-1">Key Requirement Overview</label>
-              <input
-                type="text"
+              <label className="block text-[#081428] font-semibold mb-1">Key Requirement & Specific Notes</label>
+              <textarea
+                rows={3}
                 value={keyRequirement}
                 onChange={(e) => setKeyRequirement(e.target.value)}
-                placeholder="e.g. 2BR Apartment in Downtown / Business Bay"
-                className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A]"
+                placeholder="e.g. What's your budget range?: AED 1M - 2M&#10;What are you looking for?: Property Investment"
+                className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] resize-y leading-relaxed font-sans whitespace-pre-line focus:outline-none focus:border-[#C8A147]"
               />
             </div>
           </div>

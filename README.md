@@ -2132,6 +2132,17 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Supported Parameter Aliases**: Automatically detects and maps `notes`, `specific_notes`, `requirement`, `requirements`, `comments`, and `comment` so n8n workflows can pass client briefs without payload reconfiguration.
     - **Automated Activity Ingestion**: When a new lead is created via webhook or manual modal, any inquiry preferences (`developer`, `community`, `project`, `property_type`, `bedrooms`, `budget_min`, `budget_max`, `key_requirement`) are recorded as an `Initial Inquiry Requirements` activity note, guaranteeing that `Key Requirement` immediately shows in tables and pre-fills in the edit form.
 
+- **161 — Multi-Line Question/Answer Textarea Expansion & Contact Drawer Header Cleanup (`frontend/src/app/leads/[id]/edit/page.tsx`, `frontend/src/components/CreateLeadModal.tsx`, `frontend/src/app/leads/create/page.tsx`, `frontend/src/components/CreateOpportunityModal.tsx`, `frontend/src/components/ContactDrawer.tsx`)**:
+  - **Key Requirement Multi-Line Textarea Conversion**:
+    - Converted single-line text inputs to multi-line `<textarea rows={3} ... />` across Lead Add/Edit forms and Opportunity modals (`/leads/[id]/edit`, `CreateLeadModal`, `leads/create`, `CreateOpportunityModal`).
+    - Added `whitespace-pre-line resize-y leading-relaxed` styling to support comfortable reading and editing of questions and answers.
+  - **Automated Q&A Line Formatter (`formatQaLines`)**:
+    - Integrated intelligent parser so multiple question & answer pairs separated by commas or pipes (e.g. from n8n / Facebook Lead Ads) are automatically split onto their own dedicated lines:
+      - Line 1: `What's your budget range?: AED 1M - 2M`
+      - Line 2: `What are you looking for?: Property Investment`
+  - **Contact Drawer Header Sanitization (`ContactDrawer.tsx`)**:
+    - Removed redundant `Expat / UAE Resident · English / Arabic` subtitle below the lead name and badges for a sleeker, cleaner profile header.
+
 ---
 
 

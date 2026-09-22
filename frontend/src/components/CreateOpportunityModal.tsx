@@ -520,13 +520,13 @@ export default function CreateOpportunityModal({
 
           {/* Key Requirement Overview */}
           <div>
-            <label className="block text-[#081428] font-semibold mb-1">Key Requirement Overview</label>
-            <input
-              type="text"
+            <label className="block text-[#081428] font-semibold mb-1">Key Requirement & Specific Notes</label>
+            <textarea
+              rows={3}
               value={keyRequirement}
               onChange={(e) => setKeyRequirement(e.target.value)}
-              placeholder="e.g. Interested in 2BR Apartment in Business Bay with Canal view"
-              className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] focus:outline-none focus:border-[#C8A147]"
+              placeholder="e.g. What's your budget range?: AED 1M - 2M&#10;What are you looking for?: Property Investment"
+              className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] focus:outline-none focus:border-[#C8A147] resize-y leading-relaxed font-sans whitespace-pre-line"
             />
           </div>
 

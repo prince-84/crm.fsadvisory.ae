@@ -696,11 +696,6 @@ export default function ContactDrawer({
                 </div>
 
                 <div className="text-xs text-[#6E6E6E] space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-[#081428]">{currentContact.nationality || 'UAE Resident'}</span>
-                    <span className="text-slate-300">·</span>
-                    <span className="text-[11px] text-slate-500">English / Arabic</span>
-                  </div>
                   
                   {/* Primary Phone Mask / Reveal & Direct Copy */}
                   <div className="flex items-center gap-2 pt-0.5">

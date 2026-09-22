@@ -587,7 +587,15 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
         }
 
         // Key Requirement / Notes
-        const keyReqVal = opp?.key_requirement || fbKeyReq || '';
+        const formatQaLines = (val: string) => {
+          if (!val) return '';
+          if (val.includes('\n')) return val;
+          return val
+            .replace(/\s*\|\s*/g, '\n')
+            .replace(/,\s*(?=[^,]+:\s*)/g, '\n');
+        };
+
+        const keyReqVal = formatQaLines(opp?.key_requirement || fbKeyReq || '');
         setKeyRequirement(keyReqVal);
 
         // Sales Ownership
@@ -1277,12 +1285,12 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
                 <label className="block font-semibold text-[#081428] mb-1">
                   Key Requirement & Specific Notes <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Looking for high floor unit with Sea View and Post-Handover payment plan..."
+                <textarea
+                  rows={3}
+                  placeholder="e.g. What's your budget range?: AED 1M - 2M&#10;What are you looking for?: Property Investment"
                   value={keyRequirement}
                   onChange={(e) => setKeyRequirement(e.target.value)}
-                  className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] focus:border-[#C8A147] focus:outline-none"
+                  className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] focus:border-[#C8A147] focus:outline-none resize-y leading-relaxed font-sans whitespace-pre-line"
                 />
               </div>
             </div>
