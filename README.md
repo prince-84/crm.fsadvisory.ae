@@ -2122,6 +2122,16 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Call Outcome Dropdown Filter Expansion**:
     - Added `<option value="deal">💼 Deals / Opportunities</option>` to the Call Outcome filter dropdown on both the Leads Desk (`page.tsx`) and Lead Pool (`lead-pool/page.tsx`).
 
+- **160 — Key Requirement & Specific Notes Database Architecture & n8n Webhook Ingestion Engine (`backend/app/Http/Controllers/Api/ContactController.php`, `backend/app/Models/Contact.php`, `backend/app/Models/Opportunity.php`, `frontend/src/app/leads/[id]/edit/page.tsx`, `frontend/src/components/CreateLeadModal.tsx`)**:
+  - **Database Connection & Field Mapping Overview**:
+    - **Primary Storage Column**: `opportunities.key_requirement` (`TEXT`, nullable) in the `opportunities` table (Migration: `2026_08_19_000002_create_opportunities_table.php`).
+    - **Inquiry Audit Trail & Lead Pool Accessor**: Saved into the `activities` table under type `note` with the format `Initial Inquiry Requirements: ... | Notes: [key_requirement]`. The `Contact` model dynamically parses this via `inquiry_specs->key_requirement`, allowing leads without an active deal to still retain and display their key requirements.
+    - **Frontend Add/Edit Field**: Displayed as **Key Requirement & Specific Notes (Optional)** with state `keyRequirement`. When editing a lead, it loads from `opp?.key_requirement || contact.inquiry_specs?.key_requirement` and submits via `oppPayload` with key `key_requirement`.
+  - **n8n Webhook & REST API Ingestion (`POST /api/contacts` & `POST /webhooks/leads`)**:
+    - **Standard Parameter Name**: `key_requirement`
+    - **Supported Parameter Aliases**: Automatically detects and maps `notes`, `specific_notes`, `requirement`, `requirements`, `comments`, and `comment` so n8n workflows can pass client briefs without payload reconfiguration.
+    - **Automated Activity Ingestion**: When a new lead is created via webhook or manual modal, any inquiry preferences (`developer`, `community`, `project`, `property_type`, `bedrooms`, `budget_min`, `budget_max`, `key_requirement`) are recorded as an `Initial Inquiry Requirements` activity note, guaranteeing that `Key Requirement` immediately shows in tables and pre-fills in the edit form.
+
 ---
 
 

@@ -746,6 +746,19 @@ class ContactController extends Controller
             $request->merge(['campaign_url' => $request->landing_page_url]);
         }
 
+        // Auto-map aliases for key requirement from external webhooks / n8n
+        if (!$request->filled('key_requirement')) {
+            $keyReqAlias = $request->input('notes') 
+                ?? $request->input('specific_notes') 
+                ?? $request->input('requirement') 
+                ?? $request->input('requirements')
+                ?? $request->input('comments') 
+                ?? $request->input('comment');
+            if (!empty($keyReqAlias)) {
+                $request->merge(['key_requirement' => $keyReqAlias]);
+            }
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'phone' => 'required|string|max:50',
@@ -879,6 +892,41 @@ class ContactController extends Controller
                     $contact->refresh();
                 }
             }
+        }
+
+        // Preserve initial inquiry preferences & key requirement as an audit activity note
+        $rawKeyReq = $request->input('key_requirement');
+
+        $inquiryDetails = [];
+        if ($request->filled('developer')) $inquiryDetails[] = "Developer: {$request->developer}";
+        if ($request->filled('community')) $inquiryDetails[] = "Location/Community: {$request->community}";
+        if ($request->filled('project')) $inquiryDetails[] = "Project: {$request->project}";
+        if ($request->filled('project_property')) $inquiryDetails[] = "Unit: {$request->project_property}";
+        if ($request->filled('property_type')) $inquiryDetails[] = "Property Type: {$request->property_type}";
+        if ($request->filled('bedrooms')) $inquiryDetails[] = "Beds: {$request->bedrooms}";
+        if ($request->filled('budget_min') || $request->filled('budget_max')) {
+            $inquiryDetails[] = "Budget: AED " . ($request->budget_min ?: '0') . " – " . ($request->budget_max ?: 'Max');
+        }
+        if (!empty($rawKeyReq)) {
+            $inquiryDetails[] = "Notes: {$rawKeyReq}";
+        }
+
+        if (!empty($inquiryDetails)) {
+            Activity::create([
+                'contact_id'  => $contact->id,
+                'user_name'   => 'Lead Engine',
+                'type'        => 'note',
+                'description' => 'Initial Inquiry Requirements: ' . implode(' | ', $inquiryDetails),
+            ]);
+        }
+
+        if ($request->filled('activity_description')) {
+            Activity::create([
+                'contact_id' => $contact->id,
+                'user_name' => $request->get('user_name', 'System Agent'),
+                'type' => $request->get('activity_type', 'note'),
+                'description' => $request->get('activity_description'),
+            ]);
         }
 
         $contact->update(['last_activity_at' => now()]);
