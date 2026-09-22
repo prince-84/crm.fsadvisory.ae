@@ -769,6 +769,7 @@ class ImportController extends Controller
                     'email' => (!empty($row['email']) && str_contains($row['email'], '@')) ? mb_substr($row['email'], 0, 250, 'UTF-8') : null,
                     'nationality' => !empty($row['nationality']) ? mb_substr($row['nationality'], 0, 100, 'UTF-8') : 'Emirati',
                     'source' => !empty($finalSource) ? mb_substr($finalSource, 0, 250, 'UTF-8') : 'Database',
+                    'lead_type' => !empty($row['lead_type']) ? (str_contains(strtolower($row['lead_type']), 'paid') ? 'Paid' : 'Organic') : (!empty($row['traffic_type']) ? (str_contains(strtolower($row['traffic_type']), 'paid') ? 'Paid' : 'Organic') : 'Organic'),
                     'state' => $contactState,
                     'is_imported' => true,
                     'last_activity_at' => now(),

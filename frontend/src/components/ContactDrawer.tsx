@@ -682,6 +682,13 @@ export default function ContactDrawer({
                       Inbound
                     </span>
                   )}
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
+                    (currentContact.lead_type || 'Organic').toLowerCase() === 'paid'
+                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                      : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                  }`}>
+                    {(currentContact.lead_type || 'Organic').toLowerCase() === 'paid' ? 'Paid' : 'Organic'}
+                  </span>
                 </div>
 
                 <div className="text-xs text-[#6E6E6E] space-y-1">
@@ -995,6 +1002,17 @@ export default function ContactDrawer({
                     <span className="text-[10px] text-slate-400 block uppercase font-medium">Channel</span>
                     <span className="font-semibold text-[#081428] block truncate" title={currentContact.source}>
                       {currentContact.source || 'Website / Direct'}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-2 rounded border border-[#E8E4DC]">
+                    <span className="text-[10px] text-slate-400 block uppercase font-medium">Lead Type</span>
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
+                      (currentContact.lead_type || 'Organic').toLowerCase() === 'paid'
+                        ? 'bg-amber-100 text-amber-900 border-amber-300'
+                        : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    }`}>
+                      {currentContact.lead_type || 'Organic'}
                     </span>
                   </div>
 

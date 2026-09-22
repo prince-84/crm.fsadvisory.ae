@@ -291,6 +291,11 @@ class ContactController extends Controller
             }
         }
 
+        // Lead Type filter (Paid / Organic)
+        if ($request->filled('lead_type') && $request->lead_type !== 'all') {
+            $query->where('contacts.lead_type', $request->lead_type);
+        }
+
         // Advanced Lead Origin & Channel Source filters
         if ($request->filled('sub_source') && $request->sub_source !== 'all') {
             $sub = $request->sub_source;
@@ -417,6 +422,7 @@ class ContactController extends Controller
             'email' => 'email',
             'nationality' => 'nationality',
             'source' => 'source',
+            'lead_type' => 'lead_type',
             'state' => 'state',
             'created_at' => 'created_at',
             'updated_at' => 'updated_at',
@@ -747,6 +753,8 @@ class ContactController extends Controller
             'emirates_id' => 'nullable|string|max:100',
             'source' => 'nullable|string|max:100',
             'sub_source' => 'nullable|string|max:100',
+            'lead_type' => 'nullable|string|max:50',
+            'traffic_type' => 'nullable|string|max:50',
             'initials' => 'nullable|string|max:10',
             'utm_source' => 'nullable|string|max:255',
             'utm_medium' => 'nullable|string|max:255',
@@ -806,6 +814,30 @@ class ContactController extends Controller
             $validated['state'] = $isDuplicate ? 'duplicate' : 'available';
         }
 
+        $rawLeadType = $request->input('lead_type') 
+            ?? $request->input('traffic_type') 
+            ?? $request->input('paid_organic') 
+            ?? $request->input('lead_category')
+            ?? $request->input('type');
+
+        $leadType = 'Organic';
+        if ($rawLeadType) {
+            $ltLower = strtolower(trim($rawLeadType));
+            if (str_contains($ltLower, 'paid')) {
+                $leadType = 'Paid';
+            } elseif (str_contains($ltLower, 'organic')) {
+                $leadType = 'Organic';
+            } else {
+                $leadType = ucfirst(trim($rawLeadType));
+            }
+        } else {
+            // Auto-detect if source or utm indicates paid
+            $srcCombined = strtolower(($validated['source'] ?? '') . ' ' . ($validated['utm_medium'] ?? '') . ' ' . ($validated['utm_source'] ?? ''));
+            if (str_contains($srcCombined, 'paid') || str_contains($srcCombined, 'cpc') || str_contains($srcCombined, 'meta') || str_contains($srcCombined, 'facebook ads') || str_contains($srcCombined, 'google ads')) {
+                $leadType = 'Paid';
+            }
+        }
+
         $contactData = [
             'name' => $validated['name'],
             'phone' => $validated['phone'],
@@ -814,6 +846,7 @@ class ContactController extends Controller
             'nationality' => !empty($validated['nationality']) ? $validated['nationality'] : 'Expat / UAE Resident',
             'emirates_id' => $validated['emirates_id'] ?? null,
             'source' => $validated['source'],
+            'lead_type' => $leadType,
             'initials' => $validated['initials'],
             'utm_source' => $validated['utm_source'] ?? ($request->input('sub_source') ?: null),
             'utm_medium' => $validated['utm_medium'] ?? null,
@@ -884,7 +917,16 @@ class ContactController extends Controller
             'utm_content' => 'nullable|string|max:255',
             'landing_page_url' => 'nullable|string|max:2048',
             'campaign_url' => 'nullable|string|max:2048',
+            'lead_type' => 'nullable|string|max:50',
+            'traffic_type' => 'nullable|string|max:50',
         ]);
+
+        if ($request->has('lead_type') || $request->has('traffic_type')) {
+            $rawLt = $request->input('lead_type') ?? $request->input('traffic_type');
+            if (!empty($rawLt)) {
+                $validated['lead_type'] = str_contains(strtolower($rawLt), 'paid') ? 'Paid' : 'Organic';
+            }
+        }
 
         if (isset($validated['campaign_url'])) {
             if (!isset($validated['landing_page_url'])) {

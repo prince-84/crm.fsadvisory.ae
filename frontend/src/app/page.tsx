@@ -334,12 +334,13 @@ export default function LeadPoolPage() {
     return Object.values(advancedFilters).filter((v) => v && v.trim() !== '' && v !== 'all').length;
   }, [advancedFilters]);
 
-  const VISIBILITY_STORAGE_KEY = 'leads_column_visibility_v7';
-  const ORDER_STORAGE_KEY = 'leads_column_order_v7';
+  const VISIBILITY_STORAGE_KEY = 'leads_column_visibility_v8';
+  const ORDER_STORAGE_KEY = 'leads_column_order_v8';
 
   const DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = {
     name: true,
     phone: true,
+    lead_type: true,
     call_status: true,
     source: true,
     assigned_owner: true,
@@ -380,6 +381,7 @@ export default function LeadPoolPage() {
   const DEFAULT_COLUMN_ORDER = [
     'name',
     'phone',
+    'lead_type',
     'call_status',
     'source',
     'assigned_owner',
@@ -431,6 +433,7 @@ export default function LeadPoolPage() {
             }
           });
           cleanVis.created_at = true; // By default Created Date must be visible
+          cleanVis.lead_type = parsedVis.lead_type !== undefined ? !!parsedVis.lead_type : true;
           cleanVis.actions = true;
           setColumnVisibility(cleanVis);
         } catch (e) {
@@ -450,6 +453,14 @@ export default function LeadPoolPage() {
             }
             if (!sanitized.includes('updated_at')) {
               sanitized.push('updated_at');
+            }
+            if (!sanitized.includes('lead_type')) {
+              const pIdx = sanitized.indexOf('phone');
+              if (pIdx !== -1) {
+                sanitized.splice(pIdx + 1, 0, 'lead_type');
+              } else {
+                sanitized.splice(2, 0, 'lead_type');
+              }
             }
             const missing = DEFAULT_COLUMN_ORDER.filter((k) => !sanitized.includes(k) && k !== 'actions');
             const finalOrder = Array.from(new Set([...sanitized, ...missing, 'actions']));
@@ -507,6 +518,7 @@ export default function LeadPoolPage() {
   const ALL_COLUMNS = [
     { key: 'name', label: 'Client Profile', category: 'Core' },
     { key: 'phone', label: 'Primary Phone', category: 'Client Details' },
+    { key: 'lead_type', label: 'Lead Type (Paid/Organic)', category: 'Core' },
     { key: 'call_status', label: 'Call Status', category: 'Core' },
     { key: 'source', label: 'Source', category: 'Core' },
     { key: 'assigned_owner', label: 'Assigned Owner', category: 'SLA & Owner' },
@@ -663,6 +675,35 @@ export default function LeadPoolPage() {
             )}
           </td>
         );
+
+      case 'lead_type': {
+        const rawType = (ct.lead_type || 'Organic').trim();
+        const isPaid = rawType.toLowerCase() === 'paid';
+        return (
+          <td key={colKey} className="p-3">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-xs ${
+                isPaid
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+              }`}
+              title={`Traffic Channel: ${isPaid ? 'Paid Ads Campaign' : 'Organic Traffic'}`}
+            >
+              {isPaid ? (
+                <>
+                  <Zap className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                  <span>PAID</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                  <span>ORGANIC</span>
+                </>
+              )}
+            </span>
+          </td>
+        );
+      }
 
       case 'secondary_phone':
         return (

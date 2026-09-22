@@ -2044,7 +2044,30 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Reordered Condition Hierarchy Across All Frontend Components**: In `page.tsx`, `lead-pool/page.tsx`, `queue/page.tsx`, `ContactDrawer.tsx`, and `call-activity/page.tsx`, `Not Interested` is now evaluated **strictly before** `Interested`.
     - **Backend Database Query Isolation (`ContactController.php` & `ActivityController.php`)**:
       - Updated `ContactController.php` `call_outcome` filter: when filtering by `Interested`, explicitly added `where('call_outcome', 'not like', '%Not Interested%')` so that leads with `Not Interested` outcomes are never erroneously returned when filtering for interested clients.
-      - Updated `ActivityController.php` filter and KPI summary aggregations (`$interestedTotal`, `$interestedToday`): checked `Not Interested` first and excluded `Not Interested` from the `like '%Interested%'` count.
+- **157 — Lead Type (Paid / Organic) Database Architecture, n8n Ingestion & Default Table Column Integration (`backend/database/migrations/2026_09_22_140000_add_lead_type_to_contacts_table.php`, `backend/app/Http/Controllers/Api/ContactController.php`, `backend/app/Http/Controllers/Api/ImportController.php`, `frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`, `frontend/src/components/ContactDrawer.tsx`)**:
+  - **Business Purpose**: Fulfills the requirement to clearly categorize incoming leads into **Paid** (Meta Ads, Google Ads, TikTok Ads, paid PPC campaigns) and **Organic** (Website inquiries, WhatsApp direct, SEO, organic social, portal direct) with automatic parameter ingestion from n8n webhooks and default column display in the master Leads desk.
+  - **Database Migration (`2026_09_22_140000_add_lead_type_to_contacts_table.php`)**:
+    - Added `lead_type` (`VARCHAR(50)`, nullable, default `'Organic'`) immediately after `source` on the `contacts` table.
+    - Included automated historical data classification during migration: automatically identified existing Meta/Facebook/Google Ads/CPC leads and set them to `'Paid'`, leaving organic leads as `'Organic'`.
+  - **Flexible n8n Webhook & REST API Ingestion (`ContactController@store` & `update`)**:
+    - Supports multiple payload parameter aliases sent by n8n or external integration pipelines: `lead_type`, `traffic_type`, `paid_organic`, `lead_category`, and `type`.
+    - Normalizes case variations (e.g. `'paid'`, `'PAID'`, `'organic'`, `'ORGANIC'`) cleanly into `'Paid'` or `'Organic'`.
+    - Automated fallback detection: if no explicit parameter is passed, checks `source`, `utm_medium`, and `utm_source` for ad indicators (`meta`, `facebook ads`, `google ads`, `cpc`, `paid`) to intelligently classify the lead.
+  - **Server-Side Dynamic Sorting & Filtering**:
+    - Added `'lead_type' => 'lead_type'` to `$contactDirectMap` in `ContactController@index` for server-side ascending/descending database sorting.
+    - Added `lead_type` parameter support for server-side filtering (`?lead_type=Paid` or `?lead_type=Organic`).
+  - **Lead Pool File Import Mapping (`ImportController@execute`)**:
+    - Mapped `lead_type` and `traffic_type` from CSV/Excel batch imports so uploaded data preserves its marketing classification.
+  - **Frontend UI & Default Column Visibility (`page.tsx` & `lead-pool/page.tsx`)**:
+    - Added permanent `Lead Type (Paid/Organic)` column (`lead_type`) to `ALL_COLUMNS` under the **Core** category.
+    - Enabled by default in `DEFAULT_COLUMN_VISIBILITY` (`lead_type: true`) and positioned prominently between `Primary Phone` and `Call Status`.
+    - Bumped localStorage storage keys to `v8` (`leads_column_visibility_v8`, `leads_column_order_v8`, `lead_pool_column_visibility_v2`) to ensure that all existing users immediately see the new column enabled by default without having to manually reset browser cache.
+    - **Luxury Badge Styling**:
+      - **Paid**: Amber/gold pill with `Zap` icon (`PAID`).
+      - **Organic**: Emerald green pill with `Sparkles` icon (`ORGANIC`).
+  - **Contact Drawer Slide-Over Integration (`ContactDrawer.tsx`)**:
+    - Added live `PAID` / `ORGANIC` badge to the top profile header beside `Inbound`.
+    - Added dedicated **Lead Type** tile in the Campaign Attribution card showing the verified traffic channel.
 
 ---
 
