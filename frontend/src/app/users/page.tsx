@@ -414,6 +414,7 @@ export default function UserManagementPage() {
           showConfirmButton: false,
         });
         loadRolesAndMatrix();
+        loadUsers();
       } else {
         Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Role operation failed.' });
       }
@@ -533,7 +534,12 @@ export default function UserManagementPage() {
   // Granular Permissions Handlers (User Modal)
   const handleOpenPermModal = (u: UserItem) => {
     setPermTargetUser(u);
-    const raw = u.permissions || (u.role_model?.permissions) || [];
+    const matchedRole = roles.find(
+      (r) => r.name.toLowerCase() === (u.role || '').toLowerCase() || r.id === u.role_id
+    );
+    const raw = (u.permissions && u.permissions.length > 0)
+      ? u.permissions
+      : (u.role_model?.permissions || matchedRole?.permissions || []);
     const expanded = expandPermissions(raw);
     setSelectedPermissions(expanded);
     setIsPermModalOpen(true);
@@ -1199,137 +1205,150 @@ export default function UserManagementPage() {
       {/* DYNAMIC ROLE CREATE / EDIT MODAL */}
       {isRoleModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-2xl overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-4xl overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
             <div className="bg-[#081428] text-white px-6 py-4 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <ShieldCheck className="w-5 h-5 text-[#C9A84C]" />
-                <h2 className="font-heading font-bold text-base">
-                  {roleModalMode === 'create' ? 'Create Custom Role' : 'Edit Role Details'}
-                </h2>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-white/10 text-[#C9A84C] flex items-center justify-center font-bold text-sm">
+                  <ShieldCheck className="w-5 h-5 text-[#C9A84C]" />
+                </div>
+                <div>
+                  <h2 className="font-heading font-bold text-base tracking-wide">
+                    {roleModalMode === 'create' ? 'Create Custom Role' : 'Edit Role Details'}
+                  </h2>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    Define role title, description, and assign default module permission presets.
+                  </p>
+                </div>
               </div>
-              <button onClick={() => setIsRoleModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button onClick={() => setIsRoleModalOpen(false)} className="text-slate-400 hover:text-white transition-colors cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitRoleForm} className="p-6 overflow-y-auto space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Role Title Name <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={roleFormData.name}
-                  onChange={(e) => setRoleFormData({ ...roleFormData, name: e.target.value })}
-                  placeholder="e.g. Operations Coordinator"
-                  className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] font-semibold text-[#081428]"
-                />
-              </div>
+            <form onSubmit={handleSubmitRoleForm} className="flex-1 overflow-y-auto flex flex-col">
+              <div className="p-6 space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Role Title Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={roleFormData.name}
+                      onChange={(e) => setRoleFormData({ ...roleFormData, name: e.target.value })}
+                      placeholder="e.g. Operations Coordinator"
+                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C] font-semibold text-[#081428]"
+                    />
+                  </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Role Description</label>
-                <textarea
-                  value={roleFormData.description}
-                  onChange={(e) => setRoleFormData({ ...roleFormData, description: e.target.value })}
-                  placeholder="Responsibilities and permission overview..."
-                  rows={2}
-                  className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
-                />
-              </div>
-
-              {/* Module Permissions Checklist Header with Global Select All / Deselect All */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block font-bold text-[#081428] uppercase tracking-wider text-[11px]">
-                    Module Permissions Preset ({roleFormData.permissions.length} Selected)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleRoleSelectAllGlobal}
-                      className="text-[11px] font-bold text-[#081428] hover:text-[#C9A84C] bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
-                    >
-                      ✓ Select All (All Modules)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleRoleDeselectAllGlobal}
-                      className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
-                    >
-                      ✕ Deselect All
-                    </button>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Role Description</label>
+                    <input
+                      type="text"
+                      value={roleFormData.description}
+                      onChange={(e) => setRoleFormData({ ...roleFormData, description: e.target.value })}
+                      placeholder="Responsibilities and permission overview..."
+                      className="w-full px-3 py-2 border border-[#E8E2D9] rounded-md focus:outline-none focus:border-[#C9A84C]"
+                    />
                   </div>
                 </div>
 
-                <div className="space-y-3 max-h-72 overflow-y-auto border border-[#E8E2D9] rounded-lg p-3 bg-[#FAF8F5]">
-                  {permMatrix.map((mod) => {
-                    const modKeys = mod.permissions.map((p) => p.key);
-                    const allModSelected = modKeys.every((k) => roleFormData.permissions.includes(k));
-                    const selectedCount = modKeys.filter((k) => roleFormData.permissions.includes(k)).length;
+                {/* Module Permissions Checklist Header with Global Select All / Deselect All */}
+                <div>
+                  <div className="flex items-center justify-between mb-3 bg-[#FAF8F5] p-3 rounded-lg border border-[#E8E2D9]">
+                    <label className="font-bold text-[#081428] uppercase tracking-wider text-[11px]">
+                      MODULE PERMISSIONS PRESET ({roleFormData.permissions.length} SELECTED)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleRoleSelectAllGlobal}
+                        className="text-[11px] font-bold text-[#081428] hover:text-[#C9A84C] bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
+                      >
+                        ✓ Select All (All Modules)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRoleDeselectAllGlobal}
+                        className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
+                      >
+                        ✕ Deselect All
+                      </button>
+                    </div>
+                  </div>
 
-                    return (
-                      <div key={mod.module} className="bg-white p-3 rounded-lg border border-[#E8E2D9] space-y-2">
-                        <div className="flex items-center justify-between font-bold text-[#081428] text-xs border-b border-[#E8E2D9] pb-1.5">
-                          <span className="uppercase tracking-wider font-extrabold">{mod.module}</span>
-                          <div className="flex items-center gap-2 text-[10px]">
-                            <span className="text-[#C9A84C] font-mono font-bold">
-                              {selectedCount} / {modKeys.length} Selected
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleRoleToggleModule(modKeys)}
-                              className="text-[10px] font-bold text-[#081428] hover:text-[#C9A84C] bg-[#FAF8F5] hover:bg-[#FAF5E8] px-2 py-0.5 rounded border border-[#E8E2D9] cursor-pointer transition-colors"
-                            >
-                              {allModSelected ? '✕ Deselect Module' : '✓ Select All Module'}
-                            </button>
+                  <div className="space-y-4">
+                    {permMatrix.map((mod) => {
+                      const modKeys = mod.permissions.map((p) => p.key);
+                      const allModSelected = modKeys.every((k) => roleFormData.permissions.includes(k));
+                      const selectedCount = modKeys.filter((k) => roleFormData.permissions.includes(k)).length;
+
+                      return (
+                        <div key={mod.module} className="bg-[#FAF8F5] p-4 rounded-xl border border-[#E8E2D9] space-y-3">
+                          <div className="flex items-center justify-between border-b border-[#E8E2D9] pb-2">
+                            <strong className="text-xs text-[#081428] font-bold uppercase tracking-wider">{mod.module}</strong>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono text-[#C9A84C] font-bold">
+                                {selectedCount} / {modKeys.length} Selected
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleRoleToggleModule(modKeys)}
+                                className="text-[10px] font-bold text-[#081428] hover:text-[#C9A84C] bg-white px-2 py-0.5 rounded border border-[#E8E2D9] cursor-pointer transition-colors"
+                              >
+                                {allModSelected ? '✕ Deselect Module' : '✓ Select All Module'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {mod.permissions.map((p) => {
+                              const checked = roleFormData.permissions.includes(p.key);
+                              return (
+                                <label
+                                  key={p.key}
+                                  className={`p-2.5 rounded-lg border transition-all cursor-pointer flex items-start gap-2.5 ${
+                                    checked ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-white/60 border-[#E8E2D9]'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => handleRoleToggleKey(p.key)}
+                                    className="accent-[#C9A84C] rounded mt-0.5 cursor-pointer"
+                                  />
+                                  <div>
+                                    <div className="font-bold text-[#081428]">{p.label}</div>
+                                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">{p.key}</div>
+                                    <div className="text-[11px] text-slate-600 mt-0.5">{p.desc}</div>
+                                  </div>
+                                </label>
+                              );
+                            })}
                           </div>
                         </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {mod.permissions.map((p) => {
-                            const checked = roleFormData.permissions.includes(p.key);
-                            return (
-                              <label
-                                key={p.key}
-                                className={`p-2 rounded border transition-all cursor-pointer flex items-start gap-2 ${
-                                  checked ? 'bg-[#FAF8F4] border-[#C9A84C]' : 'bg-white border-[#E8E2D9]'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => handleRoleToggleKey(p.key)}
-                                  className="accent-[#C9A84C] rounded mt-0.5 cursor-pointer"
-                                />
-                                <div>
-                                  <div className="font-semibold text-slate-800 text-xs">{p.label}</div>
-                                  <div className="text-[10px] text-slate-400 font-mono">{p.key}</div>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-2 border-t border-[#E8E2D9]">
+              <div className="bg-white border-t border-[#E8E2D9] px-6 py-3.5 shrink-0 flex items-center justify-end gap-2.5 text-xs mt-auto">
                 <button
                   type="button"
                   onClick={() => setIsRoleModalOpen(false)}
-                  className="px-3.5 py-1.5 border border-[#E8E2D9] rounded text-slate-600 hover:bg-slate-50 font-semibold"
+                  className="px-4 py-2 border border-[#E8E2D9] rounded-md text-slate-600 hover:bg-slate-50 font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingRole}
-                  className="px-4 py-1.5 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded shadow-sm transition-all"
+                  className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded-md shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
-                  {submittingRole ? 'Saving...' : roleModalMode === 'create' ? 'Create Role' : 'Save Changes'}
+                  {submittingRole ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>{roleModalMode === 'create' ? 'Create Role' : 'Save Changes'}</span>
                 </button>
               </div>
             </form>

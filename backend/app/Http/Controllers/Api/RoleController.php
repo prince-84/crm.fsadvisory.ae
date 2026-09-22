@@ -51,16 +51,32 @@ class RoleController extends Controller
             'permissions' => 'nullable|array',
         ]);
 
+        $oldName = $role->name;
+        $newPermissions = $validated['permissions'] ?? $role->permissions;
+
         $role->update([
             'name' => $validated['name'],
             'slug' => Str::slug($validated['name']),
             'description' => $validated['description'] ?? $role->description,
-            'permissions' => $validated['permissions'] ?? $role->permissions,
+            'permissions' => $newPermissions,
         ]);
+
+        // Sync updated role name & permissions to all users assigned to this role
+        \App\Models\User::where('role_id', $role->id)
+            ->orWhere('role', $oldName)
+            ->orWhere('role', $role->name)
+            ->get()
+            ->each(function ($u) use ($role, $newPermissions) {
+                $u->update([
+                    'role_id' => $role->id,
+                    'role' => $role->name,
+                    'permissions' => $newPermissions,
+                ]);
+            });
 
         return response()->json([
             'success' => true,
-            'message' => 'Role updated successfully.',
+            'message' => 'Role updated and synced across all assigned users successfully.',
             'role' => $role,
         ]);
     }
