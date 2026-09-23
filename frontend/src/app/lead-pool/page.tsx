@@ -22,7 +22,7 @@ import {
   Bell, Clock, Calendar, ChevronDown, ChevronUp, Layers, Database
 } from 'lucide-react';
 import Link from 'next/link';
-import { hasPermission, refreshCurrentUser, isSuperUser } from '@/lib/permissions';
+import { hasPermission, refreshCurrentUser, isSuperUser, getCurrentUser } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 
 const formatCallOutcome = (outcome: string | null | undefined): string => {
