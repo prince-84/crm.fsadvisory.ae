@@ -6,12 +6,37 @@ import {
   PhoneCall, Edit2, Target, Link2, ExternalLink, Copy, Check,
   Building2, Home, DollarSign, User, Sparkles, Plus, RefreshCw,
   Calendar, Layers, CheckCircle2, AlertCircle, Briefcase, FileText, UserCheck, ArrowRightLeft,
-  FileAudio, PhoneIncoming, PhoneOutgoing, Send, Download
+  FileAudio, PhoneIncoming, PhoneOutgoing, Send, Download,
+  ThumbsUp, ThumbsDown, PhoneOff, AlertTriangle, Users, Ban
 } from 'lucide-react';
 import Link from 'next/link';
 import Swal from 'sweetalert2';
 import { fetchApi } from '@/lib/api';
 import { hasAnyPermission, getCurrentUser } from '@/lib/permissions';
+
+const DRAWER_CALL_OUTCOMES = [
+  { key: 'Interested', label: 'Interested', icon: ThumbsUp, activeBg: 'bg-emerald-600 text-white border-emerald-600 shadow-sm' },
+  { key: 'Callback', label: 'Callback', icon: PhoneCall, activeBg: 'bg-amber-500 text-white border-amber-500 shadow-sm' },
+  { key: 'Follow-up', label: 'Follow-up', icon: Clock, activeBg: 'bg-blue-600 text-white border-blue-600 shadow-sm' },
+  { key: 'Meeting', label: 'Meeting', icon: Users, activeBg: 'bg-indigo-600 text-white border-indigo-600 shadow-sm' },
+  { key: 'No Answer', label: 'No Answer', icon: PhoneOff, activeBg: 'bg-rose-600 text-white border-rose-600 shadow-sm' },
+  { key: 'Not Interested', label: 'Not Interested', icon: ThumbsDown, activeBg: 'bg-slate-700 text-white border-slate-700 shadow-sm' },
+  { key: 'Wrong Number', label: 'Wrong Number', icon: AlertTriangle, activeBg: 'bg-slate-600 text-white border-slate-600 shadow-sm' },
+  { key: 'Real Estate Agent', label: 'Real Estate Agent', icon: Building2, activeBg: 'bg-purple-700 text-white border-purple-700 shadow-sm' },
+];
+
+const formatCallOutcome = (outcome: string | null | undefined): string => {
+  if (!outcome) return '';
+  const o = outcome.trim();
+  if (o.includes('Not Interested')) return 'Not Interested';
+  if (o.includes('Real Estate Agent') || o.includes('Real Estate') || o.includes('Agent') || o.includes('Broker')) return 'Real Estate Agent';
+  if (o.includes('Interested') || o.includes('Viewing') || o.includes('Meeting')) return 'Interested';
+  if (o.includes('Callback')) return 'Callback';
+  if (o.includes('Follow-up') || o.includes('Follow up')) return 'Follow-up';
+  if (o.includes('No Answer') || o.includes('Voicemail')) return 'No Answer';
+  if (o.includes('Wrong Number') || o.includes('Invalid')) return 'Wrong Number';
+  return o;
+};
 
 const getPlayableAudioUrl = (url: string | null | undefined, recId?: number) => {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.fsadvisory.ae/api';
@@ -61,6 +86,30 @@ export default function ContactDrawer({
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
   const [activeAgents, setActiveAgents] = useState<any[]>([]);
   const [reassigning, setReassigning] = useState(false);
+
+  // Inline Call Outcome & Next Follow-up state
+  const [inlineOutcome, setInlineOutcome] = useState<string>('Interested');
+  const [inlineSchedule, setInlineSchedule] = useState<string>('24h');
+  const [inlineCustomDateTime, setInlineCustomDateTime] = useState<string>('');
+  const [inlineNotes, setInlineNotes] = useState<string>('');
+  const [savingInlineCall, setSavingInlineCall] = useState<boolean>(false);
+
+  const now = new Date();
+  const nowLocalIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
+  const tomorrowLocalIso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+  useEffect(() => {
+    if (contact) {
+      const existing = contact.call_outcome || contact.latest_call_outcome;
+      if (existing) {
+        const found = DRAWER_CALL_OUTCOMES.find(o => existing.toLowerCase().includes(o.key.toLowerCase()));
+        if (found) {
+          setInlineOutcome(found.key);
+        }
+      }
+    }
+  }, [contact?.id]);
 
   // Load active agents list for re-assignment
   useEffect(() => {
@@ -364,6 +413,103 @@ export default function ContactDrawer({
       return `AED ${(num / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
     }
     return `AED ${num.toLocaleString()}`;
+  };
+
+  // Direct 1-Click Inline Call Outcome & Next Follow-up Submission Handler
+  const handleSaveInlineCall = async () => {
+    if (!currentContact?.id) return;
+    if (!inlineOutcome) {
+      Swal.fire({ icon: 'warning', title: 'Select Outcome', text: 'Please select a call outcome status button.' });
+      return;
+    }
+    const isTerminal = inlineOutcome.includes('Not Interested') || inlineOutcome.includes('Wrong Number') || inlineOutcome.includes('Real Estate Agent');
+    
+    if (!inlineNotes.trim()) {
+      Swal.fire({ icon: 'warning', title: 'Call Notes Required', text: 'Please enter call discussion notes before saving.' });
+      return;
+    }
+
+    if (!isTerminal && inlineSchedule === 'custom') {
+      if (!inlineCustomDateTime) {
+        Swal.fire({ icon: 'warning', title: 'Schedule Required', text: 'Please select a custom follow-up date and time.' });
+        return;
+      }
+      const dt = new Date(inlineCustomDateTime);
+      if (isNaN(dt.getTime())) {
+        Swal.fire({ icon: 'error', title: 'Invalid Date', text: 'Selected date and time is invalid.' });
+        return;
+      }
+    }
+
+    setSavingInlineCall(true);
+
+    let dueAt: Date | null = null;
+    if (!isTerminal && inlineSchedule) {
+      if (inlineSchedule === 'custom' && inlineCustomDateTime) {
+        dueAt = new Date(inlineCustomDateTime);
+      } else if (inlineSchedule === '15m') {
+        dueAt = new Date(Date.now() + 15 * 60 * 1000);
+      } else if (inlineSchedule === '2h') {
+        dueAt = new Date(Date.now() + 2 * 3600 * 1000);
+      } else if (inlineSchedule === '5h') {
+        dueAt = new Date(Date.now() + 5 * 3600 * 1000);
+      } else if (inlineSchedule === '24h') {
+        dueAt = new Date(Date.now() + 24 * 3600 * 1000);
+      } else if (inlineSchedule === '48h') {
+        dueAt = new Date(Date.now() + 48 * 3600 * 1000);
+      } else if (inlineSchedule === 'now') {
+        dueAt = new Date(Date.now() - 5 * 60 * 1000);
+      }
+    }
+
+    let storedUser: any = null;
+    try {
+      const u = localStorage.getItem('crm_user');
+      if (u) storedUser = JSON.parse(u);
+    } catch (e) {}
+
+    try {
+      await fetchApi('/activities', {
+        method: 'POST',
+        body: JSON.stringify({
+          contact_id: currentContact.id,
+          opportunity_id: activeOpp?.id || null,
+          type: 'call',
+          call_outcome: inlineOutcome,
+          description: `Quick Call: ${inlineOutcome} — ${inlineNotes.trim()}`,
+          user_name: storedUser?.name || 'Advisor',
+          next_action: isTerminal ? `Closed: ${inlineOutcome}` : `Follow-up: ${inlineOutcome}`,
+          next_action_due_at: dueAt ? dueAt.toISOString() : null,
+        }),
+      });
+
+      const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 2000,
+        timerProgressBar: true,
+      });
+      Toast.fire({
+        icon: 'success',
+        title: 'Call logged & status updated!',
+      });
+
+      // Clear notes after successful save
+      setInlineNotes('');
+
+      // Refresh live contact from DB
+      await fetchLiveContact(currentContact.id);
+      if (onContactUpdated) {
+        onContactUpdated(currentContact);
+      }
+      window.dispatchEvent(new CustomEvent('crm:contact-updated', { detail: { contactId: currentContact.id } }));
+      window.dispatchEvent(new CustomEvent('crm_contacts_updated'));
+    } catch (err: any) {
+      Swal.fire('Error', err.message || 'Failed to save call activity.', 'error');
+    } finally {
+      setSavingInlineCall(false);
+    }
   };
 
   // Internal Quick Call Logger using SweetAlert2 connected directly to DB
@@ -912,20 +1058,25 @@ export default function ContactDrawer({
                 )}
               </div>
             ) : (
-              <div className="p-4 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="p-4 bg-[#FAF8F5] border border-[#E8E4DC] rounded-xl space-y-3.5 shadow-2xs">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-[#E8E4DC]/80 pb-2.5">
                   <span className="text-[10px] font-bold tracking-wider text-[#C8A147] uppercase flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-[#C8A147]" />
-                    <span>LEAD STATUS & QUALIFICATION</span>
+                    <span>CALL OUTCOME & FOLLOW-UP</span>
                   </span>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 uppercase">
-                    {currentContact.state || 'Available'}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {currentContact.latest_call_outcome ? (
+                      <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border ${getOutcomeBadgeClass(currentContact.latest_call_outcome)}`}>
+                        {formatCallOutcome(currentContact.latest_call_outcome)}
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        {currentContact.state || 'Available'}
+                      </span>
+                    )}
+                  </div>
                 </div>
-
-                <p className="text-[11px] text-[#6E6E6E]">
-                  This lead is active in the pool. Qualify buyer requirements directly to open a dedicated deal.
-                </p>
 
                 {/* Scheduled Follow-up Banner if set */}
                 {(currentContact.next_action_due_at || activeOpp?.next_action_due_at) && (
@@ -956,9 +1107,107 @@ export default function ContactDrawer({
                   </div>
                 )}
 
-                {/* Direct 1-Click Action Buttons */}
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                {/* 1. Status Open Buttons */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Select Call Outcome Status:
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {DRAWER_CALL_OUTCOMES.map((item) => {
+                      const IconComp = item.icon;
+                      const isSelected = inlineOutcome === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => setInlineOutcome(item.key)}
+                          className={`py-2 px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-start gap-2 transition-all cursor-pointer ${
+                            isSelected
+                              ? `${item.activeBg} ring-2 ring-offset-1 ring-[#C8A147]/50 font-bold scale-[1.01]`
+                              : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-[#C8A147]/50 shadow-2xs'
+                          }`}
+                        >
+                          <IconComp className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-slate-500'}`} />
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Next Follow-up & SLA Schedule (Hidden for Not Interested & Wrong Number & Real Estate Agent) */}
+                {!(inlineOutcome === 'Not Interested' || inlineOutcome === 'Wrong Number' || inlineOutcome === 'Real Estate Agent') ? (
+                  <div className="space-y-1.5 pt-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-[#C8A147]" />
+                      <span>Next Follow-up & SLA Schedule:</span>
+                    </label>
+                    <select
+                      value={inlineSchedule}
+                      onChange={(e) => setInlineSchedule(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded-lg text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none cursor-pointer"
+                    >
+                      <option value="24h">📅 Tomorrow at Same Time (24h) — [On Track 🟢]</option>
+                      <option value="15m">⚡ Quick Callback in 15 mins — [Due Soon 🟡]</option>
+                      <option value="2h">⏰ Later Today (in 2 hours) — [On Track 🟢]</option>
+                      <option value="5h">⏳ In 5 Hours — [On Track 🟢]</option>
+                      <option value="48h">📆 In 2 Days — [On Track 🟢]</option>
+                      <option value="custom">🗓️ Pick Specific Date & Time (Calendar)</option>
+                      <option value="now">🚨 Immediate Escalation (Now) — [Overdue 🔴]</option>
+                    </select>
+
+                    {inlineSchedule === 'custom' && (
+                      <div className="mt-2 p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg space-y-1">
+                        <label className="block text-[#081428] font-semibold text-[11px]">
+                          🗓️ Choose Custom Follow-up Date & Time:
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={inlineCustomDateTime || tomorrowLocalIso}
+                          onChange={(e) => setInlineCustomDateTime(e.target.value)}
+                          min={nowLocalIso}
+                          className="w-full p-2 bg-white border border-[#C8A147] rounded-md text-xs text-[#081428] font-mono focus:ring-2 focus:ring-[#C8A147] focus:outline-none"
+                        />
+                        <p className="text-[10px] text-slate-500">SLA reminder triggers 10 mins prior to scheduled time.</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-slate-100/90 border border-slate-200 rounded-lg flex items-center gap-2 text-[11px] text-slate-600">
+                    <Ban className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span>Lead will be closed as <strong>{inlineOutcome}</strong>. No follow-up scheduled.</span>
+                  </div>
+                )}
+
+                {/* 3. Call Discussion Notes */}
+                <div className="space-y-1 pt-1">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                    <FileText className="w-3 h-3 text-[#C8A147]" />
+                    <span>Call Discussion Notes:</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={inlineNotes}
+                    onChange={(e) => setInlineNotes(e.target.value)}
+                    placeholder="Enter conversation notes, client preferences, budget, or next steps..."
+                    className="w-full p-2.5 bg-white border border-[#E8E4DC] rounded-lg text-xs text-[#081428] focus:ring-2 focus:ring-[#C8A147] focus:outline-none placeholder:text-slate-400"
+                  />
+                </div>
+
+                {/* 4. Action Buttons */}
+                <div className="flex items-center gap-2 pt-1.5">
                   <button
+                    type="button"
+                    onClick={handleSaveInlineCall}
+                    disabled={savingInlineCall}
+                    className="flex-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {savingInlineCall ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    <span>{savingInlineCall ? 'Saving Call...' : 'Save Call Outcome'}</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => {
                       if (onCreateOpportunity) {
                         onCreateOpportunity(currentContact);
@@ -966,18 +1215,11 @@ export default function ContactDrawer({
                         window.location.href = `/opportunities/create?contact_id=${currentContact.id}`;
                       }
                     }}
-                    className="py-2.5 px-3 bg-[#081428] hover:bg-[#122444] text-white font-semibold text-xs rounded-md flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+                    className="py-2.5 px-3 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-xs shrink-0 cursor-pointer"
+                    title="Qualify buyer requirements to open a dedicated deal"
                   >
                     <Briefcase className="w-3.5 h-3.5 text-[#C8A147]" />
                     <span>Qualify Deal</span>
-                  </button>
-
-                  <button
-                    onClick={handleLogCallInternal}
-                    className="py-2.5 px-3 bg-white hover:bg-emerald-50 text-emerald-700 font-semibold text-xs rounded-md border border-emerald-300 flex items-center justify-center gap-1.5 transition-colors shadow-xs"
-                  >
-                    <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Log Call</span>
                   </button>
                 </div>
               </div>

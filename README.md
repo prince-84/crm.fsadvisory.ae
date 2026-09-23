@@ -2179,6 +2179,36 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Synchronized all database roles and custom users with `lead_pool.*` permissions to ensure zero disruption.
     - Updated `Sidebar.tsx` and `lead-pool/page.tsx` to dynamically respect `lead_pool.view` (with seamless fallback for legacy active sessions).
 
+- **166 — Open Inline Call Outcome & Next Follow-up Logger in Contact Profile Drawer (`frontend/src/components/ContactDrawer.tsx`)**:
+  - **Inline Call Management Architecture**:
+    - Replaced the previous static "LEAD STATUS & QUALIFICATION" card (which required opening an external SweetAlert popup) with an open, high-efficiency inline call logger directly inside the Contact Profile Drawer.
+  - **Interactive Call Outcome Chips (8 Outcomes)**:
+    - Provides instant, one-click outcome chips with active color states and icons:
+      - `Interested` (Emerald)
+      - `Callback` (Blue)
+      - `Follow-up` (Amber)
+      - `Meeting` (Indigo)
+      - `No Answer` (Rose)
+      - `Not Interested` (Slate)
+      - `Wrong Number` (Red)
+      - `Real Estate Agent` (Royal Purple)
+    - Automatically highlights the contact's existing or latest call outcome on load.
+  - **Intelligent Next Follow-up Timing & SLA Dropdown**:
+    - Follow-up dropdown featuring pre-computed SLA timings:
+      - `📅 Tomorrow at Same Time (24h) — [On Track 🟢]`
+      - `⚡ Quick Callback in 15 mins — [Due Soon 🟡]`
+      - `⏰ Later Today (in 2 hours) — [On Track 🟢]`
+      - `⏳ In 5 Hours — [On Track 🟢]`
+      - `📆 In 2 Days — [On Track 🟢]`
+      - `🗓️ Pick Specific Date & Time (Calendar)` with min datetime validator
+      - `🚨 Immediate Escalation (Now) — [Overdue 🔴]`
+    - **Terminal Status Conditional Logic**: When a terminal outcome (`Not Interested`, `Wrong Number`, or `Real Estate Agent`) is selected, the follow-up dropdown and calendar pickers are automatically hidden, presenting an informative status notice that the lead is closed with no further follow-up required.
+  - **Call & Discussion Notes Textarea**:
+    - Embedded rich discussion textarea for advisors to input meeting minutes, client feedback, or objection summaries before logging the call.
+  - **Single-Click Save & Real-Time CRM Synchronization**:
+    - One-click "Save Call Outcome" submits directly to `/api/activities` with type `call`, updates the contact's `call_outcome` and `next_action_due_at`, triggers browser-wide `crm:contact-updated` events to sync underlying tables (Lead Pool, My Queue, Inbound Desk), and displays feedback via toast notifications.
+    - Preserves prominent `Qualify Deal` button in the card header for immediate buyer qualification workflows.
+
 ---
 
 
