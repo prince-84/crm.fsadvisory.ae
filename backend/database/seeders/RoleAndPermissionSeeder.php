@@ -13,7 +13,7 @@ class RoleAndPermissionSeeder extends Seeder
     {
         // All Granular Permission Keys categorized by Module
         $allPermissions = [
-            // 1. Lead Pool
+            // 1. Leads Desk (Inbound)
             'leads.view',
             'leads.view_all',
             'leads.create',
@@ -23,9 +23,18 @@ class RoleAndPermissionSeeder extends Seeder
             'leads.assign',
             'leads.reassign',
             'leads.export',
-            'leads.import',
 
-            // 2. Owner Data Pool
+            // 2. Lead Pool (Imported Bank)
+            'lead_pool.view',
+            'lead_pool.view_all',
+            'lead_pool.assign',
+            'lead_pool.reassign',
+            'lead_pool.import',
+            'lead_pool.export',
+            'lead_pool.delete',
+            'lead_pool.restore',
+
+            // 3. Owner Data Pool
             'owner_data.view',
             'owner_data.create',
             'owner_data.edit',
@@ -87,7 +96,8 @@ class RoleAndPermissionSeeder extends Seeder
                 'name' => 'Sales Manager',
                 'description' => 'Full control over sales pipeline, agent queue routing, lead assignment, call monitoring and performance reports.',
                 'permissions' => [
-                    'leads.view', 'leads.view_all', 'leads.create', 'leads.edit', 'leads.delete', 'leads.assign', 'leads.reassign', 'leads.export', 'leads.import',
+                    'leads.view', 'leads.view_all', 'leads.create', 'leads.edit', 'leads.delete', 'leads.assign', 'leads.reassign', 'leads.export',
+                    'lead_pool.view', 'lead_pool.view_all', 'lead_pool.assign', 'lead_pool.reassign', 'lead_pool.import', 'lead_pool.export', 'lead_pool.delete', 'lead_pool.restore',
                     'owner_data.view', 'owner_data.create', 'owner_data.edit', 'owner_data.export',
                     'queue.view', 'queue.update_status', 'queue.calendar', 'queue.bulk_delete',
                     'deals.view', 'deals.create', 'deals.edit', 'deals.delete', 'deals.bulk_delete',
@@ -108,6 +118,7 @@ class RoleAndPermissionSeeder extends Seeder
                 'description' => 'Comprehensive sales access to Lead Pool, Owner Database, Deal Pipeline, 3CX Telephony and WhatsApp Web.',
                 'permissions' => [
                     'leads.view', 'leads.create', 'leads.edit', 'leads.export',
+                    'lead_pool.view', 'lead_pool.export',
                     'owner_data.view', 'owner_data.create', 'owner_data.edit', 'owner_data.export',
                     'queue.view', 'queue.update_status', 'queue.calendar',
                     'deals.view', 'deals.create', 'deals.edit',
@@ -126,6 +137,7 @@ class RoleAndPermissionSeeder extends Seeder
                 'description' => 'Access to assigned sales leads, personal queue follow-ups, opportunities, WhatsApp web and outgoing calls.',
                 'permissions' => [
                     'leads.view', 'leads.create', 'leads.edit',
+                    'lead_pool.view',
                     'owner_data.view',
                     'queue.view', 'queue.update_status', 'queue.calendar',
                     'deals.view', 'deals.create', 'deals.edit',
@@ -143,7 +155,8 @@ class RoleAndPermissionSeeder extends Seeder
                 'name' => 'Operations Coordinator',
                 'description' => 'Responsible for data hygiene, lead imports, owner database verification and CSV reports.',
                 'permissions' => [
-                    'leads.view', 'leads.view_all', 'leads.create', 'leads.edit', 'leads.assign', 'leads.export', 'leads.import',
+                    'leads.view', 'leads.view_all', 'leads.create', 'leads.edit', 'leads.assign', 'leads.export',
+                    'lead_pool.view', 'lead_pool.view_all', 'lead_pool.assign', 'lead_pool.import', 'lead_pool.export',
                     'owner_data.view', 'owner_data.create', 'owner_data.edit', 'owner_data.export', 'owner_data.import',
                     'reports.view_team', 'reports.export',
                 ],
@@ -159,6 +172,7 @@ class RoleAndPermissionSeeder extends Seeder
                 'description' => 'Dedicated telesales representative focused on client outreach, lead qualification, queue follow-ups, telephony calls, and WhatsApp communication.',
                 'permissions' => [
                     'leads.view', 'leads.create', 'leads.edit',
+                    'lead_pool.view',
                     'queue.view', 'queue.update_status', 'queue.calendar',
                     'deals.view', 'deals.create',
                     'calls.make', 'calls.view_logs', 'calls.listen_recordings',

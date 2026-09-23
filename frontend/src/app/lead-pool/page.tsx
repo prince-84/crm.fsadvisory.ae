@@ -279,7 +279,13 @@ export default function LeadPoolPage() {
 
   useEffect(() => {
     const checkPerms = () => {
-      setCanViewLeads(hasPermission('leads.view'));
+      const u = getCurrentUser();
+      const perms: string[] = u?.permissions || [];
+      if (perms.some((p) => p.startsWith('lead_pool.'))) {
+        setCanViewLeads(hasPermission('lead_pool.view'));
+      } else {
+        setCanViewLeads(hasPermission('lead_pool.view') || hasPermission('leads.view'));
+      }
     };
     checkPerms();
     refreshCurrentUser().then(checkPerms);
@@ -1480,7 +1486,7 @@ export default function LeadPoolPage() {
         try { user = JSON.parse(raw); } catch {}
       }
 
-      const canViewAllLeads = isSuperUser(user) || (user?.permissions && (user.permissions.includes('*') || user.permissions.includes('leads.view_all')));
+      const canViewAllLeads = isSuperUser(user) || (user?.permissions && (user.permissions.includes('*') || user.permissions.includes('lead_pool.view_all') || user.permissions.includes('leads.view_all')));
       let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
       if (!canViewAllLeads) {
         targetOwner = user?.name || 'Unassigned';
@@ -1770,7 +1776,7 @@ export default function LeadPoolPage() {
 
   const handleResetFilters = () => {
     setActiveTab('all');
-    const canViewAll = isSuperUser(currentUser) || hasPermission('leads.view_all');
+    const canViewAll = isSuperUser(currentUser) || hasPermission('lead_pool.view_all') || hasPermission('leads.view_all');
     setSelectedOwner(canViewAll ? 'all' : (currentUser?.name || 'Unassigned'));
     setSelectedLeadType('all');
     setSelectedStage('all');
@@ -1927,7 +1933,7 @@ export default function LeadPoolPage() {
           <Sidebar />
           <div className="flex-1 pl-56 flex flex-col min-w-0">
             <Navbar />
-            <AccessDenied moduleName="Lead Pool & Imported Lead Bank" requiredPermission="leads.view" />
+            <AccessDenied moduleName="Lead Pool & Imported Lead Bank" requiredPermission="lead_pool.view" />
           </div>
         </div>
       );
@@ -1942,7 +1948,7 @@ export default function LeadPoolPage() {
         <div className="flex-1 pl-56 flex flex-col min-w-0">
           <Navbar 
             teamSelector={
-              mounted && (isSuperUser(currentUser) || hasPermission('leads.view_all')) ? (
+              mounted && (isSuperUser(currentUser) || hasPermission('lead_pool.view_all') || hasPermission('leads.view_all')) ? (
                 <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] hover:border-[#C8A147] rounded-md px-2.5 py-1.5 text-xs shadow-2xs transition-colors">
                   <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
                   <select

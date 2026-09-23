@@ -2170,6 +2170,15 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Client Session Auto-Refresh**:
     - Added instant `refreshCurrentUser()` invocation upon saving permissions in `users/page.tsx` if the target user matches the active session (`crm_user`), eliminating the need to log out and log back in to apply updated permissions.
 
+- **165 — Separate "Leads Desk" and "Lead Pool" Modules in Permission Matrix & Popups (`backend/app/Http/Controllers/Api/RoleController.php`, `backend/database/seeders/RoleAndPermissionSeeder.php`, `frontend/src/app/lead-pool/page.tsx`, `frontend/src/components/Sidebar.tsx`)**:
+  - **Module Separation in Permissions Matrix**:
+    - Disaggregated single lead module into two distinct, independently configurable modules across both the **Edit Role Details** modal and **Granular CRM Permissions: [User]** modal popups:
+      1. **Leads Desk (Inbound)**: Controls permissions for the active inbound leads desk (`/`): `leads.view`, `leads.view_all`, `leads.create`, `leads.edit`, `leads.delete`, `leads.restore`, `leads.assign`, `leads.reassign`, and `leads.export`.
+      2. **Lead Pool (Imported Bank)**: Dedicated controls for the imported/cold batch database (`/lead-pool`): `lead_pool.view`, `lead_pool.view_all`, `lead_pool.assign`, `lead_pool.reassign`, `lead_pool.import`, `lead_pool.export`, `lead_pool.delete`, and `lead_pool.restore`.
+  - **Backward-Compatible Access & Dynamic Guarding**:
+    - Synchronized all database roles and custom users with `lead_pool.*` permissions to ensure zero disruption.
+    - Updated `Sidebar.tsx` and `lead-pool/page.tsx` to dynamically respect `lead_pool.view` (with seamless fallback for legacy active sessions).
+
 ---
 
 

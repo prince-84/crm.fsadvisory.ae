@@ -107,19 +107,32 @@ class RoleController extends Controller
     {
         $matrix = [
             [
-                'module' => 'Lead Pool',
-                'description' => 'Master client directory, inbound allocations and lead qualification',
+                'module' => 'Leads Desk (Inbound)',
+                'description' => 'Main inbound leads desk, Meta ads, portal webhooks and sales conversions',
                 'permissions' => [
-                    ['key' => 'leads.view', 'label' => 'View Assigned Leads', 'desc' => 'Access and browse personal assigned client leads'],
-                    ['key' => 'leads.view_all', 'label' => 'View All Leads (Entire Team)', 'desc' => 'Unrestricted access to browse all team leads and company lead pool'],
+                    ['key' => 'leads.view', 'label' => 'View Assigned Leads', 'desc' => 'Access and browse personal assigned client leads on Leads Page'],
+                    ['key' => 'leads.view_all', 'label' => 'View All Leads (Entire Team)', 'desc' => 'Unrestricted access to browse all team leads on Leads Page'],
                     ['key' => 'leads.create', 'label' => 'Create New Lead', 'desc' => 'Manually add new inbound lead profiles'],
                     ['key' => 'leads.edit', 'label' => 'Edit Lead Profiles', 'desc' => 'Modify client details, budgets and requirements'],
                     ['key' => 'leads.delete', 'label' => 'Trash Leads', 'desc' => 'Soft-delete leads to trash archive'],
                     ['key' => 'leads.restore', 'label' => 'Restore / Purge Leads', 'desc' => 'Restore from trash or permanently purge records'],
                     ['key' => 'leads.assign', 'label' => 'Bulk Lead Assignment', 'desc' => 'Reallocate leads between advisors and agents'],
                     ['key' => 'leads.reassign', 'label' => 'Re-assign Leads & Deals', 'desc' => 'Re-assign and transfer individual lead ownership to another advisor in Drawer & Table'],
-                    ['key' => 'leads.export', 'label' => 'Export CSV Data', 'desc' => 'Download client spreadsheets'],
-                    ['key' => 'leads.import', 'label' => 'Bulk CSV Import', 'desc' => 'Upload and ingest external lead sheets'],
+                    ['key' => 'leads.export', 'label' => 'Export CSV Data', 'desc' => 'Download client spreadsheets from Leads Page'],
+                ]
+            ],
+            [
+                'module' => 'Lead Pool (Imported Bank)',
+                'description' => 'Master imported archive, cold database repository, and bulk batch lead files',
+                'permissions' => [
+                    ['key' => 'lead_pool.view', 'label' => 'View Lead Pool', 'desc' => 'Access and browse imported lead pool database'],
+                    ['key' => 'lead_pool.view_all', 'label' => 'View Entire Team Lead Pool', 'desc' => 'Unrestricted access to browse all team leads in Lead Pool'],
+                    ['key' => 'lead_pool.assign', 'label' => 'Bulk Assign from Pool', 'desc' => 'Reallocate and distribute batch leads from the pool to advisors'],
+                    ['key' => 'lead_pool.reassign', 'label' => 'Re-assign Pool Leads', 'desc' => 'Transfer pool lead ownership between agents in Drawer & Table'],
+                    ['key' => 'lead_pool.import', 'label' => 'Bulk CSV / Excel Import', 'desc' => 'Upload and ingest external lead sheets into Lead Pool'],
+                    ['key' => 'lead_pool.export', 'label' => 'Export Lead Pool (CSV)', 'desc' => 'Download client spreadsheets from Lead Pool'],
+                    ['key' => 'lead_pool.delete', 'label' => 'Trash Pool Leads', 'desc' => 'Soft-delete leads from pool to trash archive'],
+                    ['key' => 'lead_pool.restore', 'label' => 'Restore / Purge Pool Leads', 'desc' => 'Restore from trash or permanently purge pool records'],
                 ]
             ],
             [

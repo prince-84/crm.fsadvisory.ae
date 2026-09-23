@@ -92,6 +92,12 @@ function SidebarInner() {
     if (isSuperUser(currentUser)) return true;
     const perms: string[] = currentUser.permissions || [];
     if (perms.includes('*')) return true;
+    if (permission === 'lead_pool.view') {
+      if (perms.some((p) => p.startsWith('lead_pool.'))) {
+        return perms.includes('lead_pool.view');
+      }
+      return perms.includes('lead_pool.view') || perms.includes('leads.view');
+    }
     return perms.includes(permission);
   };
 
@@ -107,7 +113,7 @@ function SidebarInner() {
       items: [
         { key: 'leads', name: 'Leads', href: '/', icon: Flame, permission: 'leads.view' },
         { key: 'owner_data', name: 'Owner Data', href: '/owner-data', icon: Building2, permission: 'owner_data.view' },
-        { key: 'lead_pool', name: 'Lead Pool', href: '/lead-pool', icon: Database, permission: 'leads.view' },
+        { key: 'lead_pool', name: 'Lead Pool', href: '/lead-pool', icon: Database, permission: 'lead_pool.view' },
         { key: 'opportunities', name: 'Opportunities', href: '/opportunities', icon: Briefcase, permission: 'deals.view' },
         { key: 'appointments', name: 'Appointments', href: '/calendar', icon: CalendarDays, permission: 'queue.calendar' },
         { key: 'recordings', name: 'Recordings', href: '/recordings', icon: Mic, permission: 'calls.listen_recordings' },
