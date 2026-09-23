@@ -247,6 +247,13 @@ class ContactController extends Controller
         if ($request->filled('call_outcome') && $request->call_outcome !== 'all') {
             if ($request->call_outcome === 'deal') {
                 $query->has('opportunities');
+            } elseif ($request->call_outcome === 'lead_pool') {
+                $query->where('contacts.is_imported', true)
+                      ->whereDoesntHave('activities', function($actQ) {
+                          $actQ->where('type', 'call');
+                      })->whereDoesntHave('opportunities.activities', function($actQ) {
+                          $actQ->where('type', 'call');
+                      });
             } elseif ($request->call_outcome === 'uncontacted') {
                 $query->whereDoesntHave('activities', function($actQ) {
                     $actQ->where('type', 'call');

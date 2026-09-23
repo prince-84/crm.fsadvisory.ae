@@ -19,7 +19,7 @@ import {
   RotateCcw, Copy, ChevronLeft, ChevronRight, RefreshCw, Trash2, Undo2, UserX,
   ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, GripVertical, UserCheck, X,
   Eye, Edit3, MessageSquare, Check, Zap, Filter, PhoneCall, AlertCircle, Sparkles, ListOrdered, Phone,
-  Bell, Clock, Calendar, ChevronDown, ChevronUp
+  Bell, Clock, Calendar, ChevronDown, ChevronUp, Layers, Database
 } from 'lucide-react';
 import Link from 'next/link';
 import { hasPermission, refreshCurrentUser, isSuperUser } from '@/lib/permissions';
@@ -689,11 +689,26 @@ export default function LeadPoolPage() {
           );
         }
 
+        // If lead is from Lead Pool, show light pink Lead Pool badge instead of green NEW
+        if (Boolean(ct.is_imported)) {
+          return (
+            <td key={colKey} className="p-3">
+              <span 
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-300 shadow-xs"
+                title={ct.assigned_to ? `Assigned from Lead Pool to ${ct.assigned_to} (Awaiting first call)` : "Lead in Pool (Awaiting call)"}
+              >
+                <Layers className="w-2.5 h-2.5 text-pink-600 shrink-0" />
+                <span>Lead Pool</span>
+              </span>
+            </td>
+          );
+        }
+
         return (
           <td key={colKey} className="p-3">
             <span 
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-xs border border-emerald-400"
-              title={ct.assigned_to ? `Assigned to ${ct.assigned_to} (Awaiting first call)` : "Fresh Inbound Lead in Pool (Awaiting call)"}
+              title={ct.assigned_to ? `Assigned to ${ct.assigned_to} (Awaiting first call)` : "Fresh Lead in Pool (Awaiting call)"}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0" />
               <span>NEW</span>
@@ -2116,6 +2131,7 @@ export default function LeadPoolPage() {
                   <option value="all">📞 All Outcomes</option>
                   <option value="deal">💼 Deals / Opportunities</option>
                   <option value="uncontacted">🟢 New / Uncontacted</option>
+                  <option value="lead_pool">🌸 Lead Pool (Awaiting Call)</option>
                   <option value="Interested">Interested</option>
                   <option value="Callback">Callback</option>
                   <option value="Follow-up">Follow-up</option>

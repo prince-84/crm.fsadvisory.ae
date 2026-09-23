@@ -2153,6 +2153,15 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - Selecting `Organic` queries contacts with `lead_type = 'Organic'`, as well as legacy records where `lead_type IS NULL` or empty, guaranteeing 100% data fidelity without skipping older records.
     - Integrated with `loadData`, `useEffect`, and `handleResetFilters`.
 
+- **163 — Lead Pool Call Status Badge & "Lead Pool (Awaiting Call)" Outcome Filter (`frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Lead Pool Badge in Call Status Column**:
+    - Leads originating from or assigned from the Lead Pool (`contacts.is_imported = true`) that have not yet had call activities logged now display a distinct, luxury **Light Pink badge** (`bg-pink-100 text-pink-800 border-pink-300`) with a `Layers` icon reading **"Lead Pool"**, cleanly replacing the pulsing green `NEW` badge.
+    - All existing assigned leads from the Lead Pool retroactively and automatically show this badge because their `is_imported` attribute is preserved in MySQL.
+    - Active opportunities/deals (`Deal 1`, `Deal 2`, etc.) and actual logged call outcomes (`Interested`, `Callback`, `Meeting`, `Not Interested`, etc.) remain 100% intact and take precedence.
+  - **Call Outcome Filter Expansion**:
+    - Added `🌸 Lead Pool (Awaiting Call)` filter option (`lead_pool`) to the Call Outcome filter dropdown across both Leads Desk and Lead Pool pages.
+    - Backend filter logic in `ContactController@index` queries contacts where `contacts.is_imported = true` without logged call activities on either the contact or linked opportunities.
+
 ---
 
 
