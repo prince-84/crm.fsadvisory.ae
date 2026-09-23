@@ -32,7 +32,7 @@ import {
   Building2,
   HelpCircle
 } from 'lucide-react';
-import { hasAnyPermission } from '@/lib/permissions';
+import { hasAnyPermission, getCurrentUser, refreshCurrentUser } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 
 interface UserItem {
@@ -591,6 +591,10 @@ export default function UserManagementPage() {
 
       if (data.success) {
         setIsPermModalOpen(false);
+        const current = getCurrentUser();
+        if (current && current.id === permTargetUser.id) {
+          refreshCurrentUser();
+        }
         Swal.fire({
           icon: 'success',
           title: 'Permissions Updated!',

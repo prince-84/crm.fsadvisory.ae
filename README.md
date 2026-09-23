@@ -2162,6 +2162,14 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Added `🌸 Lead Pool (Awaiting Call)` filter option (`lead_pool`) to the Call Outcome filter dropdown across both Leads Desk and Lead Pool pages.
     - Backend filter logic in `ContactController@index` queries contacts where `contacts.is_imported = true` without logged call activities on either the contact or linked opportunities.
 
+- **164 — User Granular Permissions Isolation & Role Independence Engine (`backend/app/Http/Controllers/Api/UserController.php`, `frontend/src/app/users/page.tsx`)**:
+  - **Granular Permissions Isolation**:
+    - Resolved critical issue where updating a specific user's granular permissions in the "Granular CRM Permissions: [User]" modal erroneously synced back to the global parent Role and overwrote permissions for all peer users sharing that role.
+    - Cleanly isolated `UserController@updatePermissions` to strictly update the target user's custom `permissions` JSON column in `users` table without modifying `roles.permissions` or looping over peer accounts.
+    - Global Role template edits remain cleanly separated and controlled under the "Manage Roles" tab via `RoleController@update`.
+  - **Client Session Auto-Refresh**:
+    - Added instant `refreshCurrentUser()` invocation upon saving permissions in `users/page.tsx` if the target user matches the active session (`crm_user`), eliminating the need to log out and log back in to apply updated permissions.
+
 ---
 
 
