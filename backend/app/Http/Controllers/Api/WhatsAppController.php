@@ -694,7 +694,7 @@ class WhatsAppController extends Controller
                 $query->where('channel_id', $request->channel_id);
             }
         } else {
-            // Individual user:
+            // Individual user (Property Consultant / Advisor / Telesales):
             $userChan = null;
             $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
             if ($hasUserIdCol && $user) {
@@ -705,7 +705,11 @@ class WhatsAppController extends Controller
                     ->orWhere('session_name', $user->name)
                     ->first();
             }
-            if ($userChan) {
+
+            // Check if there are chats explicitly assigned to this advisor's channel
+            $userHasChats = $userChan ? WhatsAppChat::where('channel_id', $userChan->id)->exists() : false;
+
+            if ($userHasChats) {
                 $query->where(function ($q) use ($userChan, $user) {
                     $q->where('channel_id', $userChan->id);
                     if ($user) {
@@ -713,11 +717,20 @@ class WhatsAppController extends Controller
                             $cq->where('assigned_to', $user->name);
                         });
                     }
-                    // In single-gateway agency setup, also display chats from any active connected channel
-                    $q->orWhereIn('channel_id', function ($sub) {
-                        $sub->select('id')->from('whatsapp_channels')->where('status', 'connected');
-                    });
                 });
+            } else {
+                // Shared agency gateway: If advisor's channel has no separate chats,
+                // do NOT leave them with an empty inbox (0 chats). Display the agency's connected WhatsApp chats!
+                $connectedChannelIds = WhatsAppChannel::where('status', 'connected')->pluck('id')->toArray();
+                if (!empty($connectedChannelIds)) {
+                    $query->whereIn('channel_id', $connectedChannelIds);
+                } else {
+                    // Fallback: If status hasn't synced in DB yet, show the latest synced chats so advisors can respond immediately
+                    $latestChanWithChats = WhatsAppChat::distinct('channel_id')->pluck('channel_id')->toArray();
+                    if (!empty($latestChanWithChats)) {
+                        $query->whereIn('channel_id', $latestChanWithChats);
+                    }
+                }
             }
         }
 

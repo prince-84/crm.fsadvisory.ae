@@ -1361,17 +1361,30 @@ export default function WhatsAppPage() {
               <button
                 onClick={async () => {
                   try {
+                    Swal.fire({
+                      title: 'Syncing WhatsApp...',
+                      text: 'Extracting chats and contacts from your connected phone...',
+                      allowOutsideClick: false,
+                      showConfirmButton: false,
+                      didOpen: () => Swal.showLoading(),
+                    });
                     await fetchGateway('/api/sync', { method: 'POST' });
-                  } catch (_) {}
-                  await loadChannels();
-                  await loadChats();
-                  Swal.fire({
-                    icon: 'success',
-                    title: 'WhatsApp Chats Synced!',
-                    text: 'Synced latest chats from your connected phone into CRM.',
-                    timer: 1500,
-                    showConfirmButton: false,
-                  });
+                    // Give Laravel ingestion a brief moment to write batches
+                    await new Promise(r => setTimeout(r, 2000));
+                    await loadChannels();
+                    await loadChats(true);
+                    Swal.fire({
+                      icon: 'success',
+                      title: 'WhatsApp Chats Synced!',
+                      text: 'Successfully refreshed and synced conversations.',
+                      timer: 1500,
+                      showConfirmButton: false,
+                    });
+                  } catch (_) {
+                    await loadChannels();
+                    await loadChats(true);
+                    Swal.close();
+                  }
                 }}
                 className="px-2.5 py-1.5 bg-[#0D1E38] border border-[#1E3A66] hover:bg-[#152B4D] text-[#B0C0D8] text-xs font-semibold rounded-md transition-colors flex items-center gap-1 cursor-pointer shrink-0"
                 title="Refresh WhatsApp Messages"
