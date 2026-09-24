@@ -443,6 +443,13 @@ export default function WhatsAppPage() {
         const gwData = await fetchGateway('/api/status');
         if (gwData?.status) {
           setGatewayStatus(gwData.status);
+          if (gwData.status === 'connected') {
+            setChannels((prev) => prev.map((c) => ({
+              ...c,
+              status: 'connected',
+              phone_number: c.phone_number || gwData.user?.phone || c.phone_number,
+            })));
+          }
           if (checkAutoQr && gwData.status !== 'connected') {
             handleOpenQrModal();
           }
@@ -497,7 +504,7 @@ export default function WhatsAppPage() {
                   body: JSON.stringify({
                     phone: rawPhone,
                     name: rawName || '',
-                    channel_id: selectedChannelId !== 'all' ? selectedChannelId : 1,
+                    channel_id: selectedChannelId !== 'all' ? selectedChannelId : (channels[0]?.id || 'active'),
                   }),
                 });
                 if (startRes?.success && startRes?.chat) {
@@ -902,14 +909,34 @@ export default function WhatsAppPage() {
             // If it was already connected before opening, do NOT false-close or show success popup
             if (!wasConnectedOnOpenRef.current) {
               setIsQrModalOpen(false);
+
+              // 1. Explicitly confirm pairing to backend for active channel
+              const resolvedTargetId = qrChannelId || (selectedChannelId !== 'all' ? selectedChannelId : (channels[0]?.id || 'active'));
+              try {
+                await fetchApi(`/whatsapp/channels/${resolvedTargetId}/pair-confirm`, {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    phone_number: data.user?.phone,
+                    platform: 'whatsapp-web.js (Puppeteer)',
+                  }),
+                });
+              } catch (_) {}
+
+              // 2. Trigger gateway sync immediately to dump contacts & chats into CRM
+              try {
+                await fetchGateway('/api/sync', { method: 'POST' });
+              } catch (_) {}
+
               Swal.fire({
                 icon: 'success',
                 title: 'WhatsApp Mobile Linked!',
-                text: `Official WhatsApp session connected for ${data.user?.phone || data.user?.name || 'Mobile Device'}!`,
+                text: `Official WhatsApp session connected for ${data.user?.phone || data.user?.name || 'Mobile Device'}! Syncing your chats & contacts...`,
                 confirmButtonColor: '#081428',
               });
-              loadChannels();
-              loadChats();
+
+              // 3. Immediately refresh channels and chats
+              await loadChannels();
+              await loadChats(true);
             }
           } else {
             // If status is disconnected or qr_ready, a fresh scan is now possible
@@ -921,7 +948,7 @@ export default function WhatsAppPage() {
       }, 1500);
     }
     return () => clearInterval(interval);
-  }, [isQrModalOpen]);
+  }, [isQrModalOpen, qrChannelId, selectedChannelId, channels]);
 
   // Handle Start New WhatsApp Chat (WhatsApp Web Style)
   const handleStartNewChat = async (e?: React.FormEvent) => {
@@ -945,7 +972,7 @@ export default function WhatsAppPage() {
           phone: cleanPhone,
           name: newChatName.trim(),
           initial_message: newChatMessage.trim(),
-          channel_id: selectedChannelId !== 'all' ? selectedChannelId : 1,
+          channel_id: selectedChannelId !== 'all' ? selectedChannelId : (channels[0]?.id || 'active'),
         }),
       });
 
@@ -999,7 +1026,7 @@ export default function WhatsAppPage() {
         targetId = 1;
       }
     }
-    const finalTargetId = Number(targetId) || 1;
+    const finalTargetId = Number(targetId) || (channels[0]?.id ? Number(channels[0].id) : 1);
     setQrChannelId(finalTargetId);
     setQrTimer(45);
     setQrImageData('');

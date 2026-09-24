@@ -133,6 +133,25 @@ class WhatsAppController extends Controller
             $currentUserChannel = $channels->first();
         }
 
+        // Live Gateway Status Reconciliation: Ensure database channel status matches real gateway state
+        try {
+            $gwRes = \Illuminate\Support\Facades\Http::timeout(2)->get($this->gatewayUrl() . '/api/status');
+            if ($gwRes->successful()) {
+                $gwData = $gwRes->json();
+                $gwStatus = $gwData['status'] ?? 'disconnected';
+                $gwPhone = $gwData['user']['phone'] ?? null;
+
+                if ($gwStatus === 'connected' && $currentUserChannel) {
+                    $updates = ['status' => 'connected'];
+                    if (!empty($gwPhone) && empty($currentUserChannel->phone_number)) {
+                        $updates['phone_number'] = $gwPhone;
+                    }
+                    $currentUserChannel->update($updates);
+                    $currentUserChannel->refresh();
+                }
+            }
+        } catch (\Exception $e) {}
+
         return response()->json([
             'channels' => $channels,
             'is_super_admin' => $isSuper,
@@ -234,13 +253,17 @@ class WhatsAppController extends Controller
         if ($gatewayStatus === 'connected' && $connectedUser && !empty($connectedUser['phone'])) {
             $gwPhone = preg_replace('/[^0-9]/', '', $connectedUser['phone']);
             $chanPhone = preg_replace('/[^0-9]/', '', $channel->phone_number ?? '');
-            if ($gwPhone && $chanPhone && (str_contains($chanPhone, substr($gwPhone, -7)) || str_contains($gwPhone, substr($chanPhone, -7)))) {
+            if (empty($chanPhone) || str_contains($chanPhone, substr($gwPhone, -7)) || str_contains($gwPhone, substr($chanPhone, -7))) {
                 $isThisChannelConnected = true;
+                if (empty($channel->phone_number)) {
+                    $channel->phone_number = $connectedUser['phone'];
+                }
             }
         }
 
         $channel->update([
-            'qr_code' => $qrPayload,
+            'phone_number' => $channel->phone_number,
+            'qr_code' => $isThisChannelConnected ? null : $qrPayload,
             'status' => $isThisChannelConnected ? 'connected' : ($isReal && $gatewayStatus === 'qr_ready' ? 'qr_ready' : 'disconnected'),
             'last_sync_at' => now(),
         ]);
@@ -268,16 +291,43 @@ class WhatsAppController extends Controller
      */
     public function pairConfirm(Request $request, $id)
     {
-        $channel = WhatsAppChannel::findOrFail($id);
+        $channel = null;
+        if ($id && $id !== 'active') {
+            $channel = WhatsAppChannel::find($id);
+        }
+        $phone = $request->input('phone_number');
+        if (!$channel && $phone) {
+            $clean = preg_replace('/[^0-9]/', '', $phone);
+            $last7 = substr($clean, -7);
+            if ($last7) {
+                $channel = WhatsAppChannel::where('phone_number', 'like', "%{$last7}%")->first();
+            }
+        }
+        if (!$channel) {
+            $user = $request->user();
+            if ($user) {
+                $channel = WhatsAppChannel::where('user_id', $user->id)
+                    ->orWhere('agent_name', $user->name)
+                    ->first();
+            }
+        }
+        if (!$channel) {
+            $channel = WhatsAppChannel::where('status', 'qr_ready')->first()
+                ?? WhatsAppChannel::orderBy('id', 'asc')->first();
+        }
 
-        $phone = $request->input('phone_number') ?? $channel->phone_number ?? ('+971 50 ' . rand(100, 999) . ' ' . rand(1000, 9999));
-        $platform = $request->input('platform', rand(0, 1) ? 'iOS (iPhone 16 Pro)' : 'Android (Galaxy S24 Ultra)');
+        if (!$channel) {
+            return response()->json(['success' => false, 'error' => 'No channel available to pair.'], 404);
+        }
+
+        $phone = $phone ?? $channel->phone_number ?? ('+971 50 ' . rand(100, 999) . ' ' . rand(1000, 9999));
+        $platform = $request->input('platform', 'WhatsApp Multi-Device');
 
         $channel->update([
             'status' => 'connected',
             'phone_number' => $phone,
             'platform' => $platform,
-            'battery_level' => rand(82, 98),
+            'battery_level' => rand(85, 98),
             'qr_code' => null,
             'connected_at' => now(),
             'last_sync_at' => now(),
@@ -295,22 +345,30 @@ class WhatsAppController extends Controller
      */
     public function disconnect(Request $request, $id)
     {
-        $channel = WhatsAppChannel::findOrFail($id);
+        $channel = null;
+        if ($id && $id !== 'active') {
+            $channel = WhatsAppChannel::find($id);
+        }
+        if (!$channel) {
+            $channel = WhatsAppChannel::where('status', 'connected')->first();
+        }
 
         try {
             \Illuminate\Support\Facades\Http::timeout(6)->post($this->gatewayUrl() . '/api/logout');
         } catch (\Exception $e) {}
 
-        $channel->update([
-            'status' => 'disconnected',
-            'qr_code' => null,
-            'connected_at' => null,
-            'last_sync_at' => now(),
-        ]);
+        if ($channel) {
+            $channel->update([
+                'status' => 'disconnected',
+                'qr_code' => null,
+                'connected_at' => null,
+                'last_sync_at' => now(),
+            ]);
+        }
 
         return response()->json([
             'success' => true,
-            'message' => "WhatsApp device disconnected for {$channel->agent_name}.",
+            'message' => "WhatsApp device disconnected.",
             'channel' => $channel,
         ]);
     }
@@ -400,23 +458,37 @@ class WhatsAppController extends Controller
      */
     public function syncPhoneData(Request $request)
     {
-        $channelId = $request->input('channel_id', 1);
-        $chats = $request->input('chats', []);
-        $contacts = $request->input('contacts', []);
+        $channelId = $request->input('channel_id');
+        $channel = null;
+        if ($channelId && $channelId !== 'active') {
+            $channel = WhatsAppChannel::find($channelId);
+        }
+        $phoneParam = $request->input('phone_number');
+        if (!$channel && !empty($phoneParam)) {
+            $clean = preg_replace('/[^0-9]/', '', $phoneParam);
+            $last7 = substr($clean, -7);
+            if ($last7) {
+                $channel = WhatsAppChannel::where('phone_number', 'like', "%{$last7}%")->first();
+            }
+        }
+        if (!$channel) {
+            $channel = WhatsAppChannel::where('status', 'connected')->first()
+                ?? WhatsAppChannel::orderBy('id', 'asc')->first();
+        }
 
-        \Log::info("WhatsApp syncing " . count($chats) . " chats from mobile gateway");
-
-        // When real mobile chats arrive, immediately purge initial demo seed chats
-        $this->purgeSeedChats();
-
-        // Ensure the channel is marked connected
-        $channel = WhatsAppChannel::find($channelId);
         if ($channel) {
+            $channelId = $channel->id;
             $channel->update([
                 'status' => 'connected',
+                'phone_number' => $phoneParam ?: $channel->phone_number,
                 'last_sync_at' => now(),
             ]);
+        } else {
+            $channelId = 5;
         }
+
+        $chats = $request->input('chats', []);
+        $contacts = $request->input('contacts', []);
 
         // Load persistent LID→Phone map from gateway if present
         $contactsMapPath = 'D:\\FSadvisory-crm\\whatsapp-gateway\\contacts_map.json';
@@ -622,7 +694,7 @@ class WhatsAppController extends Controller
                 $query->where('channel_id', $request->channel_id);
             }
         } else {
-            // Individual user: strictly scoped to their own channel
+            // Individual user:
             $userChan = null;
             $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
             if ($hasUserIdCol && $user) {
@@ -634,9 +706,18 @@ class WhatsAppController extends Controller
                     ->first();
             }
             if ($userChan) {
-                $query->where('channel_id', $userChan->id);
-            } else {
-                $query->whereRaw('1 = 0');
+                $query->where(function ($q) use ($userChan, $user) {
+                    $q->where('channel_id', $userChan->id);
+                    if ($user) {
+                        $q->orWhereHas('contact', function ($cq) use ($user) {
+                            $cq->where('assigned_to', $user->name);
+                        });
+                    }
+                    // In single-gateway agency setup, also display chats from any active connected channel
+                    $q->orWhereIn('channel_id', function ($sub) {
+                        $sub->select('id')->from('whatsapp_channels')->where('status', 'connected');
+                    });
+                });
             }
         }
 
@@ -1048,7 +1129,16 @@ class WhatsAppController extends Controller
         $remotePhone = $payload['phone'] ?? null;
         $messageText = $payload['text'] ?? $payload['body'] ?? $payload['message'] ?? '';
         $pushName = $payload['push_name'] ?? null;
-        $channelId = $payload['channel_id'] ?? 1;
+        $channelId = $payload['channel_id'] ?? null;
+        $resolvedChannel = null;
+        if ($channelId && is_numeric($channelId)) {
+            $resolvedChannel = WhatsAppChannel::find($channelId);
+        }
+        if (!$resolvedChannel) {
+            $resolvedChannel = WhatsAppChannel::where('status', 'connected')->first()
+                ?? WhatsAppChannel::orderBy('id', 'desc')->first();
+        }
+        $channelId = $resolvedChannel ? $resolvedChannel->id : 1;
 
         $rawMediaType = $payload['media_type'] ?? 'text';
         $mediaType = in_array($rawMediaType, ['image', 'document', 'audio', 'video', 'location']) ? $rawMediaType : ($rawMediaType === 'ptt' ? 'audio' : 'text');

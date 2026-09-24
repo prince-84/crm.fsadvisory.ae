@@ -93,9 +93,9 @@ async function initClient() {
     connectedUser = { phone, name: info?.pushname || 'Advisor' };
     console.log(`🎉 WhatsApp CONNECTED — ${phone}`);
 
-    // Notify Laravel
+    // Notify Laravel with connected phone number
     try {
-      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/1/pair-confirm`, {
+      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/active/pair-confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone_number: phone, platform: 'whatsapp-web.js (Puppeteer)' }),
@@ -123,7 +123,7 @@ async function initClient() {
 
     // Notify Laravel to mark channel as disconnected
     try {
-      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/1/disconnect`, { method: 'POST' });
+      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/active/disconnect`, { method: 'POST' });
     } catch (_) {}
 
     // Reinitialize to display fresh QR code for next scan
@@ -143,7 +143,7 @@ async function initClient() {
       fs.rmSync(path.join(__dirname, 'auth_sessions'), { recursive: true, force: true });
     } catch (_) {}
     try {
-      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/1/disconnect`, { method: 'POST' });
+      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/active/disconnect`, { method: 'POST' });
     } catch (_) {}
     await sleep(2000);
     initClient();
@@ -279,7 +279,7 @@ async function postAckWebhook(data) {
       body: JSON.stringify({
         event: 'message_ack',
         type: 'ack',
-        channel_id: 1,
+        channel_id: 'active',
         id: data.id,
         ack: data.ack,
         status: data.status,
@@ -294,7 +294,7 @@ async function postWebhook(data) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        channel_id: 1,
+        channel_id: 'active',
         id:         data.id,
         remote_jid: data.remote_jid || data.phone,
         from:       data.remote_jid || data.phone,
@@ -311,145 +311,156 @@ async function postWebhook(data) {
 }
 
 async function syncHistoryToLaravel() {
-  if (!client || !client.pupPage) return;
+  if (!client) return;
   try {
-    console.log('📥 Extracting chats & contacts from WhatsApp Web page...');
+    console.log('📥 Extracting chats & contacts from WhatsApp Web...');
 
-    const result = await client.pupPage.evaluate(() => {
-      try {
-        const Collections = window.require('WAWebCollections');
-        if (!Collections) return { error: 'No Collections found' };
+    let chatsList = [];
+    let extractionMethod = 'client.getChats';
 
-        // 1. Build LID -> Phone and Name mapping from Contacts
-        const contactsArr = Collections.Contact ? Collections.Contact.getModelsArray() : [];
-        const lidMap = {};
-        const phoneMap = {};
+    // Strategy 1: Official whatsapp-web.js API (Client.getChats())
+    try {
+      if (typeof client.getChats === 'function') {
+        const rawChats = await client.getChats();
+        console.log(`📥 client.getChats() retrieved ${rawChats?.length || 0} chats`);
 
-        contactsArr.forEach(ct => {
-          const rawId = ct.id?._serialized || '';
-          const name = ct.name || ct.pushname || ct.formattedName || '';
-          const phone = ct.phoneNumber?._serialized || ct.number || (rawId.includes('@c.us') ? rawId.replace('@c.us', '') : '');
-          const cleanPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
-          const lid = ct.lid?._serialized || (rawId.includes('@lid') ? rawId : '');
-
-          if (cleanPhone) {
-            phoneMap[cleanPhone] = name;
-            if (rawId) lidMap[rawId] = cleanPhone;
-            if (lid) lidMap[lid] = cleanPhone;
-          }
-        });
-
-        // 2. Extract Chats
-        const chatsArr = Collections.Chat ? Collections.Chat.getModelsArray() : [];
-        const chatsList = [];
-
-        chatsArr.forEach(c => {
-          const rawId = c.id?._serialized || '';
-          if (c.isGroup || rawId.includes('@g.us') || rawId.includes('@newsletter') || rawId.includes('status@broadcast')) return;
-
-          let cleanPhone = '';
-          if (rawId.includes('@c.us')) {
-            cleanPhone = rawId.replace('@c.us', '').replace(/[^0-9]/g, '');
-          } else if (rawId.includes('@lid')) {
-            cleanPhone = lidMap[rawId] || lidMap[rawId.replace('@lid', '')] || (c.contact?.phoneNumber?._serialized ? c.contact.phoneNumber._serialized.replace(/[^0-9]/g, '') : '') || '';
-          }
-
-          // If phone is still not resolved, check if formattedTitle is a phone number
-          if (!cleanPhone && c.formattedTitle) {
-            const numOnly = c.formattedTitle.replace(/[^0-9]/g, '');
-            if (numOnly.length >= 8) {
-              cleanPhone = numOnly;
+        if (Array.isArray(rawChats) && rawChats.length > 0) {
+          for (const c of rawChats) {
+            const rawId = c.id?._serialized || '';
+            // Skip groups, status broadcast, newsletter channels
+            if (c.isGroup || rawId.includes('@g.us') || rawId.includes('@newsletter') || rawId.includes('status@broadcast')) {
+              continue;
             }
-          }
 
-          if (!cleanPhone) {
-            cleanPhone = rawId.split('@')[0].replace(/[^0-9]/g, '');
-          }
-
-          let name = c.name || c.contact?.name || c.contact?.pushname || '';
-          if (!name && c.formattedTitle) {
-            name = c.formattedTitle;
-          }
-          if (!name && phoneMap[cleanPhone]) {
-            name = phoneMap[cleanPhone];
-          }
-          if (!name) {
-            name = cleanPhone ? `+${cleanPhone}` : 'WhatsApp Contact';
-          }
-
-          // Extract last message text
-          let lastMsg = 'Active chat';
-          try {
-            if (c.msgs?.last) {
-              const lastM = c.msgs.last();
-              lastMsg = lastM?.body || lastM?.caption || (lastM?.type !== 'chat' ? `[${lastM?.type || 'Media'}]` : 'Active chat');
-            } else if (c.lastReceivedKey?._serialized) {
-              lastMsg = 'Active chat';
+            let cleanPhone = rawId.replace('@c.us', '').replace(/[^0-9]/g, '');
+            if (!cleanPhone && c.id?.user) {
+              cleanPhone = String(c.id.user).replace(/[^0-9]/g, '');
             }
-          } catch (_) {}
 
-          const ts = c.t || c.timestamp || Math.floor(Date.now() / 1000);
-
-          // Extract recent messages (last 6)
-          let recentMsgs = [];
-          try {
-            if (c.msgs && typeof c.msgs.getModelsArray === 'function') {
-              const mArr = c.msgs.getModelsArray();
-              recentMsgs = mArr.slice(-6).map(m => {
-                let status = 'sent';
-                if (m.ack === 2) status = 'delivered';
-                else if (m.ack >= 3) status = 'read';
-                else if (m.ack === 1) status = 'sent';
-                else if (m.ack === 0) status = 'pending';
-                else if (!m.id?.fromMe) status = 'read';
-
-                return {
-                  id: m.id?._serialized || ('WA-' + Math.random().toString(36).substr(2, 9)),
-                  text: m.body || m.caption || (m.type !== 'chat' ? `[${m.type || 'Media'}]` : ''),
-                  from_me: !!m.id?.fromMe,
-                  timestamp: m.t || ts,
-                  media_type: m.type === 'chat' ? 'text' : (m.type || 'text'),
-                  ack: m.ack ?? 1,
-                  status: status,
-                };
-              }).filter(m => m.text && m.text.trim().length > 0);
+            let name = c.name || c.formattedTitle || '';
+            if (!name && cleanPhone) {
+              name = `+${cleanPhone}`;
+            } else if (!name) {
+              name = 'WhatsApp Contact';
             }
-          } catch (_) {}
 
-          chatsList.push({
-            id: rawId,
-            phone: cleanPhone ? `+${cleanPhone}` : '',
-            formattedTitle: c.formattedTitle || '',
-            name: name,
-            last_message: lastMsg,
-            timestamp: ts,
-            unread_count: c.unreadCount || 0,
-            messages: recentMsgs,
-          });
-        });
+            let lastMsg = 'Active chat';
+            let recentMsgs = [];
 
-        return { success: true, chats: chatsList, contactsCount: contactsArr.length };
-      } catch (err) {
-        return { success: false, error: err.message || String(err) };
+            if (c.lastMessage) {
+              const lm = c.lastMessage;
+              lastMsg = lm.body || lm.caption || (lm.type !== 'chat' ? `[${lm.type || 'Media'}]` : 'Active chat');
+              let status = 'sent';
+              if (lm.ack === 2) status = 'delivered';
+              else if (lm.ack >= 3) status = 'read';
+              else if (lm.ack === 1) status = 'sent';
+              else if (lm.ack === 0) status = 'pending';
+              else if (!lm.fromMe) status = 'read';
+
+              recentMsgs.push({
+                id: lm.id?._serialized || ('WA-' + Math.random().toString(36).substr(2, 9)),
+                text: lm.body || lm.caption || (lm.type !== 'chat' ? `[${lm.type || 'Media'}]` : ''),
+                from_me: !!lm.fromMe,
+                timestamp: lm.timestamp || c.timestamp || Math.floor(Date.now() / 1000),
+                media_type: lm.type === 'chat' ? 'text' : (lm.type || 'text'),
+                ack: lm.ack ?? 1,
+                status: status,
+              });
+            }
+
+            const ts = c.timestamp || Math.floor(Date.now() / 1000);
+
+            chatsList.push({
+              id: rawId,
+              phone: cleanPhone ? `+${cleanPhone}` : '',
+              formattedTitle: c.name || '',
+              name: name,
+              last_message: lastMsg,
+              timestamp: ts,
+              unread_count: c.unreadCount || 0,
+              messages: recentMsgs.filter(m => m.text && m.text.trim().length > 0),
+            });
+          }
+        }
       }
-    });
+    } catch (e1) {
+      console.warn('Strategy 1 (client.getChats) warning:', e1.message);
+    }
 
-    if (!result || !result.success) {
-      console.error('Extraction failed:', result?.error);
+    // Strategy 2: Fallback via pupPage evaluate if Strategy 1 returned 0 chats
+    if (chatsList.length === 0 && client.pupPage) {
+      try {
+        const evalResult = await client.pupPage.evaluate(async () => {
+          try {
+            let chats = [];
+            if (window.WWebJS && typeof window.WWebJS.getChats === 'function') {
+              chats = await window.WWebJS.getChats();
+            } else if (window.Store && window.Store.Chat) {
+              chats = window.Store.Chat.getModelsArray ? window.Store.Chat.getModelsArray() : [];
+            }
+            if (!Array.isArray(chats) || chats.length === 0) return [];
+            return chats.map(c => ({
+              id: c.id?._serialized || '',
+              name: c.name || c.formattedTitle || '',
+              formattedTitle: c.formattedTitle || '',
+              isGroup: !!c.isGroup,
+              unreadCount: c.unreadCount || 0,
+              timestamp: c.t || c.timestamp || Math.floor(Date.now() / 1000),
+              lastMsgBody: c.lastMessage?.body || (c.msgs?.last ? c.msgs.last()?.body : '') || '',
+            }));
+          } catch (_) {
+            return [];
+          }
+        });
+
+        if (Array.isArray(evalResult) && evalResult.length > 0) {
+          extractionMethod = 'pupPage Store/WWebJS fallback';
+          evalResult.forEach(c => {
+            const rawId = c.id || '';
+            if (c.isGroup || rawId.includes('@g.us') || rawId.includes('@newsletter') || rawId.includes('status@broadcast')) return;
+            const cleanPhone = rawId.replace('@c.us', '').replace(/[^0-9]/g, '');
+            const name = c.name || c.formattedTitle || (cleanPhone ? `+${cleanPhone}` : 'WhatsApp Contact');
+            chatsList.push({
+              id: rawId,
+              phone: cleanPhone ? `+${cleanPhone}` : '',
+              formattedTitle: c.formattedTitle || '',
+              name: name,
+              last_message: c.lastMsgBody || 'Active chat',
+              timestamp: c.timestamp,
+              unread_count: c.unreadCount || 0,
+              messages: c.lastMsgBody ? [{
+                id: 'WA-' + Math.random().toString(36).substr(2, 9),
+                text: c.lastMsgBody,
+                from_me: false,
+                timestamp: c.timestamp,
+                media_type: 'text',
+                ack: 1,
+                status: 'read',
+              }] : [],
+            });
+          });
+        }
+      } catch (e2) {
+        console.warn('Strategy 2 (pupPage eval) error:', e2.message);
+      }
+    }
+
+    if (chatsList.length === 0) {
+      console.warn('⚠️ No 1-on-1 chats found to sync.');
       return;
     }
 
-    console.log(`📥 Extracted ${result.chats.length} chats! Syncing to CRM database...`);
+    console.log(`📥 Extracted ${chatsList.length} chats (via ${extractionMethod})! Syncing to CRM database...`);
 
-    // Send in chunks of 100
-    for (let i = 0; i < result.chats.length; i += 100) {
-      const batch = result.chats.slice(i, i + 100);
+    // Send in chunks of 50
+    for (let i = 0; i < chatsList.length; i += 50) {
+      const batch = chatsList.slice(i, i + 50);
       await sendBatch(batch);
-      await sleep(200);
+      await sleep(150);
     }
 
     syncDone = true;
-    console.log(`🎉 Successfully synced all ${result.chats.length} chats to Laravel!`);
+    console.log(`🎉 Successfully synced all ${chatsList.length} chats to Laravel!`);
   } catch (e) {
     console.error('History sync error:', e.message);
   }
@@ -460,10 +471,19 @@ async function sendBatch(chats) {
     const res = await fetch(`${LARAVEL_URL}/api/whatsapp/sync-phone-data`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel_id: 1, chats, contacts: [] }),
+      body: JSON.stringify({ 
+        channel_id: 'active',
+        phone_number: connectedUser?.phone || null,
+        chats, 
+        contacts: [] 
+      }),
     });
-    if (res.ok) console.log(`  ✔ Synced batch of ${chats.length} chats`);
-    else console.log(`  ✗ Batch sync failed: ${res.status}`);
+    if (res.ok) {
+      console.log(`  ✔ Synced batch of ${chats.length} chats`);
+    } else {
+      const txt = await res.text().catch(() => '');
+      console.log(`  ✗ Batch sync failed: ${res.status} - ${txt.slice(0, 100)}`);
+    }
   } catch (e) { console.error('Batch error:', e.message); }
 }
 
