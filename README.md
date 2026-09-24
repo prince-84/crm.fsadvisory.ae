@@ -2249,7 +2249,15 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Responds dynamically to the active advisor / team selector in the Navbar (`Team` vs `My Calls` vs specific advisor).
     - Automatically updates in real time via `crm:contact-updated` and `crm_call_logged` window events whenever an advisor logs a call outcome in the Contact Drawer.
   - **Backend Endpoint (`GET /api/activities/calling-summary`)**:
-    - High-performance, indexed endpoint aggregating daily calls, connected outcomes (`Interested`, `Callback`, `Meeting`, `Viewing`, `Follow-up`), 3CX PBX recordings duration, and uncontacted lead counts.
+- **171 — Persistent Lead Pool Badge & Call Status Sub-Tag on Leads Desk (`frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`)**:
+  - **Requirement Addressed**:
+    - For leads assigned from the Lead Pool (`is_imported === true`), previously when an advisor updated the lead's call status (e.g. `Interested`, `Callback`, `No Answer`) or created deals (`Deal 1`), the `Lead Pool` badge was replaced solely by the outcome/deal badge, making it difficult to discern the lead's original pool provenance.
+  - **Persistent Origin Indicator**:
+    - Enhanced the `call_status` column rendering in both [`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx) and [`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx).
+    - If a lead originated from the Lead Pool (`ct.is_imported` is true):
+      - **When Uncontacted**: Displays the primary pink **Lead Pool** badge (`bg-pink-100 text-pink-800 border-pink-300`).
+      - **When Contacted or Deal Created**: Displays the active Call Outcome or Deal badge, and immediately underneath it, permanently displays a neat, compact sub-badge **`[Layers] Lead Pool`** (`bg-pink-100 text-pink-800 border-pink-300 text-[9px]`).
+      - Inbound organic/portal leads (`!ct.is_imported`) continue showing only their standard outcome/deal or glowing `NEW` badge.
 
 ---
 

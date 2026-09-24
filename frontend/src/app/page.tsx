@@ -706,20 +706,33 @@ export default function LeadPoolPage() {
           ? ct.opportunities.length
           : (ct.opportunities_count || (ct.active_opportunity ? 1 : 0));
 
+        const isLeadPool = Boolean(ct.is_imported);
+
         if (oppCount > 0) {
           return (
             <td key={colKey} className="p-3">
-              <span 
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#081428] text-[#C8A147] border border-[#C8A147] shadow-xs cursor-pointer hover:bg-[#C8A147] hover:text-[#081428] transition-all"
-                title={`${oppCount} Deal / Opportunity created for this lead${ct.latest_call_outcome ? ` | Last Call: ${ct.latest_call_outcome}` : ''}. Click to open client profile.`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenDrawer(ct);
-                }}
-              >
-                <Briefcase className="w-3 h-3 text-[#C8A147] shrink-0" />
-                <span>Deal {oppCount}</span>
-              </span>
+              <div className="flex flex-col items-start gap-1">
+                <span 
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#081428] text-[#C8A147] border border-[#C8A147] shadow-xs cursor-pointer hover:bg-[#C8A147] hover:text-[#081428] transition-all"
+                  title={`${oppCount} Deal / Opportunity created for this lead${ct.latest_call_outcome ? ` | Last Call: ${ct.latest_call_outcome}` : ''}. Click to open client profile.`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenDrawer(ct);
+                  }}
+                >
+                  <Briefcase className="w-3 h-3 text-[#C8A147] shrink-0" />
+                  <span>Deal {oppCount}</span>
+                </span>
+                {isLeadPool && (
+                  <span 
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-300 shadow-2xs"
+                    title="Lead assigned from Lead Pool"
+                  >
+                    <Layers className="w-2.5 h-2.5 text-pink-600 shrink-0" />
+                    <span>Lead Pool</span>
+                  </span>
+                )}
+              </div>
             </td>
           );
         }
@@ -729,19 +742,30 @@ export default function LeadPoolPage() {
         if (outcome) {
           return (
             <td key={colKey} className="p-3">
-              <span 
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-xs ${getOutcomeBadgeClass(rawOutcome)}`}
-                title={`Last Call Outcome: ${rawOutcome}`}
-              >
-                <Phone className="w-2.5 h-2.5 shrink-0" />
-                <span>{outcome}</span>
-              </span>
+              <div className="flex flex-col items-start gap-1">
+                <span 
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-xs ${getOutcomeBadgeClass(rawOutcome)}`}
+                  title={`Last Call Outcome: ${rawOutcome}`}
+                >
+                  <Phone className="w-2.5 h-2.5 shrink-0" />
+                  <span>{outcome}</span>
+                </span>
+                {isLeadPool && (
+                  <span 
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-300 shadow-2xs"
+                    title="Lead assigned from Lead Pool"
+                  >
+                    <Layers className="w-2.5 h-2.5 text-pink-600 shrink-0" />
+                    <span>Lead Pool</span>
+                  </span>
+                )}
+              </div>
             </td>
           );
         }
 
         // If lead was assigned from Lead Pool, show light pink Lead Pool badge instead of green NEW
-        if (Boolean(ct.is_imported)) {
+        if (isLeadPool) {
           return (
             <td key={colKey} className="p-3">
               <span 
