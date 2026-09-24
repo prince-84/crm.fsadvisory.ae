@@ -926,6 +926,11 @@ class WhatsAppController extends Controller
             $chat->update(['avatar_url' => 'none']);
         }
 
+        // Clean up any stray @lid sender_name on messages
+        WhatsAppMessage::where('chat_id', $chat->id)
+            ->where('sender_name', 'like', '%@lid%')
+            ->update(['sender_name' => null]);
+
         // Mark unread messages as read
         if ($chat->unread_count > 0) {
             $chat->update(['unread_count' => 0]);
@@ -1330,6 +1335,11 @@ class WhatsAppController extends Controller
             }
         }
 
+        $senderName = $isFromMe ? 'You' : ($pushName ?: $chat->contact_name);
+        if ($senderName && str_contains($senderName, '@lid')) {
+            $senderName = $chat->contact ? $chat->contact->name : ($chat->contact_name && !str_contains($chat->contact_name, '@lid') ? $chat->contact_name : null);
+        }
+
         // Prevent duplicate messages by ID
         $existingMsg = WhatsAppMessage::where('message_id', $msgId)->first();
         if (!$existingMsg) {
@@ -1337,7 +1347,7 @@ class WhatsAppController extends Controller
                 'chat_id' => $chat->id,
                 'message_id' => $msgId,
                 'from_me' => $isFromMe,
-                'sender_name' => $isFromMe ? 'You' : ($pushName ?: $chat->contact_name),
+                'sender_name' => $senderName,
                 'text' => $messageText,
                 'media_url' => $mediaUrl,
                 'media_type' => $mediaType,

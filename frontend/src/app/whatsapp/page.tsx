@@ -1692,10 +1692,12 @@ export default function WhatsAppPage() {
                                 : 'bg-white text-[#081428] rounded-tl-xs border border-[#E0DBCF]'
                             }`}
                           >
-                            {/* Sender name for group/incoming */}
-                            {!isFromMe && (
+                            {/* Sender name only for group chats (matching official WhatsApp Web) */}
+                            {!isFromMe && selectedChat?.is_group && (
                               <div className="text-[10px] font-bold text-[#C8A147] mb-0.5">
-                                {msg.sender_name || selectedChat.contact_name}
+                                {msg.sender_name && !msg.sender_name.includes('@lid')
+                                  ? msg.sender_name
+                                  : (selectedChat.contact?.name || selectedChat.contact_name || 'Contact')}
                               </div>
                             )}
 
