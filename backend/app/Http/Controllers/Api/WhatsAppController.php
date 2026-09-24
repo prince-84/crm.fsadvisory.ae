@@ -141,13 +141,13 @@ class WhatsAppController extends Controller
                 $gwStatus = $gwData['status'] ?? 'disconnected';
                 $gwPhone = $gwData['user']['phone'] ?? null;
 
-                if ($gwStatus === 'connected' && $currentUserChannel) {
-                    $updates = ['status' => 'connected'];
-                    if (!empty($gwPhone) && empty($currentUserChannel->phone_number)) {
-                        $updates['phone_number'] = $gwPhone;
+                if ($gwStatus === 'connected' && !empty($gwPhone)) {
+                    $clean = preg_replace('/[^0-9]/', '', $gwPhone);
+                    $last7 = substr($clean, -7);
+                    if ($last7) {
+                        WhatsAppChannel::where('phone_number', 'like', "%{$last7}%")
+                            ->update(['status' => 'connected']);
                     }
-                    $currentUserChannel->update($updates);
-                    $currentUserChannel->refresh();
                 }
             }
         } catch (\Exception $e) {}

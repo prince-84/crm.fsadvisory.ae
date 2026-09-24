@@ -443,12 +443,22 @@ export default function WhatsAppPage() {
         const gwData = await fetchGateway('/api/status');
         if (gwData?.status) {
           setGatewayStatus(gwData.status);
-          if (gwData.status === 'connected') {
-            setChannels((prev) => prev.map((c) => ({
-              ...c,
-              status: 'connected',
-              phone_number: c.phone_number || gwData.user?.phone || c.phone_number,
-            })));
+          const gwClean = (gwData.user?.phone || '').replace(/[^0-9]/g, '');
+          const gwLast7 = gwClean ? gwClean.slice(-7) : null;
+
+          if (gwData.status === 'connected' && gwLast7) {
+            setChannels((prev) => prev.map((c) => {
+              const cClean = (c.phone_number || '').replace(/[^0-9]/g, '');
+              const matchesPhone = cClean && (cClean.includes(gwLast7) || gwClean.includes(cClean.slice(-7)));
+              if (matchesPhone) {
+                return {
+                  ...c,
+                  status: 'connected',
+                  phone_number: gwData.user?.phone || c.phone_number,
+                };
+              }
+              return c;
+            }));
           }
           if (checkAutoQr && gwData.status !== 'connected') {
             handleOpenQrModal();
