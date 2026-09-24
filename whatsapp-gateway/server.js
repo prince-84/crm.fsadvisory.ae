@@ -196,14 +196,42 @@ async function initClient() {
     try {
       const rawJid = msg.from || '';
       let phone = '';
+      let name = '';
+
       if (rawJid.includes('@c.us') || rawJid.includes('@s.whatsapp.net')) {
         phone = `+${rawJid.split('@')[0].replace(/[^0-9]/g, '')}`;
       }
-      let name = '';
+
+      // Check contact to resolve real phone number (especially for @lid multi-device format!)
+      try {
+        const contact = await msg.getContact();
+        if (contact) {
+          if (!name) name = contact.name || contact.pushname || contact.formattedName || '';
+          if (!phone) {
+            const num = contact.number || contact.id?.user;
+            if (num && !String(num).includes('lid')) {
+              phone = `+${String(num).replace(/[^0-9]/g, '')}`;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Check chat to resolve name and phone if still missing
       try {
         const chat = await msg.getChat();
-        name = chat?.name || chat?.formattedTitle || '';
+        if (!name) name = chat?.name || chat?.formattedTitle || '';
+        if (!phone && chat?.id?._serialized && chat.id._serialized.includes('@c.us')) {
+          phone = `+${chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '')}`;
+        }
       } catch (_) {}
+
+      if (rawJid && !phone && phoneToNameMap[rawJid]) {
+        phone = phoneToNameMap[rawJid];
+      }
+      if (rawJid && phone) {
+        phoneToNameMap[rawJid] = phone;
+        saveContacts();
+      }
 
       let mediaBase64 = null;
       let mediaFilename = '';
@@ -240,14 +268,42 @@ async function initClient() {
     try {
       const rawJid = msg.to || msg.id?.remote || '';
       let phone = '';
+      let name = '';
+
       if (rawJid.includes('@c.us') || rawJid.includes('@s.whatsapp.net')) {
         phone = `+${rawJid.split('@')[0].replace(/[^0-9]/g, '')}`;
       }
-      let name = '';
+
+      // Check contact to resolve real phone number (especially for @lid!)
+      try {
+        const contact = await msg.getContact();
+        if (contact) {
+          if (!name) name = contact.name || contact.pushname || contact.formattedName || '';
+          if (!phone) {
+            const num = contact.number || contact.id?.user;
+            if (num && !String(num).includes('lid')) {
+              phone = `+${String(num).replace(/[^0-9]/g, '')}`;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Check chat to resolve name and phone if still missing
       try {
         const chat = await msg.getChat();
-        name = chat?.name || chat?.formattedTitle || '';
+        if (!name) name = chat?.name || chat?.formattedTitle || '';
+        if (!phone && chat?.id?._serialized && chat.id._serialized.includes('@c.us')) {
+          phone = `+${chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '')}`;
+        }
       } catch (_) {}
+
+      if (rawJid && !phone && phoneToNameMap[rawJid]) {
+        phone = phoneToNameMap[rawJid];
+      }
+      if (rawJid && phone) {
+        phoneToNameMap[rawJid] = phone;
+        saveContacts();
+      }
 
       let mediaBase64 = null;
       let mediaFilename = '';

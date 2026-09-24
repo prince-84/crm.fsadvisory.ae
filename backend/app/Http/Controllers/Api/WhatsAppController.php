@@ -673,6 +673,44 @@ class WhatsAppController extends Controller
      */
     public function chats(Request $request)
     {
+        // Auto-heal: If any orphaned @lid duplicate chats exist, merge their messages into the real contact chat
+        try {
+            $lidChats = WhatsAppChat::where(function($q) {
+                $q->where('phone', 'like', '%@lid%')
+                  ->orWhere('contact_name', 'like', '%@lid%')
+                  ->orWhere('remote_jid', 'like', '%@lid%');
+            })->where('phone', 'not like', '+%')->get();
+
+            foreach ($lidChats as $lidChat) {
+                // Find candidate real chat in the database (matching channel or most recent real chat)
+                $realChat = WhatsAppChat::where('id', '!=', $lidChat->id)
+                    ->where('phone', 'like', '+%')
+                    ->where('channel_id', $lidChat->channel_id)
+                    ->latest('last_message_at')
+                    ->first();
+
+                if (!$realChat) {
+                    $realChat = WhatsAppChat::where('id', '!=', $lidChat->id)
+                        ->where('phone', 'like', '+%')
+                        ->latest('last_message_at')
+                        ->first();
+                }
+
+                if ($realChat) {
+                    WhatsAppMessage::where('chat_id', $lidChat->id)
+                        ->update(['chat_id' => $realChat->id]);
+
+                    if ($lidChat->last_message) {
+                        $realChat->update([
+                            'last_message' => $lidChat->last_message,
+                            'last_message_at' => now(),
+                        ]);
+                    }
+                    $lidChat->delete();
+                }
+            }
+        } catch (\Exception $e) {}
+
         $query = WhatsAppChat::with([
             'channel',
             'contact.opportunity.buyerQualification',
@@ -1203,31 +1241,44 @@ class WhatsAppController extends Controller
             $cleanPhone = preg_replace('/[^0-9]/', '', explode('@', $remoteJid)[0] ?? '');
         }
 
-        // 1. Find existing chat by remote_jid OR phone number
+        // 1. Find existing chat by remote_jid OR phone number (GLOBALLY across channels)
         $chat = null;
         if ($remoteJid) {
-            $chat = WhatsAppChat::where('channel_id', $channelId)
-                ->where(function ($q) use ($remoteJid, $cleanPhone, $remotePhone) {
-                    $q->where('remote_jid', $remoteJid);
-                    if ($cleanPhone) {
-                        $q->orWhere('phone', "+{$cleanPhone}")
-                          ->orWhere('phone', $cleanPhone);
-                    }
-                    if ($remotePhone) {
-                        $q->orWhere('phone', $remotePhone);
-                    }
-                })->first();
+            $chat = WhatsAppChat::where('remote_jid', $remoteJid)->first();
         }
 
-        if (!$chat && $cleanPhone) {
-            $chat = WhatsAppChat::where('channel_id', $channelId)
-                ->where(function ($q) use ($cleanPhone) {
-                    $q->where('phone', "+{$cleanPhone}")
-                      ->orWhere('phone', $cleanPhone);
-                })->first();
+        if (!$chat && $cleanPhone && strlen($cleanPhone) >= 7) {
+            $last7 = substr($cleanPhone, -7);
+            $chat = WhatsAppChat::where(function ($q) use ($last7, $cleanPhone) {
+                $q->where('phone', 'like', "%{$last7}%")
+                  ->orWhere('phone', "+{$cleanPhone}")
+                  ->orWhere('phone', $cleanPhone);
+            })->first();
         }
 
-        if (!$chat) {
+        if (!$chat && $pushName && strlen($pushName) >= 3 && !str_contains($pushName, '@lid')) {
+            $chat = WhatsAppChat::where('contact_name', $pushName)->first();
+        }
+
+        // If existing chat was found, preserve its existing channel_id!
+        if ($chat) {
+            $channelId = $chat->channel_id;
+            $updates = [];
+            if ($remoteJid && empty($chat->remote_jid)) {
+                $updates['remote_jid'] = $remoteJid;
+            }
+            if ($cleanPhone && (empty($chat->phone) || str_contains($chat->phone, '@lid'))) {
+                $updates['phone'] = "+{$cleanPhone}";
+            }
+            if ($pushName && (empty($chat->contact_name) || str_contains($chat->contact_name, '@lid'))) {
+                $updates['contact_name'] = $pushName;
+            }
+            if (!empty($updates)) {
+                $chat->update($updates);
+            }
+        } else {
+            // Create new chat
+            $displayName = $pushName ?: ($cleanPhone ? "+{$cleanPhone}" : ($remoteJid ?: 'WhatsApp Contact'));
             $contact = null;
             $last7 = $cleanPhone ? substr($cleanPhone, -7) : null;
             if ($last7 && !str_contains($remoteJid, '@lid')) {
@@ -1235,8 +1286,9 @@ class WhatsAppController extends Controller
                     ->orWhere('secondary_phone', 'like', "%{$last7}%")
                     ->first();
             }
-
-            $displayName = $contact ? $contact->name : ($pushName ?: ($cleanPhone ? "+{$cleanPhone}" : ($remoteJid ?: 'WhatsApp Contact')));
+            if ($contact && empty($pushName)) {
+                $displayName = $contact->name;
+            }
 
             $chat = WhatsAppChat::create([
                 'channel_id' => $channelId,
