@@ -13,7 +13,49 @@ const path    = require('path');
 
 const app  = express();
 const PORT = process.env.PORT || 5003;
-const LARAVEL_URL = (process.env.LARAVEL_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
+
+// ── Resilient Laravel Backend URL Resolver ─────────────────────────────────
+const CANDIDATE_LARAVEL_URLS = [
+  process.env.LARAVEL_API_URL,
+  process.env.LARAVEL_URL,
+  'https://api.fsadvisory.ae',
+  'http://127.0.0.1:8000',
+  'http://localhost:8000',
+  'http://127.0.0.1',
+  'http://localhost',
+].filter(Boolean);
+
+let activeLaravelBase = null;
+
+async function postToLaravel(apiPath, body) {
+  const cleanPath = apiPath.startsWith('/') ? apiPath : '/' + apiPath;
+  const bases = activeLaravelBase 
+    ? [activeLaravelBase, ...CANDIDATE_LARAVEL_URLS.filter(b => b !== activeLaravelBase)]
+    : CANDIDATE_LARAVEL_URLS;
+
+  for (const base of bases) {
+    try {
+      const trimmed = base.replace(/\/+$/, '');
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 9000);
+      const res = await fetch(`${trimmed}${cleanPath}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      clearTimeout(tid);
+      if (res.ok) {
+        if (activeLaravelBase !== trimmed) {
+          activeLaravelBase = trimmed;
+          console.log(`📡 Linked WhatsApp gateway to active Laravel backend at: ${activeLaravelBase}`);
+        }
+        return res;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -95,10 +137,9 @@ async function initClient() {
 
     // Notify Laravel with connected phone number
     try {
-      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/active/pair-confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone_number: phone, platform: 'whatsapp-web.js (Puppeteer)' }),
+      await postToLaravel('/api/whatsapp/channels/active/pair-confirm', {
+        phone_number: phone,
+        platform: 'whatsapp-web.js (Puppeteer)',
       });
     } catch (_) {}
 
@@ -123,7 +164,7 @@ async function initClient() {
 
     // Notify Laravel to mark channel as disconnected
     try {
-      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/active/disconnect`, { method: 'POST' });
+      await postToLaravel('/api/whatsapp/channels/active/disconnect', {});
     } catch (_) {}
 
     // Reinitialize to display fresh QR code for next scan
@@ -143,7 +184,7 @@ async function initClient() {
       fs.rmSync(path.join(__dirname, 'auth_sessions'), { recursive: true, force: true });
     } catch (_) {}
     try {
-      await fetch(`${LARAVEL_URL}/api/whatsapp/channels/active/disconnect`, { method: 'POST' });
+      await postToLaravel('/api/whatsapp/channels/active/disconnect', {});
     } catch (_) {}
     await sleep(2000);
     initClient();
@@ -273,39 +314,31 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function postAckWebhook(data) {
   try {
-    await fetch(`${LARAVEL_URL}/api/whatsapp/webhook`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event: 'message_ack',
-        type: 'ack',
-        channel_id: 'active',
-        id: data.id,
-        ack: data.ack,
-        status: data.status,
-      }),
+    await postToLaravel('/api/whatsapp/webhook', {
+      event: 'message_ack',
+      type: 'ack',
+      channel_id: 'active',
+      id: data.id,
+      ack: data.ack,
+      status: data.status,
     });
   } catch (_) {}
 }
 
 async function postWebhook(data) {
   try {
-    await fetch(`${LARAVEL_URL}/api/whatsapp/webhook`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        channel_id: 'active',
-        id:         data.id,
-        remote_jid: data.remote_jid || data.phone,
-        from:       data.remote_jid || data.phone,
-        phone:      data.phone || '',
-        push_name:  data.name || '',
-        text:       data.text,
-        media_type: data.type === 'chat' ? 'text' : (data.type || 'text'),
-        media_base64: data.media_base64 || null,
-        filename:   data.filename || '',
-        from_me:    data.fromMe,
-      }),
+    await postToLaravel('/api/whatsapp/webhook', {
+      channel_id: 'active',
+      id:         data.id,
+      remote_jid: data.remote_jid || data.phone,
+      from:       data.remote_jid || data.phone,
+      phone:      data.phone || '',
+      push_name:  data.name || '',
+      text:       data.text,
+      media_type: data.type === 'chat' ? 'text' : (data.type || 'text'),
+      media_base64: data.media_base64 || null,
+      filename:   data.filename || '',
+      from_me:    data.fromMe,
     });
   } catch (e) { console.error('Webhook POST error:', e.message); }
 }
@@ -468,21 +501,16 @@ async function syncHistoryToLaravel() {
 
 async function sendBatch(chats) {
   try {
-    const res = await fetch(`${LARAVEL_URL}/api/whatsapp/sync-phone-data`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        channel_id: 'active',
-        phone_number: connectedUser?.phone || null,
-        chats, 
-        contacts: [] 
-      }),
+    const res = await postToLaravel('/api/whatsapp/sync-phone-data', {
+      channel_id: 'active',
+      phone_number: connectedUser?.phone || null,
+      chats, 
+      contacts: [] 
     });
-    if (res.ok) {
-      console.log(`  ✔ Synced batch of ${chats.length} chats`);
+    if (res && res.ok) {
+      console.log(`  ✔ Synced batch of ${chats.length} chats to Laravel`);
     } else {
-      const txt = await res.text().catch(() => '');
-      console.log(`  ✗ Batch sync failed: ${res.status} - ${txt.slice(0, 100)}`);
+      console.warn(`  ✗ Batch sync failed for ${chats.length} chats`);
     }
   } catch (e) { console.error('Batch error:', e.message); }
 }
