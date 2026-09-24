@@ -2288,6 +2288,30 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Upgraded `GET /api/contacts/upcoming-alerts` to categorize alerts into `'overdue'`, `'imminent'`, and `'upcoming'`, returns calculated unread counts, and supports advisor scope filtering.
     - Background auto-polling every 30 seconds with immediate real-time sync on `crm:contact-updated` and `crm_call_logged` window events.
 
+- **173 — Authentic WhatsApp Pairing Resolution, Mock QR Elimination & Expiration Auto-Refresh (`whatsapp-gateway/server.js`, `backend/app/Http/Controllers/Api/WhatsAppController.php`, `backend/routes/api.php`, `frontend/src/app/whatsapp/page.tsx`)**:
+  - **Issue Diagnosed ("Could not scan, try again" on Mobile Phone)**:
+    - When scanning the pairing QR code with the WhatsApp mobile app camera, the phone failed with the error: *"Could not scan, try again"*.
+  - **Technical Root Cause Analysis**:
+    1. **Mock String Fallback**: In `WhatsAppController.php` (`generateQr`), when the WhatsApp gateway daemon did not have an active pairing code ready, the controller generated an arbitrary placeholder string (`'2@' . Str::random(44) . ',' . Str::random(32) . ',' . time() . ',1'`). The frontend rendered this string into an SVG QR code. Because WhatsApp's cryptographic handshake requires genuine public keys emitted from WhatsApp Web's Noise protocol pairing server, scanning this mock string immediately failed on the mobile device with *"Could not scan, try again"*.
+    2. **Stale/Expired QR Retention in Gateway**: WhatsApp Web QR codes expire every 25–30 seconds. In `whatsapp-gateway/server.js`, `currentQrRaw` and `currentQrImage` were retained in memory without timestamping or expiration detection. When WhatsApp Web showed "Click to reload QR code", Puppeteer stopped receiving events, causing the gateway to serve expired pairing tokens that the mobile app rejected.
+    3. **Puppeteer Retry Limits**: By default, `whatsapp-web.js` capped QR generation retries at 5 (`qrMaxRetries`), after which it terminated pairing attempts and remained disconnected.
+  - **Comprehensive Architectural Fixes**:
+    - **Total Elimination of Fake/Mock QR Codes (`WhatsAppController.php`)**:
+      - Removed the `2@Str::random(...)` fallback entirely.
+      - If an authentic cryptographic QR code is not ready from WhatsApp Web, `qr_code` and `qr_image` return `null` with `is_real: false`, ensuring no unparseable mock barcodes are ever rendered or scanned.
+    - **Gateway Expiration Tracking & Auto-Reload (`whatsapp-gateway/server.js`)**:
+      - Added `currentQrTimestamp` tracking on `client.on('qr')`.
+      - Marked QR codes as expired after 30 seconds (`is_expired: true`).
+      - Implemented `triggerPageQrReload()`: Automatically detects and clicks WhatsApp Web's "Reload QR code" overlay (`span[data-icon="refresh"]`, `button[aria-label="Reload QR code"]`) within the headless Puppeteer page to fetch fresh cryptographic pairing keys without restarting the browser.
+      - Implemented `refreshQrSession()`: Proactively reloads the page or reinitializes if the session is stuck or disconnected.
+      - Configured `qrMaxRetries: 0` (unlimited retries) and `takeoverOnConflict: true` in the `Client` constructor.
+      - Upgraded `/api/logout`, `/api/reset`, and `/api/unlink` to cleanly destroy existing sessions, wipe `auth_sessions/`, and generate fresh QR codes within 1.5 seconds.
+    - **Frontend Strict Authentic QR Rendering & Live Modal Polling (`frontend/src/app/whatsapp/page.tsx`)**:
+      - QR codes are strictly rendered **only** when `isRealQr === true` and valid data exists.
+      - While authentic cryptographic keys are being generated from WhatsApp Web, the modal displays an animated loader: *"Fetching Live WhatsApp QR... Waiting for official cryptographic pairing keys from WhatsApp Web..."*.
+      - Added real-time 2.5s polling while the modal is open: Automatically detects when the phone successfully pairs, displays a success notification, mirrors chats into the CRM, and auto-closes the modal.
+      - Upgraded QR display resolution to 220px with crisp pixel-rendering and high error-correction level (`H`), making it effortless for phone cameras to scan without blur or focus latency.
+
 ---
 
 

@@ -246,7 +246,7 @@ class WhatsAppController extends Controller
 
         // Determine if this is an authentic gateway QR
         $isReal = !empty($realQrCode) || !empty($realQrImage);
-        $qrPayload = $realQrCode ?? ($isReal ? '' : ('2@' . Str::random(44) . ',' . Str::random(32) . ',' . time() . ',1'));
+        $qrPayload = $realQrCode ?: null;
 
         // Only mark this channel connected if its own phone matches the connected gateway session
         $isThisChannelConnected = false;
@@ -271,12 +271,12 @@ class WhatsAppController extends Controller
         return response()->json([
             'success' => true,
             'channel' => $channel,
-            'qr_code' => $qrPayload,
-            'qr_image' => $realQrImage,
-            'is_real' => $isReal,
+            'qr_code' => $isThisChannelConnected ? null : $qrPayload,
+            'qr_image' => $isThisChannelConnected ? null : $realQrImage,
+            'is_real' => $isReal && !$isThisChannelConnected,
             'gateway_status' => $gatewayStatus,
             'connected_user' => $connectedUser,
-            'expires_in' => 45, // seconds
+            'expires_in' => 30, // seconds
             'instructions' => [
                 '1. Open WhatsApp on your mobile phone',
                 '2. Tap Menu or Settings and select Linked Devices',

@@ -76,8 +76,58 @@ let isInitializing = false;
 let connectionStatus = 'disconnected';
 let currentQrImage   = null;
 let currentQrRaw     = null;
+let currentQrTimestamp = null;
 let connectedUser    = null;
 let syncDone         = false;
+
+async function triggerPageQrReload() {
+  if (!client || !client.pupPage) return false;
+  try {
+    const clicked = await client.pupPage.evaluate(() => {
+      const selectors = [
+        'div[data-ref] span[role="button"]',
+        'button[aria-label="Reload QR code"]',
+        'span[data-icon="refresh"]',
+        'div[data-ref] button',
+        'div[role="button"]'
+      ];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          el.click();
+          return true;
+        }
+      }
+      return false;
+    });
+    if (clicked) {
+      console.log('🔄 Clicked reload QR button on WhatsApp Web page');
+      return true;
+    }
+  } catch (e) {
+    console.warn('Could not click reload button:', e.message);
+  }
+  return false;
+}
+
+async function refreshQrSession() {
+  if (connectionStatus === 'connected') return;
+  console.log('🔄 Refreshing WhatsApp Web session for fresh cryptographic QR code...');
+  currentQrImage = null;
+  currentQrRaw = null;
+  currentQrTimestamp = null;
+  connectionStatus = 'connecting';
+  if (client && client.pupPage) {
+    try {
+      const clicked = await triggerPageQrReload();
+      if (clicked) return;
+      console.log('🔄 Reloading Puppeteer page for fresh QR code...');
+      await client.pupPage.reload({ waitUntil: 'domcontentloaded' });
+      return;
+    } catch (_) {}
+  }
+  initClient();
+}
 
 // ── Init ────────────────────────────────────────────────────────────────────
 async function initClient() {
@@ -86,6 +136,7 @@ async function initClient() {
   connectionStatus = 'connecting';
   currentQrImage   = null;
   currentQrRaw     = null;
+  currentQrTimestamp = null;
   connectedUser    = null;
   syncDone         = false;
 
@@ -100,6 +151,9 @@ async function initClient() {
     authStrategy: new LocalAuth({
       dataPath: path.join(__dirname, 'auth_sessions'),
     }),
+    qrMaxRetries: 0,
+    takeoverOnConflict: true,
+    takeoverTimeoutMs: 0,
     puppeteer: {
       headless: true,
       args: [
@@ -117,9 +171,10 @@ async function initClient() {
   client.on('qr', async (qr) => {
     connectionStatus = 'qr_ready';
     currentQrRaw     = qr;
+    currentQrTimestamp = Date.now();
     try {
-      currentQrImage = await QRCode.toDataURL(qr, { errorCorrectionLevel: 'H', width: 300 });
-      console.log('📲 QR ready — scan with WhatsApp on your phone!');
+      currentQrImage = await QRCode.toDataURL(qr, { errorCorrectionLevel: 'H', width: 320 });
+      console.log('📲 Fresh authentic QR ready — scan with WhatsApp on your phone!');
     } catch (e) { console.error('QR error:', e.message); }
   });
 
@@ -640,16 +695,54 @@ function transcodeToWhatsAppOpus(base64Data) {
 }
 
 // ── REST API ────────────────────────────────────────────────────────────────
-app.get('/api/status', (_, res) =>
-  res.json({ status: connectionStatus, user: connectedUser, has_qr: !!currentQrImage }));
-
-app.get('/api/qr', (_, res) =>
+app.get('/api/status', (_, res) => {
+  const now = Date.now();
+  const isExpired = currentQrTimestamp ? (now - currentQrTimestamp > 30000) : false;
   res.json({
     status: connectionStatus,
-    qr_image: currentQrImage,
-    qr_code: currentQrRaw,
-    expires_in: 60
-  }));
+    user: connectedUser,
+    has_qr: !!currentQrImage && !isExpired,
+    is_expired: isExpired,
+    qr_age_sec: currentQrTimestamp ? Math.floor((now - currentQrTimestamp) / 1000) : null
+  });
+});
+
+app.get('/api/qr', async (_, res) => {
+  const now = Date.now();
+  const ageMs = currentQrTimestamp ? (now - currentQrTimestamp) : null;
+  const isExpired = ageMs !== null && ageMs > 30000;
+
+  if (connectionStatus === 'connected') {
+    return res.json({
+      status: 'connected',
+      user: connectedUser,
+      qr_image: null,
+      qr_code: null,
+      is_expired: false,
+      expires_in: 0
+    });
+  }
+
+  // If expired or missing while disconnected/qr_ready, auto-trigger refresh
+  if (isExpired || !currentQrRaw) {
+    refreshQrSession().catch(() => {});
+  }
+
+  const validQrRaw = isExpired ? null : currentQrRaw;
+  const validQrImage = isExpired ? null : currentQrImage;
+  const expiresIn = (currentQrTimestamp && !isExpired)
+    ? Math.max(0, Math.floor((30000 - ageMs) / 1000))
+    : 0;
+
+  res.json({
+    status: connectionStatus,
+    qr_image: validQrImage,
+    qr_code: validQrRaw,
+    is_expired: isExpired,
+    expires_in: expiresIn,
+    user: connectedUser
+  });
+});
 
 app.post('/api/send', async (req, res) => {
   if (connectionStatus !== 'connected' || !client)
@@ -792,14 +885,22 @@ app.get('/api/avatar/:phone', async (req, res) => {
   }
 });
 
-app.post('/api/logout', async (_, res) => {
-  res.json({ success: true, message: 'Logging out...' });
+app.all(['/api/logout', '/api/reset', '/api/unlink'], async (_, res) => {
+  res.json({ success: true, message: 'Unlinking and generating fresh QR...' });
+  console.log('🔄 Full reset triggered. Purging saved session & generating fresh QR code...');
   try { if (client) await client.logout(); } catch (_) {}
+  try { if (client) await client.destroy(); } catch (_) {}
+  client = null;
   try {
     fs.rmSync(path.join(__dirname, 'auth_sessions'), { recursive: true, force: true });
   } catch (_) {}
-  connectionStatus = 'disconnected';
-  await sleep(3000);
+  connectionStatus = 'connecting';
+  currentQrImage   = null;
+  currentQrRaw     = null;
+  currentQrTimestamp = null;
+  connectedUser    = null;
+  isInitializing   = false;
+  await sleep(1500);
   initClient();
 });
 

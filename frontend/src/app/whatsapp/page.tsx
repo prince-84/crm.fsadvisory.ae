@@ -387,17 +387,53 @@ export default function WhatsAppPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
-  // QR Countdown Timer
+  // QR Countdown Timer & Modal Live Polling
   useEffect(() => {
     let timer: any = null;
-    if (isQrModalOpen && qrTimer > 0) {
-      timer = setInterval(() => {
-        setQrTimer((prev) => prev - 1);
-      }, 1000);
-    } else if (qrTimer === 0 && isQrModalOpen) {
-      handleRefreshQr();
+    let pollInterval: any = null;
+
+    if (isQrModalOpen) {
+      if (qrTimer > 0) {
+        timer = setInterval(() => {
+          setQrTimer((prev) => prev - 1);
+        }, 1000);
+      } else if (qrTimer === 0) {
+        handleRefreshQr();
+      }
+
+      // Fast-poll gateway while QR modal is open to auto-detect pairing completion or fresh QR
+      pollInterval = setInterval(async () => {
+        try {
+          const st = await fetchGateway('/api/qr');
+          if (st?.status === 'connected') {
+            setQrGatewayStatus('connected');
+            setGatewayStatus('connected');
+            if (st.user) setQrConnectedUser(st.user);
+            setIsQrModalOpen(false);
+            Swal.fire({
+              icon: 'success',
+              title: 'WhatsApp Connected!',
+              text: `Successfully linked ${st.user?.phone || 'device'}. Mirroring chats into CRM...`,
+              timer: 3000,
+              showConfirmButton: false,
+            });
+            loadChannels();
+            loadChats();
+          } else if (st?.qr_image) {
+            setQrImageData(st.qr_image);
+            if (st.qr_code) setQrCodeData(st.qr_code);
+            setIsRealQr(true);
+            if (st.expires_in) setQrTimer(st.expires_in);
+            if (st.status) setQrGatewayStatus(st.status);
+          }
+        } catch (_) {}
+      }, 2500);
     }
-    return () => clearInterval(timer);
+
+    return () => {
+      if (timer) clearInterval(timer);
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [isQrModalOpen, qrTimer]);
 
   // Unified Gateway Caller: Direct on HTTP/Localhost, or via Laravel Proxy on HTTPS/Vercel
@@ -1038,14 +1074,33 @@ export default function WhatsAppPage() {
     }
     const finalTargetId = Number(targetId) || (channels[0]?.id ? Number(channels[0].id) : 1);
     setQrChannelId(finalTargetId);
-    setQrTimer(45);
+    setQrTimer(30);
     setQrImageData('');
     setQrCodeData('');
     setIsRealQr(false);
     wasConnectedOnOpenRef.current = (qrGatewayStatus === 'connected' || gatewayStatus === 'connected');
     setIsQrModalOpen(true);
 
-    // 1. Immediately request QR from CRM Backend API (Ultra-fast <100ms, guaranteed on Vercel & HTTPS)
+    // 1. Fetch live gateway QR first (direct or via Laravel proxy)
+    try {
+      const data = await fetchGateway('/api/qr');
+      if (data?.status === 'connected') {
+        setQrGatewayStatus('connected');
+        setGatewayStatus('connected');
+        if (data.user) setQrConnectedUser(data.user);
+        return;
+      }
+      if (data?.qr_image || data?.qr_code) {
+        if (data.qr_image) setQrImageData(data.qr_image);
+        if (data.qr_code) setQrCodeData(data.qr_code);
+        setIsRealQr(true);
+        if (data.expires_in) setQrTimer(data.expires_in);
+      }
+      if (data?.status) setQrGatewayStatus(data.status);
+      if (data?.user) setQrConnectedUser(data.user);
+    } catch (_) {}
+
+    // 2. Request QR from CRM Backend API
     try {
       const backendRes = await fetchApi('/whatsapp/channels/generate-qr', {
         method: 'POST',
@@ -1054,13 +1109,12 @@ export default function WhatsAppPage() {
           agent_name: currentUser?.name || 'Active Advisor',
         }),
       });
-      if (backendRes?.qr_image) {
-        setQrImageData(backendRes.qr_image);
+      if (backendRes?.is_real && (backendRes.qr_image || backendRes.qr_code)) {
+        if (backendRes.qr_image) setQrImageData(backendRes.qr_image);
+        if (backendRes.qr_code) setQrCodeData(backendRes.qr_code);
+        setIsRealQr(true);
+        if (backendRes.expires_in) setQrTimer(backendRes.expires_in);
       }
-      if (backendRes?.qr_code) {
-        setQrCodeData(backendRes.qr_code);
-      }
-      if (backendRes?.is_real) setIsRealQr(true);
       if (backendRes?.gateway_status) {
         setQrGatewayStatus(backendRes.gateway_status);
         if (backendRes.gateway_status === 'connected') {
@@ -1071,31 +1125,35 @@ export default function WhatsAppPage() {
     } catch (err) {
       console.warn('Backend QR fetch failed', err);
     }
-
-    // 2. Fetch pre-rendered PNG from gateway (direct or via Laravel proxy)
-    try {
-      const data = await fetchGateway('/api/qr');
-      if (data?.qr_image) {
-        setQrImageData(data.qr_image);
-        setIsRealQr(true);
-      }
-      if (data?.qr_code) {
-        setQrCodeData(data.qr_code);
-        setIsRealQr(true);
-      }
-      if (data?.status) {
-        setQrGatewayStatus(data.status);
-        if (data.status === 'connected') {
-          wasConnectedOnOpenRef.current = true;
-        }
-      }
-      if (data?.user) setQrConnectedUser(data.user);
-    } catch (_) {}
   };
 
   const handleRefreshQr = async (forceLogout = false) => {
-    setQrTimer(45);
-    // 1. Refresh from backend API immediately
+    // 1. Fetch gateway QR
+    try {
+      const data = await fetchGateway('/api/qr');
+      if (data?.status === 'connected') {
+        setQrGatewayStatus('connected');
+        setGatewayStatus('connected');
+        if (data.user) setQrConnectedUser(data.user);
+        setIsQrModalOpen(false);
+        loadChannels();
+        return;
+      }
+      if (data?.qr_image || data?.qr_code) {
+        if (data.qr_image) setQrImageData(data.qr_image);
+        if (data.qr_code) setQrCodeData(data.qr_code);
+        setIsRealQr(true);
+        if (data.expires_in) setQrTimer(data.expires_in);
+      } else {
+        setIsRealQr(false);
+        setQrImageData('');
+        setQrCodeData('');
+      }
+      if (data?.status) setQrGatewayStatus(data.status);
+      if (data?.user) setQrConnectedUser(data.user);
+    } catch (_) {}
+
+    // 2. Refresh from backend API
     try {
       const backendRes = await fetchApi('/whatsapp/channels/generate-qr', {
         method: 'POST',
@@ -1104,33 +1162,17 @@ export default function WhatsAppPage() {
           force_refresh: forceLogout,
         }),
       });
-      if (backendRes?.qr_image) {
-        setQrImageData(backendRes.qr_image);
+      if (backendRes?.is_real && (backendRes.qr_image || backendRes.qr_code)) {
+        if (backendRes.qr_image) setQrImageData(backendRes.qr_image);
+        if (backendRes.qr_code) setQrCodeData(backendRes.qr_code);
+        setIsRealQr(true);
+        if (backendRes.expires_in) setQrTimer(backendRes.expires_in);
       }
-      if (backendRes?.qr_code) {
-        setQrCodeData(backendRes.qr_code);
-      }
-      if (backendRes?.is_real) setIsRealQr(true);
       if (backendRes?.gateway_status) setQrGatewayStatus(backendRes.gateway_status);
       if (backendRes?.connected_user) setQrConnectedUser(backendRes.connected_user);
     } catch (err) {
       console.warn('Backend QR refresh failed', err);
     }
-
-    // 2. Refresh gateway QR
-    try {
-      const data = await fetchGateway('/api/qr');
-      if (data?.qr_image) {
-        setQrImageData(data.qr_image);
-        setIsRealQr(true);
-      }
-      if (data?.qr_code) {
-        setQrCodeData(data.qr_code);
-        setIsRealQr(true);
-      }
-      if (data?.status) setQrGatewayStatus(data.status);
-      if (data?.user) setQrConnectedUser(data.user);
-    } catch (_) {}
   };
 
   const handleUnlinkAndScanNew = async () => {
@@ -2272,49 +2314,64 @@ export default function WhatsAppPage() {
               
               {/* QR Container */}
               <div className="relative p-3 bg-white rounded-lg shadow-md shrink-0 flex flex-col items-center">
-                {/* Real / Mock QR Badge */}
+                {/* Real / Loading QR Badge */}
                 <div className="mb-2">
-                  {isRealQr ? (
-                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                  {isRealQr && (qrImageData || qrCodeData) ? (
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                       Authentic WhatsApp QR
                     </span>
                   ) : (
-                    <span className="text-[10px] font-medium text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
-                      {isUnlinking ? 'Resetting Session...' : 'Generating Pairing Session...'}
+                    <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-spin"></span>
+                      {isUnlinking ? 'Resetting Session...' : 'Generating Authentic QR...'}
                     </span>
                   )}
                 </div>
 
-                {qrImageData ? (
+                {isRealQr && qrImageData ? (
                   <img
                     src={qrImageData}
                     alt="WhatsApp QR Code"
-                    width={160}
-                    height={160}
+                    width={220}
+                    height={220}
+                    className="rounded shadow-xs"
                     style={{ imageRendering: 'pixelated' }}
                   />
-                ) : qrCodeData ? (
-                  <div className="p-1.5 bg-white rounded-md flex items-center justify-center">
+                ) : isRealQr && qrCodeData ? (
+                  <div className="p-2 bg-white rounded-md flex items-center justify-center shadow-xs">
                     <QRCodeSVG
                       value={qrCodeData}
-                      size={152}
+                      size={210}
                       level="M"
                       includeMargin={false}
                     />
                   </div>
                 ) : (
-                  <div className="w-40 h-40 flex flex-col items-center justify-center gap-2">
-                    <RefreshCw className="w-6 h-6 animate-spin text-[#081428]" />
-                    <span className="text-[10px] text-slate-400 font-mono">Generating QR...</span>
+                  <div className="w-52 h-52 flex flex-col items-center justify-center gap-3 p-4 text-center">
+                    <RefreshCw className="w-8 h-8 animate-spin text-[#25D366]" />
+                    <span className="text-xs text-slate-800 font-bold">
+                      {isUnlinking ? 'Resetting WhatsApp session...' : 'Fetching Live WhatsApp QR...'}
+                    </span>
+                    <span className="text-[11px] text-slate-500 leading-tight">
+                      Waiting for official cryptographic pairing keys from WhatsApp Web...
+                    </span>
                   </div>
                 )}
 
                 {/* Refresh Overlay / Timer */}
-                <div className="mt-2 flex items-center gap-1 text-[10px] font-mono text-slate-600">
-                  <Clock className="w-3 h-3 text-[#25D366]" />
-                  <span>Expires in: <strong>{qrTimer}s</strong></span>
+                <div className="mt-2.5 flex items-center justify-between w-full px-1 text-[11px] font-mono text-slate-600">
+                  <div className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-[#25D366]" />
+                    <span>Expires: <strong>{qrTimer}s</strong></span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRefreshQr(true)}
+                    className="text-[10px] font-sans font-bold text-slate-600 hover:text-[#081428] underline cursor-pointer"
+                  >
+                    Refresh
+                  </button>
                 </div>
               </div>
 
