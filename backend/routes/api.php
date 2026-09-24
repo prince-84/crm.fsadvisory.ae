@@ -122,6 +122,7 @@ Route::middleware(['crm.auth'])->group(function () {
 
     // Activity Logs
     Route::get('/activities', [ActivityController::class, 'index']);
+    Route::get('/activities/calling-summary', [ActivityController::class, 'callingSummary']);
     Route::post('/activities', [ActivityController::class, 'store']);
 
     // Call Recordings

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import ContactDrawer from '@/components/ContactDrawer';
@@ -301,6 +301,57 @@ export default function LeadPoolPage() {
       })
       .catch(console.error);
   }, []);
+
+  // Compact Daily Calling Summary Tracker State (Today's Progress)
+  const [callingStats, setCallingStats] = useState({
+    calls_made: 0,
+    connected_calls: 0,
+    connection_rate: 0,
+    total_minutes: 0,
+    talk_time_formatted: '0m',
+    remaining_leads: 0,
+  });
+  const [loadingCallingStats, setLoadingCallingStats] = useState(false);
+
+  const fetchCallingStats = useCallback(async () => {
+    setLoadingCallingStats(true);
+    try {
+      const ownerParam = selectedOwner && selectedOwner !== 'auto' ? selectedOwner : '';
+      const queryStr = ownerParam ? `?user_name=${encodeURIComponent(ownerParam)}` : '';
+      const res = await fetchApi(`/activities/calling-summary${queryStr}`);
+      if (res && res.success) {
+        setCallingStats({
+          calls_made: res.calls_made || 0,
+          connected_calls: res.connected_calls || 0,
+          connection_rate: res.connection_rate || 0,
+          total_minutes: res.total_minutes || 0,
+          talk_time_formatted: res.talk_time_formatted || '0m',
+          remaining_leads: res.remaining_leads || 0,
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to load calling summary stats:', err);
+    } finally {
+      setLoadingCallingStats(false);
+    }
+  }, [selectedOwner]);
+
+  useEffect(() => {
+    fetchCallingStats();
+  }, [fetchCallingStats]);
+
+  // Re-fetch calling stats when contact is updated or call is logged anywhere in CRM
+  useEffect(() => {
+    const handleRemoteCallLogged = () => {
+      fetchCallingStats();
+    };
+    window.addEventListener('crm:contact-updated', handleRemoteCallLogged);
+    window.addEventListener('crm_call_logged', handleRemoteCallLogged);
+    return () => {
+      window.removeEventListener('crm:contact-updated', handleRemoteCallLogged);
+      window.removeEventListener('crm_call_logged', handleRemoteCallLogged);
+    };
+  }, [fetchCallingStats]);
 
   // Top Tabs State: 'all' | 'new' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'
   const [activeTab, setActiveTab] = useState<'all' | 'new' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'>('all');
@@ -2087,9 +2138,88 @@ export default function LeadPoolPage() {
             </div>
           </div>
 
-          <main className="p-6 space-y-4 w-full">
+          <main className="p-6 space-y-3.5 w-full">
 
-          {/* Secondary Filter Bar */}
+            {/* Sleek Calling Progress Ribbon (Compact & Clutter-Free) */}
+            <div className="bg-white border border-[#E8E4DC] rounded-lg px-3.5 py-2 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+              {/* Left: 4 Micro KPI Metrics */}
+              <div className="flex items-center gap-3 sm:gap-5 flex-wrap divide-x divide-slate-100">
+                {/* 1. Calls Made */}
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-md bg-blue-50 text-blue-700 flex items-center justify-center font-bold shrink-0">
+                    <PhoneCall className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Calls Made</span>
+                    <div className="font-extrabold text-[#081428] text-xs">
+                      {callingStats.calls_made} <span className="font-normal text-[10px] text-slate-400">today</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Connected */}
+                <div className="flex items-center gap-2 pl-3 sm:pl-5">
+                  <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold shrink-0">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Connected</span>
+                    <div className="font-extrabold text-[#081428] text-xs flex items-center gap-1.5">
+                      <span>{callingStats.connected_calls}</span>
+                      <span className="font-bold text-[9px] text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                        {callingStats.connection_rate}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Talk Time */}
+                <div className="flex items-center gap-2 pl-3 sm:pl-5">
+                  <div className="w-6 h-6 rounded-md bg-amber-50 text-[#C8A147] flex items-center justify-center font-bold shrink-0">
+                    <Clock className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Talk Time</span>
+                    <div className="font-extrabold text-[#081428] text-xs font-mono">
+                      {callingStats.talk_time_formatted || '0m'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Remaining to Call */}
+                <div className="flex items-center gap-2 pl-3 sm:pl-5">
+                  <div className="w-6 h-6 rounded-md bg-purple-50 text-purple-700 flex items-center justify-center font-bold shrink-0">
+                    <ListOrdered className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Remaining</span>
+                    <div className="font-extrabold text-[#081428] text-xs">
+                      {callingStats.remaining_leads} <span className="font-normal text-[10px] text-slate-400">leads</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right: Scope Tag & Quick Refresh */}
+              <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="font-bold text-[#081428]">Today's Progress</span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  ({selectedOwner === 'all' ? 'Team' : selectedOwner === currentUser?.name ? 'My Calls' : selectedOwner})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fetchCallingStats()}
+                  disabled={loadingCallingStats}
+                  className="p-1 text-slate-400 hover:text-[#081428] rounded transition-colors cursor-pointer"
+                  title="Refresh Calling Stats"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loadingCallingStats ? 'animate-spin text-[#C8A147]' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Secondary Filter Bar */}
           <div className="p-3 bg-white border border-[#E8E4DC] rounded-lg shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
             {/* Left Group: Search Input + Filters + Reset */}
             <div className="flex items-center gap-2 flex-wrap">

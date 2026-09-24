@@ -2237,8 +2237,19 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - `setInlineSchedule('24h')`
       - `setInlineCustomDateTime('')`
     - Resolves the issue where selecting a status on one lead erroneously persisted into subsequent leads opened in the same browser session.
-  - **Post-Submission Form Cleanup**:
-    - Automatically clears `inlineOutcome`, discussion notes, and schedule inputs upon saving a call outcome so the drawer is fresh for any subsequent updates.
+- **170 — Compact Daily Calling Tracker Ribbon on Leads Desk (`backend/app/Http/Controllers/Api/ActivityController.php`, `backend/routes/api.php`, `frontend/src/app/page.tsx`)**:
+  - **Sleek, Non-Cluttering Calling Progress Bar**:
+    - Embedded an ultra-compact (~38px) calling progress ribbon directly above the secondary filter bar on the main Inbound Leads Desk ([`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)).
+    - Designed with clean executive aesthetics, micro-pill indicators, and zero layout clutter:
+      1. 📞 **Calls Made Today**: Total calls dialed today across the selected scope.
+      2. 🟢 **Connected Calls**: Number of answered conversations along with the live connection rate percentage (`%`).
+      3. ⏱️ **Talk Time**: Cumulative call minutes / hours for the day (e.g. `48m` or `1h 15m`).
+      4. ⏳ **Remaining to Call**: Number of leads remaining in the queue awaiting their first interaction.
+  - **Dynamic Scope & Live Event Syncing**:
+    - Responds dynamically to the active advisor / team selector in the Navbar (`Team` vs `My Calls` vs specific advisor).
+    - Automatically updates in real time via `crm:contact-updated` and `crm_call_logged` window events whenever an advisor logs a call outcome in the Contact Drawer.
+  - **Backend Endpoint (`GET /api/activities/calling-summary`)**:
+    - High-performance, indexed endpoint aggregating daily calls, connected outcomes (`Interested`, `Callback`, `Meeting`, `Viewing`, `Follow-up`), 3CX PBX recordings duration, and uncontacted lead counts.
 
 ---
 

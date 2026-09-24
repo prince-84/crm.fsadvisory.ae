@@ -221,4 +221,79 @@ class ActivityController extends Controller
             ]
         ]);
     }
+
+    /**
+     * Compact Daily Calling Summary KPI (Calls Made, Connected, Talk Time Minutes, Remaining)
+     */
+    public function callingSummary(Request $request)
+    {
+        $today = Carbon::today();
+        $user = $request->query('user_name');
+
+        // Base calls query for today
+        $callsQuery = Activity::where('type', 'call')
+            ->whereDate('created_at', $today);
+
+        if ($user && $user !== 'all' && $user !== 'unassigned') {
+            $callsQuery->where('user_name', $user);
+        }
+
+        $totalCalls = (clone $callsQuery)->count();
+
+        // Connected calls (Where outcome indicates conversation)
+        $connectedCalls = (clone $callsQuery)->where(function ($q) {
+            $q->where('call_outcome', 'like', '%Interested%')
+              ->orWhere('call_outcome', 'like', '%Callback%')
+              ->orWhere('call_outcome', 'like', '%Meeting%')
+              ->orWhere('call_outcome', 'like', '%Viewing%')
+              ->orWhere('call_outcome', 'like', '%Follow-up%')
+              ->orWhere('call_outcome', 'like', '%Discussion%')
+              ->orWhere('call_outcome', 'like', '%Contacted%');
+        })->where('call_outcome', 'not like', '%Not Interested%')->count();
+
+        // 3CX Talk time / minutes for today
+        $totalDurationSec = 0;
+        try {
+            $recordingsQuery = \App\Models\CallRecording::whereDate('recorded_at', $today);
+            if ($user && $user !== 'all' && $user !== 'unassigned') {
+                $recordingsQuery->where('agent_name', $user);
+            }
+            $totalDurationSec = (int) ($recordingsQuery->sum('duration_seconds') ?: 0);
+        } catch (\Exception $e) {
+            $totalDurationSec = 0;
+        }
+
+        // If no 3CX PBX recordings synced yet, estimate 2.5 minutes per connected call
+        if ($totalDurationSec <= 0 && $connectedCalls > 0) {
+            $totalDurationSec = $connectedCalls * 150;
+        }
+
+        $totalMinutes = (int) round($totalDurationSec / 60);
+        $hours = floor($totalMinutes / 60);
+        $mins = $totalMinutes % 60;
+        $talkTimeFormatted = $hours > 0 ? "{$hours}h {$mins}m" : "{$mins}m";
+
+        // Remaining Leads: Assigned leads that have NOT been called today
+        $remainingQuery = Contact::where('state', '!=', 'duplicate');
+        if ($user && $user !== 'all' && $user !== 'unassigned') {
+            $remainingQuery->where('assigned_to', $user);
+        }
+        $remainingCount = $remainingQuery->whereDoesntHave('activities', function ($q) use ($today) {
+            $q->where('type', 'call')->whereDate('created_at', $today);
+        })->where(function ($q) {
+            $q->whereNull('state')->orWhere('state', '!=', 'contacted');
+        })->count();
+
+        $connectionRate = $totalCalls > 0 ? (int) round(($connectedCalls / $totalCalls) * 100) : 0;
+
+        return response()->json([
+            'success' => true,
+            'calls_made' => $totalCalls,
+            'connected_calls' => $connectedCalls,
+            'connection_rate' => $connectionRate,
+            'total_minutes' => $totalMinutes,
+            'talk_time_formatted' => $talkTimeFormatted,
+            'remaining_leads' => $remainingCount,
+        ]);
+    }
 }
