@@ -2257,7 +2257,27 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - If a lead originated from the Lead Pool (`ct.is_imported` is true):
       - **When Uncontacted**: Displays the primary pink **Lead Pool** badge (`bg-pink-100 text-pink-800 border-pink-300`).
       - **When Contacted or Deal Created**: Displays the active Call Outcome or Deal badge, and immediately underneath it, permanently displays a neat, compact sub-badge **`[Layers] Lead Pool`** (`bg-pink-100 text-pink-800 border-pink-300 text-[9px]`).
-      - Inbound organic/portal leads (`!ct.is_imported`) continue showing only their standard outcome/deal or glowing `NEW` badge.
+- **172 — Global Follow-up & Callback Active Notification System (`NotificationBell.tsx`, `Navbar.tsx`, `ContactController.php`)**:
+  - **Business Requirement**:
+    - Addressed client demand: *"Alerts on follow ups and call backs should be notifications"*.
+    - Replaced the passive in-table SLA indicators with an active, system-wide Notification Center accessible from anywhere across the CRM.
+  - **Notification Bell Header Integration (`NotificationBell.tsx`, `Navbar.tsx`)**:
+    - Embedded a luxury Notification Bell button (🔔) into the top header next to the advisor profile across every CRM route.
+    - Features a dynamic badge counter indicating overdue and upcoming callbacks (`🔴 3`).
+    - Bounces and pulses with attention-grabbing micro-animations when urgent callbacks or overdue items are present.
+  - **Rich Dropdown & Action Center**:
+    - Segmented filter tabs: **All**, **🔴 Urgent** (Overdue & due within 15 mins), and **📅 Today** (scheduled callbacks later today).
+    - Real-time client cards displaying client name, phone (with 1-click copy & call), scheduled callback time, urgency badge, and follow-up discussion notes.
+    - Quick actions per item:
+      - **[📞 Call & Open Profile]**: Dispatches or opens the client drawer instantly for immediate dialing.
+      - **[⏰ Snooze 10m]**: Postpones follow-up by 10 minutes via `POST /api/contacts/{id}/snooze-followup` with instant toast confirmation.
+      - **[✕ Dismiss]**: Dismisses individual alert from current session.
+  - **Audio Chime & Desktop Push Notifications**:
+    - Synthesizes a gentle dual-tone audio chime (587Hz -> 880Hz) via the Web Audio API whenever a new urgent/imminent callback becomes due, with an instant mute/unmute toggle (`crm_notification_sound`).
+    - Integrated native HTML5 Desktop Push Notifications (`Notification` API) allowing advisors to receive callback alerts even when working in another application or browser tab.
+  - **Backend Endpoint Optimization (`ContactController::upcomingAlerts`)**:
+    - Upgraded `GET /api/contacts/upcoming-alerts` to categorize alerts into `'overdue'`, `'imminent'`, and `'upcoming'`, returns calculated unread counts, and supports advisor scope filtering.
+    - Background auto-polling every 30 seconds with immediate real-time sync on `crm:contact-updated` and `crm_call_logged` window events.
 
 ---
 
@@ -2392,6 +2412,7 @@ FSadvisory-crm/
 │   │   │   ├── MultiCheckboxDropdown.tsx      # Multi-select dropdown for areas/types
 │   │   │   ├── CreateOpportunityModal.tsx     # Fast opportunity conversion modal
 │   │   │   ├── ContactDrawer.tsx              # Slide-over contact profile drawer
+│   │   │   ├── NotificationBell.tsx           # Follow-up & Callback Notification Center
 │   │   │   ├── Navbar.tsx                     # Top application bar
 │   │   │   └── Sidebar.tsx                    # Main collapsible CRM navigation
 │   │   └── lib/

@@ -1316,9 +1316,10 @@ class ContactController extends Controller
     public function upcomingAlerts(Request $request)
     {
         $now = Carbon::now();
-        $inTenMinutes = $now->copy()->addMinutes(10);
+        $endOfDay = $now->copy()->endOfDay();
         $user = $request->user();
         $userName = $user ? $user->name : null;
+        $advisorParam = $request->query('advisor');
 
         // Synchronize overdue status in database for past due dates
         Opportunity::whereNotNull('next_action_due_at')
@@ -1333,20 +1334,27 @@ class ContactController extends Controller
 
         $isSuper = $user && ($user->role === 'superadmin' || $user->role === 'admin' || $user->role === 'manager' || !empty($user->is_super_user));
 
-        // 1. Opportunities with scheduled follow-ups
+        // 1. Opportunities with scheduled follow-ups (overdue past 48h OR due today)
         $oppQuery = Opportunity::with(['contact'])
             ->whereNotNull('next_action_due_at')
             ->whereNotIn('stage', ['closed_won', 'closed_lost'])
-            ->where(function ($q) use ($now, $inTenMinutes) {
-                // Due within next 10 minutes OR overdue within past 48 hours
-                $q->whereBetween('next_action_due_at', [$now, $inTenMinutes])
+            ->where(function ($q) use ($now, $endOfDay) {
+                // Due today OR overdue within past 48 hours
+                $q->whereBetween('next_action_due_at', [$now, $endOfDay])
                   ->orWhere(function ($sub) use ($now) {
                       $sub->where('next_action_due_at', '<', $now)
                           ->where('next_action_due_at', '>=', $now->copy()->subHours(48));
                   });
             });
 
-        if (!$isSuper && !empty($userName)) {
+        if (!empty($advisorParam) && $advisorParam !== 'all' && $advisorParam !== 'auto') {
+            $oppQuery->where(function ($q) use ($advisorParam) {
+                $q->where('current_owner_name', $advisorParam)
+                  ->orWhereHas('contact', function ($cq) use ($advisorParam) {
+                      $cq->where('assigned_to', $advisorParam);
+                  });
+            });
+        } else if (!$isSuper && !empty($userName)) {
             $oppQuery->where(function ($q) use ($userName) {
                 $q->where('current_owner_name', $userName)
                   ->orWhereHas('contact', function ($cq) use ($userName) {
@@ -1355,20 +1363,22 @@ class ContactController extends Controller
             });
         }
 
-        $opportunities = $oppQuery->orderBy('next_action_due_at', 'asc')->limit(20)->get();
+        $opportunities = $oppQuery->orderBy('next_action_due_at', 'asc')->limit(40)->get();
 
-        // 2. Contacts with scheduled follow-ups (pre-deal / no deal created yet)
+        // 2. Contacts with scheduled follow-ups (pre-deal / no active deal yet)
         $contactQuery = Contact::whereNotNull('next_action_due_at')
-            ->where(function ($q) use ($now, $inTenMinutes) {
-                // Due within next 10 minutes OR overdue within past 48 hours
-                $q->whereBetween('next_action_due_at', [$now, $inTenMinutes])
+            ->where(function ($q) use ($now, $endOfDay) {
+                // Due today OR overdue within past 48 hours
+                $q->whereBetween('next_action_due_at', [$now, $endOfDay])
                   ->orWhere(function ($sub) use ($now) {
                       $sub->where('next_action_due_at', '<', $now)
                           ->where('next_action_due_at', '>=', $now->copy()->subHours(48));
                   });
             });
 
-        if (!$isSuper && !empty($userName)) {
+        if (!empty($advisorParam) && $advisorParam !== 'all' && $advisorParam !== 'auto') {
+            $contactQuery->where('assigned_to', $advisorParam);
+        } else if (!$isSuper && !empty($userName)) {
             $contactQuery->where(function ($q) use ($userName) {
                 $q->where('assigned_to', $userName)
                   ->orWhereNull('assigned_to')
@@ -1376,7 +1386,7 @@ class ContactController extends Controller
             });
         }
 
-        $contactFollowUps = $contactQuery->orderBy('next_action_due_at', 'asc')->limit(20)->get();
+        $contactFollowUps = $contactQuery->orderBy('next_action_due_at', 'asc')->limit(40)->get();
 
         // Avoid duplicating if contact already has an opportunity in $opportunities
         $coveredContactIds = $opportunities->pluck('contact_id')->filter()->all();
@@ -1391,6 +1401,18 @@ class ContactController extends Controller
             $isOverdue = $dueAt->isPast();
             $diffMinutes = abs((int) $dueAt->diffInMinutes($now));
 
+            $urgency = 'upcoming';
+            $statusLabel = 'Today at ' . $dueAt->format('H:i');
+            if ($isOverdue) {
+                $urgency = 'overdue';
+                $statusLabel = $diffMinutes < 60 ? "Overdue by {$diffMinutes}m" : "Overdue by " . round($diffMinutes / 60, 1) . "h";
+            } else if ($diffMinutes <= 15) {
+                $urgency = 'imminent';
+                $statusLabel = "Due in {$diffMinutes}m";
+            }
+
+            $rawOutcome = $opp->contact ? ($opp->contact->latest_call_outcome ?? $opp->contact->call_outcome) : null;
+
             $alerts->push([
                 'id' => 'opp_' . $opp->id,
                 'opportunity_id' => $opp->id,
@@ -1399,12 +1421,14 @@ class ContactController extends Controller
                 'client_name' => $opp->contact ? $opp->contact->name : 'Client',
                 'phone' => $opp->contact ? $opp->contact->phone : '',
                 'assigned_owner' => $opp->current_owner_name ?: ($opp->contact ? $opp->contact->assigned_to : 'Unassigned'),
-                'next_action' => $opp->next_action ?: 'Follow-up Call',
+                'next_action' => $opp->next_action ?: ($rawOutcome ? "{$rawOutcome} Follow-up" : 'Follow-up Call'),
+                'call_outcome' => $rawOutcome,
                 'next_action_due_at' => $opp->next_action_due_at,
                 'is_overdue' => $isOverdue,
+                'urgency' => $urgency,
                 'diff_minutes' => $diffMinutes,
                 'sla_status' => $opp->sla_status,
-                'status_label' => $isOverdue ? "Overdue by {$diffMinutes}m" : "Due in {$diffMinutes}m",
+                'status_label' => $statusLabel,
             ]);
         }
 
@@ -1412,6 +1436,18 @@ class ContactController extends Controller
             $dueAt = Carbon::parse($c->next_action_due_at);
             $isOverdue = $dueAt->isPast();
             $diffMinutes = abs((int) $dueAt->diffInMinutes($now));
+
+            $urgency = 'upcoming';
+            $statusLabel = 'Today at ' . $dueAt->format('H:i');
+            if ($isOverdue) {
+                $urgency = 'overdue';
+                $statusLabel = $diffMinutes < 60 ? "Overdue by {$diffMinutes}m" : "Overdue by " . round($diffMinutes / 60, 1) . "h";
+            } else if ($diffMinutes <= 15) {
+                $urgency = 'imminent';
+                $statusLabel = "Due in {$diffMinutes}m";
+            }
+
+            $rawOutcome = $c->latest_call_outcome ?? $c->call_outcome;
 
             $alerts->push([
                 'id' => 'ct_' . $c->id,
@@ -1421,12 +1457,14 @@ class ContactController extends Controller
                 'client_name' => $c->name ?: 'Client',
                 'phone' => $c->phone ?: '',
                 'assigned_owner' => $c->assigned_to ?: 'Unassigned',
-                'next_action' => $c->next_action ?: 'Follow-up Call',
+                'next_action' => $c->next_action ?: ($rawOutcome ? "{$rawOutcome} Follow-up" : 'Follow-up Call'),
+                'call_outcome' => $rawOutcome,
                 'next_action_due_at' => $c->next_action_due_at,
                 'is_overdue' => $isOverdue,
+                'urgency' => $urgency,
                 'diff_minutes' => $diffMinutes,
                 'sla_status' => $c->sla_status,
-                'status_label' => $isOverdue ? "Overdue by {$diffMinutes}m" : "Due in {$diffMinutes}m",
+                'status_label' => $statusLabel,
             ]);
         }
 
@@ -1434,9 +1472,14 @@ class ContactController extends Controller
             return Carbon::parse($item['next_action_due_at'])->timestamp;
         })->values();
 
+        $unreadCount = $sortedAlerts->filter(function ($item) {
+            return $item['urgency'] === 'overdue' || $item['urgency'] === 'imminent';
+        })->count();
+
         return response()->json([
             'alerts' => $sortedAlerts,
             'count' => $sortedAlerts->count(),
+            'unread_count' => $unreadCount,
             'server_time' => $now->toIso8601String(),
         ]);
     }

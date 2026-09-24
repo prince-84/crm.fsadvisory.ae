@@ -17,6 +17,9 @@ import {
   Crown
 } from 'lucide-react';
 
+import NotificationBell from './NotificationBell';
+import ContactDrawer from './ContactDrawer';
+
 const ROUTE_HEADINGS: Record<string, { title: string; subtitle: string }> = {
   '/': {
     title: 'Leads',
@@ -94,14 +97,17 @@ interface NavbarProps {
   onSearch?: (query: string) => void;
   actions?: React.ReactNode;
   teamSelector?: React.ReactNode;
+  onOpenContact?: (contact: any) => void;
 }
 
-export default function Navbar({ title, subtitle, onSearch, actions, teamSelector }: NavbarProps) {
+export default function Navbar({ title, subtitle, onSearch, actions, teamSelector, onOpenContact }: NavbarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
+  const [drawerContact, setDrawerContact] = useState<any | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<{
     name: string;
     email: string;
@@ -164,6 +170,25 @@ export default function Navbar({ title, subtitle, onSearch, actions, teamSelecto
     };
   }, []);
 
+  const handleOpenLead = (contact: any) => {
+    if (onOpenContact) {
+      onOpenContact(contact);
+    } else {
+      setDrawerContact(contact);
+      setIsDrawerOpen(true);
+    }
+  };
+
+  useEffect(() => {
+    const handleDrawerEvent = (e: any) => {
+      if (e.detail?.contact) {
+        handleOpenLead(e.detail.contact);
+      }
+    };
+    window.addEventListener('crm:open-contact-drawer', handleDrawerEvent);
+    return () => window.removeEventListener('crm:open-contact-drawer', handleDrawerEvent);
+  }, [onOpenContact]);
+
   // Close dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -207,7 +232,8 @@ export default function Navbar({ title, subtitle, onSearch, actions, teamSelecto
   };
 
   return (
-    <header className="h-16 bg-white border-b border-[#E8E2D9] px-6 lg:px-8 flex items-center justify-between sticky top-0 z-20 shadow-2xs">
+    <>
+      <header className="h-16 bg-white border-b border-[#E8E2D9] px-6 lg:px-8 flex items-center justify-between sticky top-0 z-20 shadow-2xs">
       {/* 1. Page Main Heading (Replaces Search Input in Top Bar) */}
       <div className="flex flex-col justify-center min-w-0 pr-4">
         <h1 className="font-heading font-bold text-lg sm:text-xl text-[#081428] tracking-tight leading-tight truncate">
@@ -228,6 +254,9 @@ export default function Navbar({ title, subtitle, onSearch, actions, teamSelecto
         {teamSelector ? (
           <div className="flex items-center">{teamSelector}</div>
         ) : null}
+
+        {/* 🔔 Follow-up & Callback Notification Bell */}
+        <NotificationBell onOpenContact={handleOpenLead} />
 
         {/* 3. User Profile Widget with Dropdown on the Right Side End */}
         <div className="relative" ref={dropdownRef}>
@@ -325,5 +354,18 @@ export default function Navbar({ title, subtitle, onSearch, actions, teamSelecto
         </div>
       </div>
     </header>
+
+    {/* Global Contact Drawer for Notifications */}
+    {drawerContact && (
+      <ContactDrawer
+        contact={drawerContact}
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        onContactUpdated={() => {
+          window.dispatchEvent(new CustomEvent('crm:contact-updated'));
+        }}
+      />
+    )}
+  </>
   );
 }
