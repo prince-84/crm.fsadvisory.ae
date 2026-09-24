@@ -88,7 +88,7 @@ export default function ContactDrawer({
   const [reassigning, setReassigning] = useState(false);
 
   // Inline Call Outcome & Next Follow-up state
-  const [inlineOutcome, setInlineOutcome] = useState<string>('Interested');
+  const [inlineOutcome, setInlineOutcome] = useState<string>('');
   const [inlineSchedule, setInlineSchedule] = useState<string>('24h');
   const [inlineCustomDateTime, setInlineCustomDateTime] = useState<string>('');
   const [inlineNotes, setInlineNotes] = useState<string>('');
@@ -99,17 +99,13 @@ export default function ContactDrawer({
   const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
   const tomorrowLocalIso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
+  // Cleanly reset inline call logging form whenever a new contact is opened or drawer opens/closes
   useEffect(() => {
-    if (contact) {
-      const existing = contact.call_outcome || contact.latest_call_outcome;
-      if (existing) {
-        const found = DRAWER_CALL_OUTCOMES.find(o => existing.toLowerCase().includes(o.key.toLowerCase()));
-        if (found) {
-          setInlineOutcome(found.key);
-        }
-      }
-    }
-  }, [contact?.id]);
+    setInlineOutcome('');
+    setInlineNotes('');
+    setInlineSchedule('24h');
+    setInlineCustomDateTime('');
+  }, [contact?.id, isOpen]);
 
   // Load active agents list for re-assignment
   useEffect(() => {
@@ -218,6 +214,10 @@ export default function ContactDrawer({
       setClientRecordings([]);
       setWhatsAppMessages([]);
       setClientChat(null);
+      setInlineOutcome('');
+      setInlineNotes('');
+      setInlineSchedule('24h');
+      setInlineCustomDateTime('');
     }
   }, [isOpen, contact?.id, fetchLiveContact, fetchClientRecordings, fetchClientWhatsApp]);
 
@@ -544,8 +544,11 @@ export default function ContactDrawer({
         title: 'Call logged & status updated!',
       });
 
-      // Clear notes after successful save
+      // Clear outcome, notes and schedule after successful save
+      setInlineOutcome('');
       setInlineNotes('');
+      setInlineSchedule('24h');
+      setInlineCustomDateTime('');
 
       // Refresh live contact from DB
       await fetchLiveContact(currentContact.id);

@@ -461,6 +461,29 @@ class LeadDistributionService
 
             $lastActionTime = $lastCall ? Carbon::parse($lastCall->created_at) : ($lastGenuineActivity ? Carbon::parse($lastGenuineActivity->created_at) : null);
 
+            $rawOutcome = $lastCall?->call_outcome 
+                ?? $contact->call_outcome 
+                ?? $contact->latest_call_outcome 
+                ?? '';
+            $outcome = strtolower(trim($rawOutcome));
+
+            // Exemption flags: Protect qualified deals, engaged clients, and scheduled appointments
+            $hasActiveDeal = ($opp && !in_array(strtolower($opp->stage), ['closed_lost', 'lost']))
+                || $contact->opportunities()->whereNotIn('stage', ['closed_lost', 'lost'])->exists();
+
+            $isEngagedOutcome = (str_contains($outcome, 'interested') && !str_contains($outcome, 'not interested'))
+                || str_contains($outcome, 'meeting')
+                || str_contains($outcome, 'viewing');
+
+            $scheduledDue = $contact->next_action_due_at 
+                ? Carbon::parse($contact->next_action_due_at) 
+                : ($opp?->next_action_due_at ? Carbon::parse($opp->next_action_due_at) : null);
+
+            $isTerminal = str_contains($outcome, 'not interested') 
+                || str_contains($outcome, 'wrong number') 
+                || str_contains($outcome, 'real estate agent')
+                || str_contains($outcome, 'broker');
+
             // =========================================================================
             // RULE 2: 45-Day Total Inactivity Recycling back to Lead Pool
             // If lead has been assigned/in system for >= 45 days without work or won deal
@@ -468,6 +491,14 @@ class LeadDistributionService
             $contactAgeDays = Carbon::parse($contact->created_at)->diffInDays($now);
             $idleSinceDays = $lastActionTime ? $lastActionTime->diffInDays($now) : $contactAgeDays;
             $idleSinceDaysInt = (int) round($idleSinceDays);
+
+            // Never recycle active deals or engaged prospects with upcoming scheduled actions
+            if ($hasActiveDeal) {
+                continue;
+            }
+            if ($isEngagedOutcome && $scheduledDue && $scheduledDue->isFuture()) {
+                continue;
+            }
 
             if ($autoRecycle && $idleSinceDays >= $recycleDays) {
                 // Recycle back to Lead Pool as fresh unassigned lead
@@ -517,6 +548,26 @@ class LeadDistributionService
             // If held by current agent for >= 3 days without any call/update, rotate to next agent
             // =========================================================================
             if (!$autoReassign) {
+                continue;
+            }
+
+            // Exemption 1: Never auto-rotate leads with an active opportunity or deal in progress
+            if ($hasActiveDeal) {
+                continue;
+            }
+
+            // Exemption 2: Never auto-rotate leads where client is Interested, in Meeting, or Viewing
+            if ($isEngagedOutcome) {
+                continue;
+            }
+
+            // Exemption 3: Never auto-rotate if a future follow-up or callback is scheduled (or within grace window)
+            if ($scheduledDue && ($scheduledDue->isFuture() || $scheduledDue->diffInDays($now, false) < $reassignDays)) {
+                continue;
+            }
+
+            // Exemption 4: Never auto-rotate terminal / disqualified leads (Not Interested, Wrong Number, Broker)
+            if ($isTerminal) {
                 continue;
             }
 

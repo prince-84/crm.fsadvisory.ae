@@ -2217,7 +2217,28 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Multi-Line Q&A Formatting Engine**:
     - Built-in formatter automatically splits piped (`|`) or comma-delimited question & answer pairs into individual lines while preserving existing multi-line textarea linebreaks with `whitespace-pre-line leading-relaxed`.
   - **Backend Inquiry Regex Hardening (`backend/app/Models/Contact.php`)**:
-    - Upgraded `getInquirySpecsAttribute` regex to look ahead for subsequent fields (`Developer`, `Community`, `Project`, etc.) or end-of-string rather than prematurely stopping at the first pipe symbol (`|`). This ensures that client questions and answers containing pipes or commas are fully ingested into `inquiry_specs->key_requirement` without truncation.
+- **168 — Lead SLA Inactivity Auto-Rotation Hardening & Engaged Lead Protection Engine (`backend/app/Services/LeadDistributionService.php`)**:
+  - **Issue Resolved**:
+    - Previously, the hourly background SLA job (`crm:process-idle-leads`) evaluated inactivity strictly by checking whether an activity was logged within the last 3 days (`$reassignDays`). If an advisor contacted a lead, marked it as `Interested` or scheduled a meeting for the following week, the engine erroneously considered the lead "inactive" once 72 hours elapsed from that log, automatically rotating the client away to another sales advisor with the audit log `"Lead auto-reassigned ... due to 4 days of advisor inactivity."`
+  - **Comprehensive Domain Exemption Engine**:
+    - Upgraded `LeadDistributionService::processIdleAndDormantLeads()` with 4 robust protection exemptions:
+      1. **Exemption 1 (Active Deals & Opportunities)**: Any contact with an active opportunity or deal in progress (`stage NOT IN ('closed_lost', 'lost')`) is permanently exempt from auto-rotation.
+      2. **Exemption 2 (Engaged Outcomes — Interested / Meeting / Viewing)**: If the client's latest call outcome is `Interested`, `Meeting`, or `Viewing`, the lead belongs to the qualifying advisor and is strictly protected from auto-rotation.
+      3. **Exemption 3 (Scheduled Next Actions & Future Follow-ups)**: If a future callback, meeting, or action is scheduled (`next_action_due_at > now()`) or within the grace window, the advisor is never penalized for waiting until the agreed appointment time.
+      4. **Exemption 4 (Terminal & Disqualified Leads)**: Closed outcomes (`Not Interested`, `Wrong Number`, `Real Estate Agent`) are disqualified from rotation between active advisors.
+  - **45-Day Lead Pool Recycling Protection**:
+- **169 — Contact Drawer Inline Call Outcome State Isolation & Default Unselected Form Engine (`frontend/src/components/ContactDrawer.tsx`)**:
+  - **Unselected Default State**:
+    - Initialized `inlineOutcome` to an empty string (`''`) so no status buttons are pre-selected by default. The advisor must explicitly choose the appropriate outcome button for their call.
+  - **State Isolation Across Contacts & Drawer Sessions**:
+    - Bound `useEffect` state reset to `[contact?.id, isOpen]` as well as drawer unmount/close handlers:
+      - `setInlineOutcome('')`
+      - `setInlineNotes('')`
+      - `setInlineSchedule('24h')`
+      - `setInlineCustomDateTime('')`
+    - Resolves the issue where selecting a status on one lead erroneously persisted into subsequent leads opened in the same browser session.
+  - **Post-Submission Form Cleanup**:
+    - Automatically clears `inlineOutcome`, discussion notes, and schedule inputs upon saving a call outcome so the drawer is fresh for any subsequent updates.
 
 ---
 
