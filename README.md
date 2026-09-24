@@ -2207,7 +2207,17 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Embedded rich discussion textarea for advisors to input meeting minutes, client feedback, or objection summaries before logging the call.
   - **Single-Click Save & Real-Time CRM Synchronization**:
     - One-click "Save Call Outcome" submits directly to `/api/activities` with type `call`, updates the contact's `call_outcome` and `next_action_due_at`, triggers browser-wide `crm:contact-updated` events to sync underlying tables (Lead Pool, My Queue, Inbound Desk), and displays feedback via toast notifications.
-    - Preserves prominent `Qualify Deal` button in the card header for immediate buyer qualification workflows.
+- **167 — Key Requirements & Client Inquiry Brief in Contact Profile Drawer & Multi-Line Parsing (`backend/app/Models/Contact.php`, `frontend/src/components/ContactDrawer.tsx`)**:
+  - **Dynamic Key Requirements Card in Contact Profile Drawer**:
+    - Embedded a dedicated **Key Requirements & Preferences** card directly inside the **Call Outcome & Follow-up** section and **Active Deal** section of [`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx).
+    - Designed with gold luxury accents (`#C8A147`), warm card background, and an `Inquiry Brief` / `Client Inquiries` badge.
+    - Enables sales advisors to review the client's questions, answers, and property preferences (e.g., budget range, preferred community, purpose of investment) while speaking on the call and selecting call outcomes.
+  - **Strictly Conditional Display (Hidden if Blank)**:
+    - If a contact does not have key requirements or if the field is empty, blank (`—`, `null`, `undefined`, `none`), the card is completely hidden without occupying any layout space.
+  - **Multi-Line Q&A Formatting Engine**:
+    - Built-in formatter automatically splits piped (`|`) or comma-delimited question & answer pairs into individual lines while preserving existing multi-line textarea linebreaks with `whitespace-pre-line leading-relaxed`.
+  - **Backend Inquiry Regex Hardening (`backend/app/Models/Contact.php`)**:
+    - Upgraded `getInquirySpecsAttribute` regex to look ahead for subsequent fields (`Developer`, `Community`, `Project`, etc.) or end-of-string rather than prematurely stopping at the first pipe symbol (`|`). This ensures that client questions and answers containing pipes or commas are fully ingested into `inquiry_specs->key_requirement` without truncation.
 
 ---
 

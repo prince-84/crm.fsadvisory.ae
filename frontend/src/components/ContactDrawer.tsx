@@ -272,6 +272,55 @@ export default function ContactDrawer({
   // Extract inquiry specs parsed by backend virtual attribute or direct properties
   const specs = currentContact.inquiry_specs || {};
 
+  // Resolve key requirement / specific notes across all available sources
+  const rawKeyRequirement = 
+    activeOpp?.key_requirement ||
+    currentContact.key_requirement ||
+    specs?.key_requirement ||
+    currentContact.inquiry_specs?.key_requirement ||
+    '';
+
+  let resolvedKeyRequirement = rawKeyRequirement;
+  if (!resolvedKeyRequirement && Array.isArray(currentContact.activities)) {
+    const act = currentContact.activities.find((a: any) => {
+      const d = a?.description || '';
+      return d.toLowerCase().includes('initial inquiry requirements:') || 
+             d.toLowerCase().includes('initial inquiry details:') || 
+             d.toLowerCase().includes('initial inquiry');
+    });
+    if (act?.description) {
+      const m = act.description.match(/Notes:\s*([\s\S]*?)(?=\s*\|(?:Developer|Location|Project|Unit|Property Type|Beds?|Budget):|$)/i) 
+             || act.description.match(/Notes:\s*([^\n|]+)/i);
+      if (m && m[1]) {
+        resolvedKeyRequirement = m[1].trim();
+      }
+    }
+  }
+
+  const formatKeyRequirements = (val: string | null | undefined): string => {
+    if (!val || typeof val !== 'string') return '';
+    const trimmed = val.trim();
+    if (
+      !trimmed || 
+      trimmed === '—' || 
+      trimmed === '-' || 
+      trimmed.toLowerCase() === 'null' || 
+      trimmed.toLowerCase() === 'undefined' || 
+      trimmed.toLowerCase() === 'none' ||
+      trimmed.toLowerCase() === 'n/a'
+    ) {
+      return '';
+    }
+    if (trimmed.includes('\n')) {
+      return trimmed;
+    }
+    return trimmed
+      .replace(/\s*\|\s*/g, '\n')
+      .replace(/,\s*(?=[^,\n]+:\s*)/g, '\n');
+  };
+
+  const formattedKeyRequirement = formatKeyRequirements(resolvedKeyRequirement);
+
   // Helpers
   const maskPhone = (phoneStr: string) => {
     if (!phoneStr) return '************';
@@ -982,6 +1031,24 @@ export default function ContactDrawer({
                     {qual.community || specs.community || 'Dubai Area'} – {qual.bedrooms || specs.bedrooms || '2BR'} {qual.property_type || specs.property_type || 'Apartment'}
                   </div>
 
+                  {/* Key Requirements Brief if present */}
+                  {formattedKeyRequirement && (
+                    <div className="p-3 bg-amber-50/60 border border-amber-200/90 rounded-lg space-y-1.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-[#C8A147]" />
+                          <span>Key Requirements & Preferences:</span>
+                        </span>
+                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-mono">
+                          Inquiry Brief
+                        </span>
+                      </div>
+                      <div className="text-xs text-[#081428] font-medium leading-relaxed whitespace-pre-line bg-white p-2.5 rounded border border-amber-200/60 max-h-48 overflow-y-auto">
+                        {formattedKeyRequirement}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Score Progress Bar */}
                   <div className="pt-2 space-y-1">
                     <div className="flex justify-between text-[11px]">
@@ -1103,6 +1170,24 @@ export default function ContactDrawer({
                       }`}>
                         {(currentContact.sla_status || activeOpp?.sla_status || 'on_track').replace('_', ' ')}
                       </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Key Requirements & Preferences (Hidden if blank) */}
+                {formattedKeyRequirement && (
+                  <div className="p-3 bg-amber-50/60 border border-amber-200/90 rounded-lg space-y-1.5 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-[#C8A147]" />
+                        <span>Key Requirements & Preferences:</span>
+                      </span>
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-mono">
+                        Client Inquiries
+                      </span>
+                    </div>
+                    <div className="text-xs text-[#081428] font-medium leading-relaxed whitespace-pre-line bg-white p-2.5 rounded border border-amber-200/60 max-h-48 overflow-y-auto">
+                      {formattedKeyRequirement}
                     </div>
                   </div>
                 )}

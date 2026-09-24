@@ -119,7 +119,11 @@ class Contact extends Model
             $specs['budget_min'] = (float) str_replace(',', '', $m[1]);
             if ($m[2] !== 'Max') $specs['budget_max'] = (float) str_replace(',', '', $m[2]);
         }
-        if (preg_match('/Notes:\s*([^|]+)/i', $desc, $m)) $specs['key_requirement'] = trim($m[1]);
+        if (preg_match('/Notes:\s*(.*?)(?=\s*\|(?:Developer|Dev|Location\/Community|Community|Area|Project|Unit|Prop|Property Type|Type|Beds|Budget):|$)/is', $desc, $m)) {
+            $specs['key_requirement'] = trim($m[1]);
+        } elseif (preg_match('/Notes:\s*([^|]+)/i', $desc, $m)) {
+            $specs['key_requirement'] = trim($m[1]);
+        }
 
         return (object) $specs;
     }
