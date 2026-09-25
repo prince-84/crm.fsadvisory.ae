@@ -62,9 +62,18 @@ class PortalController extends Controller
         $portalName = ucfirst(str_replace('_', ' ', $validated['portal_name']));
 
         // Check if phone matches any existing contact in database
-        $existingContact = Contact::where('phone', $validated['client_phone'])
-            ->orWhere('secondary_phone', $validated['client_phone'])
-            ->first();
+        $clientPhone = $validated['client_phone'];
+        $cleanDigits = preg_replace('/\D/', '', $clientPhone);
+        $last7 = strlen($cleanDigits) >= 7 ? substr($cleanDigits, -7) : '';
+
+        $existingContact = Contact::where(function($q) use ($clientPhone, $last7) {
+            $q->where('phone', $clientPhone)
+              ->orWhere('secondary_phone', $clientPhone);
+            if (!empty($last7)) {
+                $q->orWhere('phone', 'like', "%{$last7}")
+                  ->orWhere('secondary_phone', 'like', "%{$last7}");
+            }
+        })->first();
 
         $words = explode(' ', $validated['client_name']);
         $initials = strtoupper(substr($words[0] ?? 'C', 0, 1) . substr($words[1] ?? 'T', 0, 1));

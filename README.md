@@ -2355,6 +2355,17 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Updated direct `phone` queries in [`CallRecordingController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/CallRecordingController.php) to return `1 = 0` (zero rows) instead of matching the entire database if an invalid or short number is queried.
   - **Synchronized WhatsApp Phone Guard (`backend/app/Http/Controllers/Api/WhatsAppController.php`)**:
     - Enforced the same minimum 7-digit requirement across WhatsApp contact chat history lookups, preventing country code fragments from falsely attributing global chats to random leads.
+- **178 — Dynamic Duplicate Lead Detection & Automatic Phone-Cluster Healing Engine (`backend/app/Http/Controllers/Api/ContactController.php`, `backend/app/Http/Controllers/Api/PortalController.php`, `frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`)**:
+  - **Root Cause Resolution**:
+    - Identified that when duplicate leads were ingested from external sources (such as `uae-offplan.com` webhooks or concurrent landing page submissions), variations in phone formatting (e.g. spaces, missing country code prefixes, or rapid concurrent POSTs) caused literal string equality checks (`where('phone', $rawPhone)`) to miss existing contacts.
+    - Furthermore, existing auto-healing logic in `ContactController@index` only scanned contacts that were already flagged with `state = 'duplicate'`, leaving unflagged duplicate pairs indefinitely displaying as standard `available` leads without the `[ DUPLICATE ]` badge.
+  - **Backend Global Phone-Cluster Auto-Healing (`ContactController.php`)**:
+    - Updated `index()` to proactively scan all active phone clusters (`groupBy('phone')->havingRaw('count(*) > 1')`) and invoke `syncDuplicateStatesForPhone()` automatically on every page load.
+    - Enhanced `syncDuplicateStatesForPhone()` with normalized digit extraction (`preg_replace('/\D/', '', $phone)`) and significant suffix matching (last 7 digits), ensuring leads with slight formatting discrepancies (`+36205876022` vs `+36 20 587 6022`) are accurately grouped. The oldest lead remains primary, while all subsequent inquiries are marked `state = 'duplicate'`.
+    - Enforced strict duplicate state assignment in `store()` and `PortalController@ingest()`, preventing webhook payloads from overriding duplicate status.
+  - **Frontend Instant Duplicate Recognition Memo (`page.tsx`, `lead-pool/page.tsx`)**:
+    - Added a reactive `duplicateContactIds` memo to both main Leads Desk (`/`) and Lead Pool (`/lead-pool`) that groups loaded contacts by their significant phone digits.
+    - Renders the vibrant `[ 📑 DUPLICATE ]` badge immediately on any subsequent occurrence sharing the same client phone number, even prior to backend persistence.
 
 ---
 

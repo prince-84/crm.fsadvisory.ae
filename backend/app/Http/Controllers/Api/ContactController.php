@@ -15,7 +15,19 @@ class ContactController extends Controller
 {
     public function index(Request $request)
     {
-        // Auto-heal any active duplicate contacts whose counterparts were deleted
+        // Auto-heal: 1. Sync duplicate status for all contacts sharing identical phones
+        $duplicatePhones = Contact::select('phone')
+            ->whereNotNull('phone')
+            ->where('phone', '!=', '')
+            ->groupBy('phone')
+            ->havingRaw('count(*) > 1')
+            ->pluck('phone');
+
+        foreach ($duplicatePhones as $p) {
+            static::syncDuplicateStatesForPhone($p);
+        }
+
+        // Auto-heal: 2. Restore any orphaned duplicate contacts whose counterparts were deleted
         $orphanedDuplicates = Contact::where('state', 'duplicate')->get();
         foreach ($orphanedDuplicates as $dup) {
             static::syncDuplicateStatesForPhone($dup->phone);
@@ -831,18 +843,28 @@ class ContactController extends Controller
         $validated['source'] = $rawSource;
 
         // Check if phone or secondary phone already exists in DB
-        $existingContact = Contact::where('phone', $validated['phone'])
-            ->orWhere(function($q) use ($validated) {
-                if (!empty($validated['secondary_phone'])) {
-                    $q->where('phone', $validated['secondary_phone'])
-                      ->orWhere('secondary_phone', $validated['secondary_phone']);
-                }
-            })
-            ->first();
+        $rawPhone = $validated['phone'];
+        $cleanDigits = preg_replace('/\D/', '', $rawPhone);
+        $last7 = strlen($cleanDigits) >= 7 ? substr($cleanDigits, -7) : '';
+
+        $existingContact = Contact::where(function($q) use ($rawPhone, $last7, $validated) {
+            $q->where('phone', $rawPhone)
+              ->orWhere('secondary_phone', $rawPhone);
+            if (!empty($last7)) {
+                $q->orWhere('phone', 'like', "%{$last7}")
+                  ->orWhere('secondary_phone', 'like', "%{$last7}");
+            }
+            if (!empty($validated['secondary_phone'])) {
+                $sec = $validated['secondary_phone'];
+                $q->orWhere('phone', $sec)->orWhere('secondary_phone', $sec);
+            }
+        })->first();
 
         $isDuplicate = (bool) $existingContact;
-        if (empty($validated['state'])) {
-            $validated['state'] = $isDuplicate ? 'duplicate' : 'available';
+        if ($isDuplicate) {
+            $validated['state'] = 'duplicate';
+        } elseif (empty($validated['state'])) {
+            $validated['state'] = 'available';
         }
 
         $rawLeadType = $request->input('lead_type') 
@@ -890,6 +912,13 @@ class ContactController extends Controller
         ];
 
         $contact = Contact::create($contactData);
+
+        // Sync duplicate status for this phone
+        static::syncDuplicateStatesForPhone($contact->phone);
+        if (!empty($contact->secondary_phone)) {
+            static::syncDuplicateStatesForPhone($contact->secondary_phone);
+        }
+        $contact->refresh();
 
         if ($contact->state !== 'duplicate') {
             // Lead Distribution: Assign directly if specific advisor explicitly provided
@@ -1263,13 +1292,19 @@ class ContactController extends Controller
     {
         if (empty($phone)) return;
         $cleanPhone = preg_replace('/[^\d+]/', '', $phone);
+        $digits = preg_replace('/\D/', '', $phone);
+        $last7 = strlen($digits) >= 7 ? substr($digits, -7) : '';
 
-        $activeContacts = Contact::where(function($q) use ($phone, $cleanPhone) {
+        $activeContacts = Contact::where(function($q) use ($phone, $cleanPhone, $last7) {
             $q->where('phone', $phone)
               ->orWhere('secondary_phone', $phone);
             if (!empty($cleanPhone) && strlen($cleanPhone) >= 7) {
                 $q->orWhereRaw("REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '(', '') = ?", [$cleanPhone])
                   ->orWhereRaw("REPLACE(REPLACE(REPLACE(secondary_phone, ' ', ''), '-', ''), '(', '') = ?", [$cleanPhone]);
+            }
+            if (!empty($last7)) {
+                $q->orWhere('phone', 'like', "%{$last7}")
+                  ->orWhere('secondary_phone', 'like', "%{$last7}");
             }
         })
         ->orderBy('id', 'asc')

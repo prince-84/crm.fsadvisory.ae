@@ -391,6 +391,27 @@ export default function LeadPoolPage() {
     return Object.values(advancedFilters).filter((v) => v && v.trim() !== '' && v !== 'all').length;
   }, [advancedFilters]);
 
+  // Dynamically identify duplicate leads sharing identical phone digits (subsequent occurrences)
+  const duplicateContactIds = useMemo(() => {
+    const seenPhones = new Map<string, number>();
+    const dups = new Set<number>();
+    contacts.forEach((c) => {
+      if (c.state === 'duplicate') {
+        dups.add(c.id);
+      }
+      const rawPhone = (c.phone || '').replace(/[^\d]/g, '');
+      if (rawPhone.length >= 7) {
+        const last7 = rawPhone.slice(-7);
+        if (seenPhones.has(last7)) {
+          dups.add(c.id);
+        } else {
+          seenPhones.set(last7, c.id);
+        }
+      }
+    });
+    return dups;
+  }, [contacts]);
+
   const VISIBILITY_STORAGE_KEY = 'leads_column_visibility_v8';
   const ORDER_STORAGE_KEY = 'leads_column_order_v8';
 
@@ -689,7 +710,7 @@ export default function LeadPoolPage() {
               <div>
                 <div className="font-bold text-[#081428] group-hover:text-[#C8A147] group-hover:underline transition-colors text-xs flex items-center gap-1.5 flex-wrap">
                   <span>{ct.name}</span>
-                  {ct.state === 'duplicate' && (
+                  {(ct.state === 'duplicate' || duplicateContactIds.has(ct.id)) && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-purple-100 text-purple-800 border border-purple-300">
                       <Copy className="w-2.5 h-2.5 text-purple-600 shrink-0" />
                       <span>Duplicate</span>
@@ -984,7 +1005,7 @@ export default function LeadPoolPage() {
                     Reactivation
                   </span>
                 )}
-                {ct.state === 'duplicate' && (
+                {(ct.state === 'duplicate' || duplicateContactIds.has(ct.id)) && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px] uppercase font-bold border border-purple-300">
                     <Copy className="w-3 h-3 text-purple-600 shrink-0" />
                     <span>Duplicate</span>
@@ -2472,7 +2493,7 @@ export default function LeadPoolPage() {
                         key={ct.id} 
                         className={`transition-colors ${
                           isSelected ? 'bg-amber-50/60' :
-                          ct.state === 'duplicate' ? 'bg-purple-50/30 hover:bg-purple-50/50' :
+                          (ct.state === 'duplicate' || duplicateContactIds.has(ct.id)) ? 'bg-purple-50/30 hover:bg-purple-50/50' :
                           activeTab === 'deleted' ? 'bg-red-50/20 hover:bg-red-50/40' : 'hover:bg-slate-50/50'
                         }`}
                       >
