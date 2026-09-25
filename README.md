@@ -2317,9 +2317,15 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Any newly deposited 3CX audio files (`.wav`, `.mp3`, `.ogg`, `.m4a`) in `storage/app/public/recordings` or `public/recordings` are now automatically matched against contacts, inserted into `call_recordings`, and returned immediately without any user intervention.
   - **Frontend Live Auto-Sync & Background Polling (`frontend/src/app/recordings/page.tsx`)**:
     - Configured background auto-polling every 20 seconds while on `/recordings` (when not actively listening to playback and on page 1 without search filters), guaranteeing that newly finished 3CX calls appear automatically in the table.
-    - Added silent refresh support to `loadRecordings(page, limit, showSpinner)` to prevent disruptive full-screen loading spinners during background polling.
-    - Added a live green pulsing badge (`Auto-Synced · [Count] Recordings`) in the table header, confirming to users that call recordings are automatically synchronized with the server.
-    - Retained the manual "Sync Server Audio" button for on-demand force-refreshing when required.
+- **175 — Strict Authentic 3CX Talk Time Mapping & Fallback Estimate Elimination (`backend/app/Http/Controllers/Api/ActivityController.php`)**:
+  - **Issue Diagnosed (Artificial 3m Talk Time without 3CX Recording)**:
+    - On the daily calling tracker ribbon, when an advisor had 1 connected call logged without an uploaded 3CX audio recording file, the system calculated and displayed an artificial `3m` talk time.
+    - **Technical Root Cause**: Lines 266–270 in `ActivityController::callingSummary` evaluated `if ($totalDurationSec <= 0 && $connectedCalls > 0)` and assigned a synthetic fallback calculation of 2.5 minutes (150 seconds) per connected call, rounding `2.5` to `3m`.
+  - **Strict Authentic Telephony Duration Mapping**:
+    - Completely removed the synthetic estimate fallback.
+    - Updated `callingSummary` to strictly calculate talk time from authentic 3CX call recordings (`CallRecording::whereDate('recorded_at', $today)`).
+    - If genuine 3CX audio recordings are present in the database, their exact duration is formatted in minutes/hours (`duration_seconds`). If no 3CX audio recording exists for the advisor's calls today, talk time strictly displays `0m`.
+    - Added case-insensitive advisor name matching (`like %user%`) against `call_recordings.agent_name` to ensure seamless alignment across varying casing conventions (e.g. `Hiba alam` vs `Hiba Alam`).
 
 ---
 

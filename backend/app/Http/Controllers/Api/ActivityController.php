@@ -251,24 +251,22 @@ class ActivityController extends Controller
               ->orWhere('call_outcome', 'like', '%Contacted%');
         })->where('call_outcome', 'not like', '%Not Interested%')->count();
 
-        // 3CX Talk time / minutes for today
+        // 3CX Authentic Talk Time / minutes for today (strictly mapped from call_recordings)
         $totalDurationSec = 0;
         try {
             $recordingsQuery = \App\Models\CallRecording::whereDate('recorded_at', $today);
             if ($user && $user !== 'all' && $user !== 'unassigned') {
-                $recordingsQuery->where('agent_name', $user);
+                $recordingsQuery->where(function ($rq) use ($user) {
+                    $rq->where('agent_name', 'like', "%{$user}%")
+                       ->orWhere('agent_name', $user);
+                });
             }
             $totalDurationSec = (int) ($recordingsQuery->sum('duration_seconds') ?: 0);
         } catch (\Exception $e) {
             $totalDurationSec = 0;
         }
 
-        // If no 3CX PBX recordings synced yet, estimate 2.5 minutes per connected call
-        if ($totalDurationSec <= 0 && $connectedCalls > 0) {
-            $totalDurationSec = $connectedCalls * 150;
-        }
-
-        $totalMinutes = (int) round($totalDurationSec / 60);
+        $totalMinutes = (int) floor($totalDurationSec / 60);
         $hours = floor($totalMinutes / 60);
         $mins = $totalMinutes % 60;
         $talkTimeFormatted = $hours > 0 ? "{$hours}h {$mins}m" : "{$mins}m";
