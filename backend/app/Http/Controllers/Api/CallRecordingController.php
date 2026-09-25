@@ -60,12 +60,21 @@ class CallRecordingController extends Controller
 
     public function index(Request $request)
     {
-        // Scan server storage folders only when requested via ?scan=1
-        if ($request->has('scan')) {
-            try {
-                $this->scanServerRecordingsInternal();
-            } catch (\Exception $e) {
-                \Log::warning('Auto-scan error: ' . $e->getMessage());
+        // Automatically scan server storage folders for newly arriving 3CX call recordings:
+        // Runs automatically on initial load (page 1) or when force requested via ?scan=1,
+        // with a 10-second cache throttle to avoid repeated disk scans during rapid filtering/pagination.
+        $forceScan = $request->boolean('scan', false);
+        $page = (int) $request->input('page', 1);
+
+        if ($forceScan || $page === 1) {
+            $lockKey = 'recordings_auto_scan_throttle';
+            if ($forceScan || !\Illuminate\Support\Facades\Cache::has($lockKey)) {
+                try {
+                    $this->scanServerRecordingsInternal();
+                    \Illuminate\Support\Facades\Cache::put($lockKey, true, now()->addSeconds(10));
+                } catch (\Exception $e) {
+                    \Log::warning('Auto-scan recordings error: ' . $e->getMessage());
+                }
             }
         }
 

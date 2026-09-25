@@ -107,10 +107,11 @@ export default function CallRecordingsPage() {
   const [duration, setDuration] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [lastSyncedTime, setLastSyncedTime] = useState<Date>(new Date());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const loadRecordings = async (page = currentPage, limit = perPage) => {
-    setLoading(true);
+  const loadRecordings = async (page = currentPage, limit = perPage, showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     try {
       let endpoint = `/recordings?page=${page}&per_page=${limit}`;
       if (selectedDirection !== 'all') endpoint += `&direction=${selectedDirection}`;
@@ -131,18 +132,32 @@ export default function CallRecordingsPage() {
       }
       if (res.stats) setStats(res.stats);
       if (res.pbx_status) setPbxStatus(res.pbx_status);
-      setLoading(false);
+      if (showSpinner) setLoading(false);
+      setLastSyncedTime(new Date());
     } catch (err) {
       console.error('Failed to load 3CX recordings:', err);
-      setRecordings([]);
-      setLoading(false);
+      if (showSpinner) {
+        setRecordings([]);
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     setCurrentPage(1);
-    loadRecordings(1, perPage);
+    loadRecordings(1, perPage, true);
   }, [selectedDirection, selectedAgent, selectedDuration, searchQuery]);
+
+  // Background Auto-Sync: Automatically keeps recordings updated without requiring manual sync click
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Only silent poll if not currently listening to playback, on page 1, and no search query active
+      if (!isPlaying && currentPage === 1 && !searchQuery) {
+        loadRecordings(1, perPage, false);
+      }
+    }, 20000); // Auto-check every 20 seconds
+    return () => clearInterval(interval);
+  }, [isPlaying, currentPage, perPage, searchQuery, selectedDirection, selectedAgent, selectedDuration]);
 
   const handleAttachAudio = async (recId: number, file: File) => {
     const formData = new FormData();
@@ -554,9 +569,9 @@ export default function CallRecordingsPage() {
             </div>
 
             <div className="flex items-center gap-2.5">
-              <div className="text-[11px] font-medium text-[#6E6E6E] flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-[#C8A147]" />
-                <span>Showing {paginationMeta.total} Recordings</span>
+              <div className="text-[11px] font-medium text-[#6E6E6E] flex items-center gap-1.5 bg-[#FAF8F5] px-2 py-1 rounded border border-[#E8E4DC]">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Auto-Synced · {paginationMeta.total} Recordings</span>
               </div>
 
               {/* Scan Server Audio Button */}
@@ -564,7 +579,7 @@ export default function CallRecordingsPage() {
                 onClick={handleScanServerRecordings}
                 disabled={scanning}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FAF8F5] hover:bg-[#F3EFEA] text-[#081428] border border-[#E8E4DC] hover:border-[#C8A147] rounded text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
-                title="Scan server storage folders for new recordings"
+                title="Force manual re-scan of server storage folders for new recordings"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-[#C8A147] ${scanning ? 'animate-spin' : ''}`} />
                 <span>{scanning ? 'Scanning...' : 'Sync Server Audio'}</span>

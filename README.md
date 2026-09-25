@@ -2307,10 +2307,19 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - Configured `qrMaxRetries: 0` (unlimited retries) and `takeoverOnConflict: true` in the `Client` constructor.
       - Upgraded `/api/logout`, `/api/reset`, and `/api/unlink` to cleanly destroy existing sessions, wipe `auth_sessions/`, and generate fresh QR codes within 1.5 seconds.
     - **Frontend Strict Authentic QR Rendering & Live Modal Polling (`frontend/src/app/whatsapp/page.tsx`)**:
-      - QR codes are strictly rendered **only** when `isRealQr === true` and valid data exists.
-      - While authentic cryptographic keys are being generated from WhatsApp Web, the modal displays an animated loader: *"Fetching Live WhatsApp QR... Waiting for official cryptographic pairing keys from WhatsApp Web..."*.
-      - Added real-time 2.5s polling while the modal is open: Automatically detects when the phone successfully pairs, displays a success notification, mirrors chats into the CRM, and auto-closes the modal.
-      - Upgraded QR display resolution to 220px with crisp pixel-rendering and high error-correction level (`H`), making it effortless for phone cameras to scan without blur or focus latency.
+- **174 — Automatic 3CX Call Recordings Storage Sync & Real-Time Background Ingestion (`backend/app/Http/Controllers/Api/CallRecordingController.php`, `frontend/src/app/recordings/page.tsx`)**:
+  - **Issue Diagnosed (Manual "Sync Server Audio" Button Click Required)**:
+    - Advisors had to manually click the "Sync Server Audio" button whenever new calls were placed or incoming 3CX recordings arrived in server storage. Navigating directly to `/recordings` previously only fetched existing rows from MySQL without checking server storage for newly deposited audio files.
+  - **Automated Backend Ingestion on Page Load (`CallRecordingController@index`)**:
+    - Removed the rigid `?scan=1` requirement for scanning server storage folders.
+    - Updated `CallRecordingController@index` to automatically invoke `scanServerRecordingsInternal()` on initial page load (`page=1` or when forced via `?scan=1`).
+    - Added an intelligent 10-second cache throttle (`recordings_auto_scan_throttle` via `Cache::has()`) to prevent repetitive disk globbing during rapid pagination or filter changes.
+    - Any newly deposited 3CX audio files (`.wav`, `.mp3`, `.ogg`, `.m4a`) in `storage/app/public/recordings` or `public/recordings` are now automatically matched against contacts, inserted into `call_recordings`, and returned immediately without any user intervention.
+  - **Frontend Live Auto-Sync & Background Polling (`frontend/src/app/recordings/page.tsx`)**:
+    - Configured background auto-polling every 20 seconds while on `/recordings` (when not actively listening to playback and on page 1 without search filters), guaranteeing that newly finished 3CX calls appear automatically in the table.
+    - Added silent refresh support to `loadRecordings(page, limit, showSpinner)` to prevent disruptive full-screen loading spinners during background polling.
+    - Added a live green pulsing badge (`Auto-Synced · [Count] Recordings`) in the table header, confirming to users that call recordings are automatically synchronized with the server.
+    - Retained the manual "Sync Server Audio" button for on-demand force-refreshing when required.
 
 ---
 
