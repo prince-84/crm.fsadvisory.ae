@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Role;
+use App\Models\Activity;
 use App\Mail\AccountActivatedMail;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -257,6 +259,100 @@ class UserController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'User / Agent removed successfully.',
+        ]);
+    }
+
+    /**
+     * Force sign out a specific user from all active sessions.
+     */
+    public function forceLogoutUser(Request $request, $id)
+    {
+        $currentUser = $request->user();
+        $isSuperAdmin = $currentUser && ($currentUser->id === 1 || strtolower($currentUser->role ?? '') === 'super admin' || in_array('*', $currentUser->effective_permissions ?? []));
+
+        if (!$isSuperAdmin && (!$currentUser || !$currentUser->hasPermission('users.manage'))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized. Only Administrators can terminate user sessions.',
+            ], 403);
+        }
+
+        $user = User::findOrFail($id);
+
+        // Invalidate active API token and remember token
+        $user->api_token = 'fsa_revoked_' . Str::random(40);
+        $user->remember_token = null;
+        $user->save();
+
+        // Clear sessions from sessions table if exists
+        try {
+            DB::table('sessions')->where('user_id', $user->id)->delete();
+        } catch (\Throwable $e) {}
+
+        // Log audit activity
+        try {
+            Activity::create([
+                'user_id' => $currentUser?->id,
+                'action' => 'force_logout',
+                'description' => "Administrator forced sign out for user {$user->name} (#{$user->id}, {$user->email}).",
+                'ip_address' => $request->ip(),
+            ]);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$user->name} has been forcefully signed out from all active sessions.",
+            'user_id' => $user->id,
+        ]);
+    }
+
+    /**
+     * Force sign out ALL users CRM-wide in 1-click (except the active admin).
+     */
+    public function forceLogoutAll(Request $request)
+    {
+        $currentUser = $request->user();
+        $isSuperAdmin = $currentUser && ($currentUser->id === 1 || strtolower($currentUser->role ?? '') === 'super admin' || in_array('*', $currentUser->effective_permissions ?? []));
+
+        if (!$isSuperAdmin) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized. Only Super Administrators can execute global 1-click force sign out.',
+            ], 403);
+        }
+
+        $currentAdminId = $currentUser ? $currentUser->id : 1;
+
+        // Query all users except current admin
+        $usersToSignOut = User::where('id', '!=', $currentAdminId)->get();
+        $count = 0;
+
+        foreach ($usersToSignOut as $u) {
+            $u->api_token = 'fsa_revoked_' . Str::random(40);
+            $u->remember_token = null;
+            $u->save();
+            $count++;
+        }
+
+        // Clear database sessions for everyone except current admin
+        try {
+            DB::table('sessions')->where('user_id', '!=', $currentAdminId)->delete();
+        } catch (\Throwable $e) {}
+
+        // Log audit activity
+        try {
+            Activity::create([
+                'user_id' => $currentAdminId,
+                'action' => 'force_logout_all',
+                'description' => "Global 1-click force sign out executed. {$count} user account session(s) revoked.",
+                'ip_address' => $request->ip(),
+            ]);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => "Successfully signed out {$count} user(s) from all active sessions across the CRM.",
+            'revoked_count' => $count,
         ]);
     }
 }

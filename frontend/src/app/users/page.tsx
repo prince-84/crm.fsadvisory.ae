@@ -30,9 +30,10 @@ import {
   UserPlus,
   CheckCircle2,
   Building2,
-  HelpCircle
+  HelpCircle,
+  LogOut
 } from 'lucide-react';
-import { hasAnyPermission, getCurrentUser, refreshCurrentUser } from '@/lib/permissions';
+import { hasAnyPermission, getCurrentUser, refreshCurrentUser, isSuperUser } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 
 interface UserItem {
@@ -100,6 +101,16 @@ export default function UserManagementPage() {
   const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'departments'>('users');
 
   // Core Data States
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [forceLoggingOutId, setForceLoggingOutId] = useState<number | null>(null);
+  const [forceLoggingOutAll, setForceLoggingOutAll] = useState(false);
+
+  useEffect(() => {
+    setCurrentUser(getCurrentUser());
+  }, []);
+
+  const isCurrentSuper = isSuperUser(currentUser);
+
   const [users, setUsers] = useState<UserItem[]>([]);
   const [roles, setRoles] = useState<RoleItem[]>([]);
   const [departments, setDepartments] = useState<DepartmentItem[]>([]);
@@ -332,6 +343,91 @@ export default function UserManagementPage() {
         }
       } catch (err: any) {
         Swal.fire('Error', err.message || 'Failed to remove user', 'error');
+      }
+    }
+  };
+
+  // Force Sign Out User Handler
+  const handleForceLogoutUser = async (u: UserItem) => {
+    const res = await Swal.fire({
+      title: 'Force Sign Out User?',
+      html: `
+        <div class="text-left text-xs text-slate-600 space-y-2">
+          <p>Are you sure you want to terminate all active sessions for <b>${u.name}</b> (${u.email})?</p>
+          <p class="p-2 bg-amber-50 border border-amber-200 rounded text-amber-900 font-medium">
+            ⚡ The user will be immediately logged out from all active browsers and sessions.
+          </p>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d97706',
+      confirmButtonText: 'Yes, Force Sign Out',
+      cancelButtonText: 'Cancel',
+    });
+
+    if (res.isConfirmed) {
+      setForceLoggingOutId(u.id);
+      try {
+        const data = await fetchApi(`/users/${u.id}/force-logout`, { method: 'POST' });
+        if (data.success) {
+          Swal.fire({
+            icon: 'success',
+            title: 'User Signed Out!',
+            text: data.message,
+            timer: 2000,
+            showConfirmButton: false,
+          });
+        } else {
+          Swal.fire('Failed', data.message || 'Could not force sign out user.', 'error');
+        }
+      } catch (err: any) {
+        Swal.fire('Error', err.message || 'An unexpected error occurred.', 'error');
+      } finally {
+        setForceLoggingOutId(null);
+      }
+    }
+  };
+
+  // Force Sign Out ALL Users CRM-Wide Handler
+  const handleForceLogoutAll = async () => {
+    const res = await Swal.fire({
+      title: 'Force Sign Out ALL Users?',
+      html: `
+        <div class="text-left text-xs text-slate-600 space-y-2">
+          <p class="text-rose-700 font-bold">⚠️ Critical Action</p>
+          <p>Are you sure you want to terminate sessions for <b>ALL team members</b> across the CRM?</p>
+          <p class="p-2 bg-rose-50 border border-rose-200 rounded text-rose-900 font-medium">
+            🚪 All active sessions will be terminated immediately. Only your current Super Admin session will remain active.
+          </p>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      confirmButtonText: 'Yes, Sign Out Everyone',
+      cancelButtonText: 'Cancel',
+    });
+
+    if (res.isConfirmed) {
+      setForceLoggingOutAll(true);
+      try {
+        const data = await fetchApi('/users/force-logout-all', { method: 'POST' });
+        if (data.success) {
+          Swal.fire({
+            icon: 'success',
+            title: 'All Users Signed Out!',
+            text: data.message,
+            timer: 2500,
+            showConfirmButton: false,
+          });
+        } else {
+          Swal.fire('Failed', data.message || 'Could not sign out all users.', 'error');
+        }
+      } catch (err: any) {
+        Swal.fire('Error', err.message || 'An unexpected error occurred.', 'error');
+      } finally {
+        setForceLoggingOutAll(false);
       }
     }
   };
@@ -640,6 +736,18 @@ export default function UserManagementPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {activeTab === 'users' && isCurrentSuper && (
+              <button
+                onClick={handleForceLogoutAll}
+                disabled={forceLoggingOutAll}
+                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                title="Force sign out all team members across the CRM in 1-click"
+              >
+                <LogOut className={`w-3.5 h-3.5 text-rose-600 ${forceLoggingOutAll ? 'animate-spin' : ''}`} />
+                <span>{forceLoggingOutAll ? 'Signing Out All...' : 'Force Sign Out All'}</span>
+              </button>
+            )}
+
             {activeTab === 'users' && (
               <button
                 onClick={handleOpenCreateUser}
@@ -898,6 +1006,16 @@ export default function UserManagementPage() {
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
+                                {isCurrentSuper && u.id !== currentUser?.id && (
+                                  <button
+                                    onClick={() => handleForceLogoutUser(u)}
+                                    disabled={forceLoggingOutId === u.id}
+                                    className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded transition-colors cursor-pointer disabled:opacity-50"
+                                    title={`Force Sign Out ${u.name} from all active sessions`}
+                                  >
+                                    <LogOut className={`w-3.5 h-3.5 text-amber-700 ${forceLoggingOutId === u.id ? 'animate-spin' : ''}`} />
+                                  </button>
+                                )}
                                 {!isSuperAdmin && (
                                   <button
                                     onClick={() => handleDeleteUser(u.id, u.name)}

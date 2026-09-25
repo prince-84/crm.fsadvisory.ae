@@ -56,7 +56,16 @@ class CrmTokenAuth
             return $next($request);
         }
 
-        // 3. Match against active User api_token or remember_token in database
+        // 3. Reject explicitly revoked tokens
+        if (str_starts_with($token, 'fsa_revoked_')) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Unauthorized',
+                'message' => 'Your session has been terminated by an administrator. Please log in again.',
+            ], 401);
+        }
+
+        // 4. Match against active User api_token or remember_token in database
         $user = User::where('api_token', $token)->where('is_active', true)->first()
             ?? User::where('remember_token', $token)->where('is_active', true)->first();
 

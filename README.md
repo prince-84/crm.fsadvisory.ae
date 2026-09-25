@@ -2325,7 +2325,22 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Completely removed the synthetic estimate fallback.
     - Updated `callingSummary` to strictly calculate talk time from authentic 3CX call recordings (`CallRecording::whereDate('recorded_at', $today)`).
     - If genuine 3CX audio recordings are present in the database, their exact duration is formatted in minutes/hours (`duration_seconds`). If no 3CX audio recording exists for the advisor's calls today, talk time strictly displays `0m`.
-    - Added case-insensitive advisor name matching (`like %user%`) against `call_recordings.agent_name` to ensure seamless alignment across varying casing conventions (e.g. `Hiba alam` vs `Hiba Alam`).
+- **176 — Universal Leads Desk Login Landing & Super Admin Force Sign-Out Engine (`frontend/src/app/login/page.tsx`, `backend/app/Http/Controllers/Api/UserController.php`, `backend/routes/api.php`, `frontend/src/app/users/page.tsx`)**:
+  - **Universal Leads Desk Landing on Login (`frontend/src/app/login/page.tsx`)**:
+    - Standardized login post-authentication redirection across all user roles (Super Admin, Sales Managers, Telesales Agents, and Property Consultants).
+    - Removed previous split routing (`router.push('/queue')` for non-superusers) and unified all successful logins (manual sign in, demo one-click quick logins, and authenticated session resumption) to immediately route users directly to the primary Leads desk (`/`).
+  - **Super Admin CRM-Wide & Per-User Force Sign-Out Architecture**:
+    - **Backend Session Termination Endpoints (`backend/app/Http/Controllers/Api/UserController.php`, `backend/routes/api.php`)**:
+      - `POST /api/users/{id}/force-logout`: Allows administrators to immediately terminate all active sessions for a specific user by rotating their `api_token` to an explicitly invalidated prefix (`fsa_revoked_<random>`), resetting `remember_token`, and purging active database sessions from the `sessions` table.
+      - `POST /api/users/force-logout-all`: Allows Super Administrators to execute a global 1-click force sign-out across all users in the CRM. Automatically preserves the active administrator's session (`id != $currentAdminId`) while revoking all other user tokens and sessions simultaneously.
+    - **Middleware Token Invalidation Guard (`backend/app/Http/Middleware/CrmTokenAuth.php`)**:
+      - Added strict check explicitly rejecting any tokens starting with `fsa_revoked_` with a `401 Unauthorized` response.
+      - Because frontend `fetchApi` (`frontend/src/lib/api.ts`) contains an automated `401` interceptor that flushes `localStorage` (`crm_token`, `crm_user`) and redirects to `/login`, revoked users are signed out instantly upon their very next navigation, action, or background poll.
+    - **Audit Activity Logging**:
+      - Automatically logs administrative audit records in the `activities` table documenting forced logout events with administrative user ID, target email/user ID, timestamp, and IP address.
+  - **Interactive User Management Controls (`frontend/src/app/users/page.tsx`)**:
+    - **Global Header Trigger**: Added a prominent `[ 🚪 Force Sign Out All ]` button in the top action bar of the Users tab for Super Admins, protected by SweetAlert2 confirmation detailing scope and safety assurances.
+    - **Per-User Table Action**: Added a designated `[ 🚪 Force Sign Out ]` button in the `Actions` column for each team member row (safely hidden on the active Super Admin's own row to prevent accidental self-lockout), prompting for confirmation before terminating sessions.
 
 ---
 

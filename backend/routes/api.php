@@ -53,6 +53,8 @@ Route::middleware(['crm.auth'])->group(function () {
     // User & Permissions routes
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
+    Route::post('/users/force-logout-all', [UserController::class, 'forceLogoutAll']);
+    Route::post('/users/{id}/force-logout', [UserController::class, 'forceLogoutUser']);
     Route::put('/users/{id}', [UserController::class, 'update']);
     Route::delete('/users/{id}', [UserController::class, 'destroy']);
     Route::put('/users/{id}/permissions', [UserController::class, 'updatePermissions']);

@@ -39,12 +39,7 @@ export default function LoginPage() {
       const token = localStorage.getItem('crm_token');
       const userRaw = localStorage.getItem('crm_user');
       if (token && userRaw) {
-        const u = JSON.parse(userRaw);
-        if (isSuperUser(u)) {
-          router.replace('/');
-        } else {
-          router.replace('/queue');
-        }
+        router.replace('/');
       }
     } catch {}
   }, [router]);
@@ -94,11 +89,7 @@ export default function LoginPage() {
         });
 
         setTimeout(() => {
-          if (isSuperUser(data.user)) {
-            router.push('/');
-          } else {
-            router.push('/queue');
-          }
+          router.push('/');
         }, 600);
       } else {
         Swal.fire({ icon: 'error', title: 'Login Failed', text: data.message });
@@ -160,11 +151,7 @@ export default function LoginPage() {
         });
 
         setTimeout(() => {
-          if (isSuperUser(data.user)) {
-            router.push('/');
-          } else {
-            router.push('/queue');
-          }
+          router.push('/');
         }, 600);
       } else {
         Swal.fire({

@@ -31,8 +31,7 @@ class AuthController extends Controller
             }
 
             if ($user) {
-                $token = $user->api_token ?: $user->generateApiToken();
-                $user->update(['api_token_last_used_at' => now()]);
+                $token = $user->generateApiToken();
 
                 return response()->json([
                     'success' => true,
@@ -78,8 +77,7 @@ class AuthController extends Controller
             ], 403);
         }
 
-        $token = $user->api_token ?: $user->generateApiToken();
-        $user->update(['api_token_last_used_at' => now()]);
+        $token = $user->generateApiToken();
 
         return response()->json([
             'success' => true,
