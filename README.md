@@ -2341,13 +2341,22 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Interactive User Management Controls (`frontend/src/app/users/page.tsx`)**:
     - **Global Header Trigger**: Added a prominent `[ 🚪 Force Sign Out All ]` button in the top action bar of the Users tab for Super Admins, protected by SweetAlert2 confirmation detailing scope and safety assurances.
     - **Per-User Table Action**: Added a designated `[ 🚪 Force Sign Out ]` button in the `Actions` column for each team member row (safely hidden on the active Super Admin's own row to prevent accidental self-lockout), prompting for confirmation before terminating sessions.
+- **177 — Strict Phone Pattern Matching & Elimination of Cross-Lead Audio Leakage (`backend/app/Http/Controllers/Api/CallRecordingController.php`, `backend/app/Http/Controllers/Api/WhatsAppController.php`)**:
+  - **Root Cause Resolution**:
+    - Discovered that when viewing a lead profile or opportunity drawer, contacts with short or incomplete secondary phone numbers (such as standalone country code prefixes `+971`, `+966`, or `+44`) were falling through loose string slicing (`substr(cleanP, -7) : cleanP`), resulting in query patterns like `LIKE '%971%'` against `destination_number`, `caller_number`, and `notes`.
+    - Because virtually every outbound call contains company trunk prefix `+971 4 300 1030` or destination numbers starting with `+971`, and because `notes` contains metadata timestamps and PBX filenames, 100% of the entire database's call recordings (all 50 records) were erroneously leaking into single contact drawers and opportunities.
+  - **Strict Phone Pattern Extraction (`extractSearchablePhonePatterns`)**:
+    - Implemented a centralized validation engine in [`CallRecordingController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/CallRecordingController.php) enforcing a strict minimum threshold of **7 valid numeric digits**.
+    - Country code prefixes or incomplete fragments shorter than 7 digits are completely stripped and discarded.
+    - Extracts genuine local significant digits (last 7 and 8 digits) for high-accuracy number matching.
+  - **Tightened Contact & Opportunity Scoping**:
+    - Removed indiscriminate matching against the `notes` column (which holds filenames, timestamps, and extensions).
+    - Guaranteed that recordings explicitly associated with a different `contact_id` or `opportunity_id` can never leak into another client's interaction drawer.
+    - Updated direct `phone` queries in [`CallRecordingController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/CallRecordingController.php) to return `1 = 0` (zero rows) instead of matching the entire database if an invalid or short number is queried.
+  - **Synchronized WhatsApp Phone Guard (`backend/app/Http/Controllers/Api/WhatsAppController.php`)**:
+    - Enforced the same minimum 7-digit requirement across WhatsApp contact chat history lookups, preventing country code fragments from falsely attributing global chats to random leads.
 
 ---
-
-
-
-
-
 
 ## ⚙️ Installation & Running Instructions
 

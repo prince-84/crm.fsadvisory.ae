@@ -1416,13 +1416,13 @@ class WhatsAppController extends Controller
             $chat = WhatsAppChat::where('contact_id', $contact->id)->latest('last_message_at')->first();
         }
 
-        // 2. Try finding by matching phone numbers (last 7 digits)
+        // 2. Try finding by matching phone numbers (minimum 7 valid digits)
         if (!$chat && !empty($phones)) {
             $chat = WhatsAppChat::where(function ($q) use ($phones) {
                 foreach ($phones as $p) {
                     $cleanP = preg_replace('/[^0-9]/', '', $p);
-                    $last7 = strlen($cleanP) >= 7 ? substr($cleanP, -7) : $cleanP;
-                    if (!empty($last7)) {
+                    if (strlen($cleanP) >= 7) {
+                        $last7 = substr($cleanP, -7);
                         $q->orWhere('phone', 'like', "%{$last7}%")
                           ->orWhere('remote_jid', 'like', "%{$last7}%");
                     }

@@ -111,67 +111,90 @@ class CallRecordingController extends Controller
             }
         }
 
-        // Contact ID filter (direct or phone match)
+        // Contact ID filter (strict direct match or validated phone match)
         if ($request->filled('contact_id')) {
             $contactId = (int) $request->contact_id;
             $contact = \App\Models\Contact::find($contactId);
-            $phones = [];
+            $rawPhones = [];
             if ($contact) {
-                if (!empty($contact->phone)) $phones[] = $contact->phone;
-                if (!empty($contact->secondary_phone)) $phones[] = $contact->secondary_phone;
+                if (!empty($contact->phone)) $rawPhones[] = $contact->phone;
+                if (!empty($contact->secondary_phone)) $rawPhones[] = $contact->secondary_phone;
             }
+            $phonePatterns = $this->extractSearchablePhonePatterns($rawPhones);
 
-            $query->where(function ($q) use ($contactId, $phones) {
+            $query->where(function ($q) use ($contactId, $phonePatterns) {
+                // Primary: Explicitly assigned contact ID
                 $q->where('contact_id', $contactId);
-                foreach ($phones as $p) {
-                    $cleanP = preg_replace('/[^0-9]/', '', $p);
-                    $last7 = strlen($cleanP) >= 7 ? substr($cleanP, -7) : $cleanP;
-                    if (!empty($last7)) {
-                        $q->orWhere('caller_number', 'like', "%{$last7}%")
-                          ->orWhere('destination_number', 'like', "%{$last7}%")
-                          ->orWhere('notes', 'like', "%{$last7}%");
-                    }
+
+                // Secondary: Validated phone pattern match on unlinked or matching recordings
+                if (!empty($phonePatterns)) {
+                    $q->orWhere(function ($pq) use ($phonePatterns, $contactId) {
+                        $pq->where(function ($cq) use ($contactId) {
+                            $cq->whereNull('contact_id')->orWhere('contact_id', $contactId);
+                        });
+                        $pq->where(function ($nq) use ($phonePatterns) {
+                            foreach ($phonePatterns as $pat) {
+                                $nq->orWhere('caller_number', 'like', "%{$pat}%")
+                                   ->orWhere('destination_number', 'like', "%{$pat}%");
+                            }
+                        });
+                    });
                 }
             });
         }
 
-        // Opportunity ID filter (direct or via opportunity's contact)
+        // Opportunity ID filter (strict direct match or via opportunity's contact)
         if ($request->filled('opportunity_id')) {
             $oppId = (int) $request->opportunity_id;
             $opp = \App\Models\Opportunity::with('contact')->find($oppId);
-            $phones = [];
+            $rawPhones = [];
+            $oppContactId = $opp?->contact_id;
             if ($opp && $opp->contact) {
-                if (!empty($opp->contact->phone)) $phones[] = $opp->contact->phone;
-                if (!empty($opp->contact->secondary_phone)) $phones[] = $opp->contact->secondary_phone;
+                if (!empty($opp->contact->phone)) $rawPhones[] = $opp->contact->phone;
+                if (!empty($opp->contact->secondary_phone)) $rawPhones[] = $opp->contact->secondary_phone;
             }
+            $phonePatterns = $this->extractSearchablePhonePatterns($rawPhones);
 
-            $query->where(function ($q) use ($oppId, $phones, $opp) {
+            $query->where(function ($q) use ($oppId, $oppContactId, $phonePatterns) {
+                // Primary: Explicitly assigned opportunity ID
                 $q->where('opportunity_id', $oppId);
-                if ($opp && $opp->contact_id) {
-                    $q->orWhere('contact_id', $opp->contact_id);
+
+                if ($oppContactId) {
+                    $q->orWhere('contact_id', $oppContactId);
                 }
-                foreach ($phones as $p) {
-                    $cleanP = preg_replace('/[^0-9]/', '', $p);
-                    $last7 = strlen($cleanP) >= 7 ? substr($cleanP, -7) : $cleanP;
-                    if (!empty($last7)) {
-                        $q->orWhere('caller_number', 'like', "%{$last7}%")
-                          ->orWhere('destination_number', 'like', "%{$last7}%")
-                          ->orWhere('notes', 'like', "%{$last7}%");
-                    }
+
+                // Secondary: Validated phone pattern match on unlinked recordings
+                if (!empty($phonePatterns)) {
+                    $q->orWhere(function ($pq) use ($phonePatterns, $oppId, $oppContactId) {
+                        $pq->where(function ($cq) use ($oppId, $oppContactId) {
+                            $cq->whereNull('opportunity_id');
+                            if ($oppContactId) {
+                                $cq->where(fn ($sq) => $sq->whereNull('contact_id')->orWhere('contact_id', $oppContactId));
+                            }
+                        });
+                        $pq->where(function ($nq) use ($phonePatterns) {
+                            foreach ($phonePatterns as $pat) {
+                                $nq->orWhere('caller_number', 'like', "%{$pat}%")
+                                   ->orWhere('destination_number', 'like', "%{$pat}%");
+                            }
+                        });
+                    });
                 }
             });
         }
 
-        // Phone number filter
+        // Phone number filter (strict minimum 7 digits)
         if ($request->filled('phone')) {
-            $cleanP = preg_replace('/[^0-9]/', '', $request->phone);
-            $last7 = strlen($cleanP) >= 7 ? substr($cleanP, -7) : $cleanP;
-            if (!empty($last7)) {
-                $query->where(function ($q) use ($last7) {
-                    $q->where('caller_number', 'like', "%{$last7}%")
-                      ->orWhere('destination_number', 'like', "%{$last7}%")
-                      ->orWhere('notes', 'like', "%{$last7}%");
+            $patterns = $this->extractSearchablePhonePatterns([$request->phone]);
+            if (!empty($patterns)) {
+                $query->where(function ($q) use ($patterns) {
+                    foreach ($patterns as $pat) {
+                        $q->orWhere('caller_number', 'like', "%{$pat}%")
+                          ->orWhere('destination_number', 'like', "%{$pat}%");
+                    }
                 });
+            } else {
+                $query->whereRaw('1 = 0');
             }
         }
 
@@ -1240,5 +1263,29 @@ class CallRecordingController extends Controller
             'deleted_count' => $count,
         ], 200);
     }
+
+    /**
+     * Extracts significant searchable phone digit patterns (minimum 7 digits).
+     * Prevents short country code fragments (e.g. 971, 966, 44) from matching every call.
+     */
+    private function extractSearchablePhonePatterns(array $rawPhones): array
+    {
+        $patterns = [];
+        foreach ($rawPhones as $p) {
+            if (empty($p)) continue;
+            $clean = preg_replace('/[^0-9]/', '', (string)$p);
+            // Must have at least 7 digits to represent a real telephone number
+            if (strlen($clean) >= 7) {
+                // 1. Last 7 digits
+                $patterns[] = substr($clean, -7);
+                // 2. If it has 8 or more digits, include last 8 digits for tighter matching
+                if (strlen($clean) >= 8) {
+                    $patterns[] = substr($clean, -8);
+                }
+            }
+        }
+        return array_values(array_unique($patterns));
+    }
 }
+
 
