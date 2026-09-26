@@ -112,17 +112,27 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
     html: `
       <div class="space-y-3.5 text-left p-1 text-xs font-['Poppins',sans-serif]">
         <!-- 3CX Calling Status Banner -->
-        <div class="text-[11px] bg-gradient-to-r from-emerald-50 to-teal-50/50 p-2.5 rounded-lg border border-emerald-200 text-emerald-950 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0"></span>
-            <div>
-              <div class="font-bold text-[#081428]">Dialing via 3CX Softphone: <span class="font-mono text-emerald-700">${rawPhone || 'No phone'}</span></div>
-              <div class="text-[10px] text-slate-500">Handshake sent to 3CX Windows App / Extension.</div>
+        <div class="text-[11px] bg-gradient-to-r from-emerald-50 to-teal-50/50 p-2.5 rounded-lg border border-emerald-200 text-emerald-950 flex flex-col gap-2">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0"></span>
+              <div>
+                <div class="font-bold text-[#081428]">Dialing: <span class="font-mono text-emerald-700">${rawPhone || 'No phone'}</span></div>
+                <div class="text-[10px] text-slate-500">Handshake sent to your computer's active 3CX App.</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button type="button" id="swal-redial-btn" class="px-2 py-1 bg-white hover:bg-emerald-100 border border-emerald-300 rounded text-[10px] font-bold text-emerald-800 transition-colors cursor-pointer shadow-2xs" title="Trigger 3CX Desktop App dial again">
+                📞 3CX App
+              </button>
+              <a href="https://ukits.3cx.ae/webclient/#/call?phone=${cleanPhone}" target="_blank" rel="noopener noreferrer" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold transition-colors cursor-pointer shadow-2xs inline-flex items-center gap-1" title="Open in 3CX Web Client">
+                🌐 Web Client
+              </a>
             </div>
           </div>
-          <button type="button" id="swal-redial-btn" class="px-2 py-1 bg-white hover:bg-emerald-100 border border-emerald-300 rounded text-[10px] font-bold text-emerald-800 transition-colors cursor-pointer shadow-2xs">
-            📞 Re-dial
-          </button>
+          <div class="text-[10px] text-slate-600 bg-white/80 p-1.5 rounded border border-emerald-100">
+            ℹ️ Call us agent ki extension se dial hogi jo is PC par 3CX app me logged in hai.
+          </div>
         </div>
 
         <!-- Outcome Selector -->
