@@ -70,8 +70,39 @@ export function trigger3cxDial(rawPhone: string): boolean {
 }
 
 /**
+ * Opens 3CX Web Client as a dedicated, compact floating phone dialer widget
+ * Docked at the top-right corner of the agent's screen so they can call while viewing the CRM
+ */
+export function open3cxFloatingDialer(phone: string): Window | null {
+  const cleanPhone = sanitizePhoneForDialer(phone);
+  if (!cleanPhone || typeof window === 'undefined') return null;
+
+  const width = 430;
+  const height = 690;
+  const screenWidth = window.screen.availWidth || window.screen.width || 1440;
+  const left = Math.max(0, screenWidth - width - 24);
+  const top = 40;
+
+  const url = `https://ukits.3cx.ae/webclient/#/call?phone=${cleanPhone}`;
+  try {
+    const dialerWin = window.open(
+      url,
+      '3CX_CRM_Floating_Dialer',
+      `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no,location=no,resizable=yes,scrollbars=yes`
+    );
+    if (dialerWin) {
+      dialerWin.focus();
+    }
+    return dialerWin;
+  } catch (e) {
+    console.warn('[3CX Dialer] Floating window blocked or failed:', e);
+    return null;
+  }
+}
+
+/**
  * Unified 3CX Call Initiation & Outcome Logging Dialog
- * 1. Automatically initiates 3CX call via OS protocol handler
+ * 1. Automatically initiates 3CX call via OS protocol handler and/or companion floating widget
  * 2. Presents disposition modal for 1-click outcome, SLA timer, and discussion notes
  * 3. Saves call log to CRM backend (/activities) and syncs contact state
  */
@@ -80,8 +111,9 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
   const cleanPhone = sanitizePhoneForDialer(rawPhone);
   const contactName = options.contactName || 'Client';
 
-  // 1. Trigger the 3CX softphone dialer immediately
+  // 1. Trigger the 3CX softphone dialer and open companion widget
   if (cleanPhone) {
+    open3cxFloatingDialer(cleanPhone);
     trigger3cxDial(cleanPhone);
   }
 
@@ -118,20 +150,20 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0"></span>
               <div>
                 <div class="font-bold text-[#081428]">Dialing: <span class="font-mono text-emerald-700">${rawPhone || 'No phone'}</span></div>
-                <div class="text-[10px] text-slate-500">Handshake sent to your computer's active 3CX App.</div>
+                <div class="text-[10px] text-slate-500">3CX Dialer widget opened side-by-side with CRM.</div>
               </div>
             </div>
             <div class="flex items-center gap-1.5">
-              <button type="button" id="swal-redial-btn" class="px-2 py-1 bg-white hover:bg-emerald-100 border border-emerald-300 rounded text-[10px] font-bold text-emerald-800 transition-colors cursor-pointer shadow-2xs" title="Trigger 3CX Desktop App dial again">
-                📞 3CX App
+              <button type="button" id="swal-floating-dialer-btn" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold transition-colors cursor-pointer shadow-2xs inline-flex items-center gap-1" title="Open or re-focus floating 3CX dialer">
+                📱 3CX Dialer
               </button>
-              <a href="https://ukits.3cx.ae/webclient/#/call?phone=${cleanPhone}" target="_blank" rel="noopener noreferrer" class="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold transition-colors cursor-pointer shadow-2xs inline-flex items-center gap-1" title="Open in 3CX Web Client">
-                🌐 Web Client
-              </a>
+              <button type="button" id="swal-redial-btn" class="px-2 py-1 bg-white hover:bg-emerald-100 border border-emerald-300 rounded text-[10px] font-bold text-emerald-800 transition-colors cursor-pointer shadow-2xs" title="Trigger 3CX Desktop App dial">
+                📞 Desktop App
+              </button>
             </div>
           </div>
-          <div class="text-[10px] text-slate-600 bg-white/80 p-1.5 rounded border border-emerald-100">
-            ℹ️ Call us agent ki extension se dial hogi jo is PC par 3CX app me logged in hai.
+          <div class="text-[10px] text-slate-600 bg-white/80 p-1.5 rounded border border-emerald-100 flex items-center justify-between">
+            <span>ℹ️ Call is dialed from your logged-in 3CX extension.</span>
           </div>
         </div>
 
@@ -183,11 +215,19 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
     confirmButtonColor: '#16A34A',
     cancelButtonColor: '#6E6E6E',
     didOpen: (popup) => {
-      // Re-dial button hook
+      // Re-dial desktop button hook
       const redialBtn = popup.querySelector('#swal-redial-btn');
       if (redialBtn && cleanPhone) {
         redialBtn.addEventListener('click', () => {
           trigger3cxDial(cleanPhone);
+        });
+      }
+
+      // Floating 3CX dialer widget hook
+      const floatingBtn = popup.querySelector('#swal-floating-dialer-btn');
+      if (floatingBtn && cleanPhone) {
+        floatingBtn.addEventListener('click', () => {
+          open3cxFloatingDialer(cleanPhone);
         });
       }
 
