@@ -7,10 +7,11 @@ import {
   Briefcase, Sparkles, Copy, Check, 
   ExternalLink, Globe, Target, AlertCircle, 
   CheckCircle2, Flame, Building2, FileAudio,
-  PhoneIncoming, PhoneOutgoing, Send, Download, RefreshCw
+  PhoneIncoming, PhoneOutgoing, Send, Download, RefreshCw, PhoneCall
 } from 'lucide-react';
 import Link from 'next/link';
 import { fetchApi } from '@/lib/api';
+import { launch3cxCallDialog } from '@/lib/callDialer';
 
 const getPlayableAudioUrl = (url: string | null | undefined, recId?: number) => {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.fsadvisory.ae/api';
@@ -284,6 +285,24 @@ export default function ContactDetailModal({
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
                       </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          launch3cxCallDialog({
+                            phone: contact.phone || '',
+                            contactId: contact.id,
+                            contactName: contact.name,
+                            opportunityId: activeOpp?.id || null,
+                            onSuccess: () => {
+                              onClose();
+                            },
+                          });
+                        }}
+                        className="p-1 rounded text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 transition-colors cursor-pointer"
+                        title="Dial via 3CX Softphone & Log Call"
+                      >
+                        <PhoneCall className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -760,6 +779,26 @@ export default function ContactDetailModal({
           </button>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                launch3cxCallDialog({
+                  phone: contact.phone || '',
+                  contactId: contact.id,
+                  contactName: contact.name,
+                  opportunityId: activeOpp?.id || null,
+                  onSuccess: () => {
+                    onClose();
+                  },
+                });
+              }}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Dial client via 3CX Softphone & Log Call"
+            >
+              <PhoneCall className="w-3.5 h-3.5" />
+              <span>Dial via 3CX</span>
+            </button>
+
             {activeOpp ? (
               <Link
                 href={`/opportunities/${activeOpp.id}`}

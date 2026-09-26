@@ -24,6 +24,7 @@ import {
 import Link from 'next/link';
 import { hasPermission, refreshCurrentUser, isSuperUser } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
+import { launch3cxCallDialog } from '@/lib/callDialer';
 
 const formatCallOutcome = (outcome: string | null | undefined): string => {
   if (!outcome) return '';
@@ -830,6 +831,17 @@ export default function LeadPoolPage() {
                     <Copy className="w-3 h-3" />
                   )}
                 </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleQuickCall(ct);
+                  }}
+                  className="p-1 hover:bg-emerald-100 rounded text-emerald-600 hover:text-emerald-800 transition-colors cursor-pointer"
+                  title="Dial client via 3CX Softphone & Log Call"
+                >
+                  <PhoneCall className="w-3 h-3 text-emerald-600" />
+                </button>
               </div>
             ) : (
               '—'
@@ -882,6 +894,28 @@ export default function LeadPoolPage() {
                   ) : (
                     <Copy className="w-3 h-3" />
                   )}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const opp = ct.active_opportunity || ct.opportunities?.[0];
+                    launch3cxCallDialog({
+                      phone: ct.secondary_phone,
+                      contactId: ct.id,
+                      contactName: ct.name,
+                      opportunityId: opp?.id || null,
+                      currentUser,
+                      onSuccess: () => {
+                        loadData(currentPage);
+                        fetchUpcomingAlerts();
+                      },
+                    });
+                  }}
+                  className="p-1 hover:bg-emerald-100 rounded text-emerald-600 hover:text-emerald-800 transition-colors cursor-pointer"
+                  title="Dial secondary phone via 3CX & Log Call"
+                >
+                  <PhoneCall className="w-3 h-3 text-emerald-600" />
                 </button>
               </div>
             ) : (
@@ -1390,165 +1424,19 @@ export default function LeadPoolPage() {
     const oppId = opp?.id || null;
     const contactId = contact.id;
     const contactName = contact.name || 'Client';
+    const phone = contact.phone || '';
 
-    const now = new Date();
-    const nowLocalIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
-    const tomorrowLocalIso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-
-    const { value: formValues } = await Swal.fire({
-      title: `<div class="text-[#081428] font-bold text-base">Log Call Outcome — ${contactName}</div>`,
-      html: `
-        <div class="space-y-3.5 text-left p-1 text-xs font-['Poppins',sans-serif]">
-          <div class="text-[11px] text-[#6E6E6E] bg-slate-50 p-2.5 rounded border border-[#E8E4DC]">
-            📱 <strong>Agent Note:</strong> Dial client from handset. Log discussion points and outcome below to record activity & update SLA timer.
-          </div>
-          <div>
-            <label class="block text-[#081428] font-bold mb-1">Call Outcome Status</label>
-            <select id="swal-call-outcome" class="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none">
-              <option value="Interested">Interested</option>
-              <option value="Callback">Callback</option>
-              <option value="Follow-up">Follow-up</option>
-              <option value="No Answer">No Answer</option>
-              <option value="Not Interested">Not Interested</option>
-              <option value="Wrong Number">Wrong Number</option>
-              <option value="Real Estate Agent">Real Estate Agent</option>
-            </select>
-          </div>
-          <div id="swal-next-schedule-container">
-            <label class="block text-[#081428] font-bold mb-1">Next Follow-up & SLA Schedule</label>
-            <select id="swal-next-schedule" class="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none">
-              <option value="24h">📅 Tomorrow at Same Time (24h) — [On Track 🟢]</option>
-              <option value="15m">⚡ Quick Callback in 15 mins — [Due Soon 🟡]</option>
-              <option value="2h">⏰ Later Today (in 2 hours) — [On Track 🟢]</option>
-              <option value="5h">⏳ In 5 Hours — [On Track 🟢]</option>
-              <option value="48h">📆 In 2 Days — [On Track 🟢]</option>
-              <option value="custom">🗓️ Pick Specific Date & Time (Calendar)</option>
-              <option value="now">🚨 Immediate Escalation (Now) — [Overdue 🔴]</option>
-            </select>
-            <div id="swal-custom-datetime-container" style="display: none;" class="mt-2.5 p-2.5 bg-amber-50/50 border border-amber-200 rounded text-left">
-              <label class="block text-[#081428] font-semibold text-[11px] mb-1">🗓️ Choose Custom Follow-up Date & Time:</label>
-              <input type="datetime-local" id="swal-custom-datetime" value="${tomorrowLocalIso}" min="${nowLocalIso}" class="w-full p-2 bg-white border border-[#C8A147] rounded text-xs text-[#081428] font-mono focus:ring-2 focus:ring-[#C8A147] focus:outline-none" />
-              <p class="text-[10px] text-slate-500 mt-1">SLA alert will trigger 10 minutes prior to this scheduled time.</p>
-            </div>
-          </div>
-          <div>
-            <label class="block text-[#081428] font-bold mb-1">Call Notes / Discussion Summary</label>
-            <textarea id="swal-call-notes" rows="3" placeholder="Enter key discussion summary, buyer preferences, or next steps..." class="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#081428] focus:ring-2 focus:ring-[#C8A147] focus:outline-none"></textarea>
-          </div>
-        </div>
-      `,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Save Call Log & Next',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#16A34A',
-      cancelButtonColor: '#6E6E6E',
-      didOpen: (popup) => {
-        const outcomeSelect = popup.querySelector('#swal-call-outcome') as HTMLSelectElement | null;
-        const scheduleContainer = popup.querySelector('#swal-next-schedule-container') as HTMLElement | null;
-        const scheduleSelect = popup.querySelector('#swal-next-schedule') as HTMLSelectElement | null;
-        const customContainer = popup.querySelector('#swal-custom-datetime-container') as HTMLElement | null;
-
-        if (scheduleSelect && customContainer) {
-          const toggleCustom = () => {
-            customContainer.style.display = scheduleSelect.value === 'custom' ? 'block' : 'none';
-          };
-          scheduleSelect.addEventListener('change', toggleCustom);
-          toggleCustom();
-        }
-
-        if (outcomeSelect && scheduleContainer) {
-          const toggleSchedule = () => {
-            const val = outcomeSelect.value || '';
-            const isTerminal = val.includes('Not Interested') || val.includes('Wrong Number') || val.includes('Real Estate Agent');
-            scheduleContainer.style.display = isTerminal ? 'none' : 'block';
-          };
-          outcomeSelect.addEventListener('change', toggleSchedule);
-          toggleSchedule();
-        }
-      },
-      preConfirm: () => {
-        const outcome = (document.getElementById('swal-call-outcome') as HTMLSelectElement)?.value;
-        const schedule = (document.getElementById('swal-next-schedule') as HTMLSelectElement)?.value;
-        const customDateTime = (document.getElementById('swal-custom-datetime') as HTMLInputElement)?.value;
-        const notes = (document.getElementById('swal-call-notes') as HTMLTextAreaElement)?.value;
-        if (!notes || notes.trim() === '') {
-          Swal.showValidationMessage('Please enter call notes / summary before saving.');
-          return false;
-        }
-        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number') || outcome?.includes('Real Estate Agent');
-
-        if (!isTerminal && schedule === 'custom') {
-          if (!customDateTime) {
-            Swal.showValidationMessage('Please select a date and time from the calendar.');
-            return false;
-          }
-          const dt = new Date(customDateTime);
-          if (isNaN(dt.getTime())) {
-            Swal.showValidationMessage('Invalid date & time selected.');
-            return false;
-          }
-        }
-
-        return { outcome, schedule: isTerminal ? null : schedule, customDateTime, notes, isTerminal };
-      }
-    });
-
-    if (formValues) {
-      let dueAt: Date | null = null;
-      if (!formValues.isTerminal && formValues.schedule) {
-        if (formValues.schedule === 'custom' && formValues.customDateTime) {
-          dueAt = new Date(formValues.customDateTime);
-        } else if (formValues.schedule === '15m') {
-          dueAt = new Date(Date.now() + 15 * 60 * 1000);
-        } else if (formValues.schedule === '2h') {
-          dueAt = new Date(Date.now() + 2 * 3600 * 1000);
-        } else if (formValues.schedule === '5h') {
-          dueAt = new Date(Date.now() + 5 * 3600 * 1000);
-        } else if (formValues.schedule === '24h') {
-          dueAt = new Date(Date.now() + 24 * 3600 * 1000);
-        } else if (formValues.schedule === '48h') {
-          dueAt = new Date(Date.now() + 48 * 3600 * 1000);
-        } else if (formValues.schedule === 'now') {
-          dueAt = new Date(Date.now() - 5 * 60 * 1000);
-        }
-      }
-
-      try {
-        await fetchApi('/activities', {
-          method: 'POST',
-          body: JSON.stringify({
-            contact_id: contactId,
-            opportunity_id: oppId,
-            type: 'call',
-            call_outcome: formValues.outcome,
-            description: `Quick Call: ${formValues.outcome} — ${formValues.notes}`,
-            user_name: currentUser?.name || 'Agent',
-            next_action: formValues.isTerminal ? `Closed: ${formValues.outcome}` : `Follow-up: ${formValues.outcome}`,
-            next_action_due_at: dueAt ? dueAt.toISOString() : null,
-          }),
-        });
-
-        const Toast = Swal.mixin({
-          toast: true,
-          position: 'top-end',
-          showConfirmButton: false,
-          timer: 2200,
-          timerProgressBar: true,
-        });
-        Toast.fire({
-          icon: 'success',
-          title: 'Call logged & SLA status updated!',
-        });
-
+    await launch3cxCallDialog({
+      phone,
+      contactId,
+      contactName,
+      opportunityId: oppId,
+      currentUser,
+      onSuccess: () => {
         loadData(currentPage);
         fetchUpcomingAlerts();
-        window.dispatchEvent(new CustomEvent('crm:contact-updated', { detail: { contactId } }));
-      } catch (err: any) {
-        Swal.fire('Error', err.message || 'Failed to save call activity.', 'error');
-      }
-    }
+      },
+    });
   };
 
   const loadData = async (

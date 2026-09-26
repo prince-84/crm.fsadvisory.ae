@@ -2365,7 +2365,18 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Enforced strict duplicate state assignment in `store()` and `PortalController@ingest()`, preventing webhook payloads from overriding duplicate status.
   - **Frontend Instant Duplicate Recognition Memo (`page.tsx`, `lead-pool/page.tsx`)**:
     - Added a reactive `duplicateContactIds` memo to both main Leads Desk (`/`) and Lead Pool (`/lead-pool`) that groups loaded contacts by their significant phone digits.
-    - Renders the vibrant `[ 📑 DUPLICATE ]` badge immediately on any subsequent occurrence sharing the same client phone number, even prior to backend persistence.
+- **179 — Unified 3CX Click-to-Call Telephony Softphone Integration & 1-Click Call Outcome Logging Engine (`frontend/src/lib/callDialer.ts`, `frontend/src/components/ContactDrawer.tsx`, `frontend/src/components/ContactDetailModal.tsx`, `frontend/src/components/OwnerDetailModal.tsx`, `frontend/src/app/lead-pool/page.tsx`, `frontend/src/app/page.tsx`, `frontend/src/app/queue/page.tsx`)**:
+  - **Zero-Disruption Architecture ("baqi kuch kharab na ho")**:
+    - Built a non-invasive, ultra-fast 3CX softphone integration preserving 100% of existing CRM tables, columns, opportunity lifecycle workflows, SLA timers, and historical activity logs.
+  - **Centralized 3CX Dialer Protocol Gateway (`frontend/src/lib/callDialer.ts`)**:
+    - **`trigger3cxDial(phone)`**: Sanitizes client phone numbers (converting international prefix variations like `00` to `+`, stripping formatting characters) and triggers the registered OS protocol handler (`tel:`, with support for `callto:` and `3cx:` via localStorage). Uses transient DOM link dispatching to hand off dialing directly to the 3CX Windows Desktop App or 3CX Web Client browser extension without page reloads or navigation glitches.
+    - **`launch3cxCallDialog(options)`**: Unified dialog helper that initiates the 3CX softphone dialer and immediately opens the call outcome logger. Features a live 3CX Softphone status banner with re-dial button, 1-click outcome status selection (*Interested*, *Callback*, *Follow-up*, *No Answer*, *Busy*, *Not Interested*, *Wrong Number*, *Real Estate Agent*), follow-up SLA scheduling (*Tomorrow 24h*, *15m*, *2h*, *5h*, *48h*, *Calendar Date-Time*, *Immediate Escalation*), and discussion notes textarea. Automatically persists call logs via `POST /api/activities` and triggers real-time CRM updates (`crm:contact-updated`, `crm_call_logged`, `crm:notification-bell-refresh`).
+  - **Omnipresent 3CX Call Actions Across CRM**:
+    - **Contact Drawer (`ContactDrawer.tsx`)**: Added dedicated `[ 📞 3CX ]` action buttons in the profile header beside primary and secondary phone numbers, and upgraded internal call logging to route through the 3CX dialer.
+    - **Lead Pool Table (`lead-pool/page.tsx`)**: Added a 1-click `PhoneCall` action button in the permanent `Actions` column, plus direct 3CX dial icons inside the `phone` and `secondary_phone` table cells.
+    - **Inbound Leads & Opportunities Desk (`page.tsx`)**: Enhanced `Actions` column call button and `phone` / `secondary_phone` cells with 3CX click-to-call dialing.
+    - **My Queue Desk (`queue/page.tsx`)**: Upgraded both **Regular Leads** and **Owner Leads** queues with 3CX softphone triggers in table cells and `Actions` buttons, seamlessly logging owner feedback or client follow-ups with single-click ease.
+    - **Detail Modals (`ContactDetailModal.tsx`, `OwnerDetailModal.tsx`)**: Added `[ 📞 Dial via 3CX ]` primary action buttons in modal footers and clickable 3CX softphone icons beside contact phone numbers.
 
 ---
 
@@ -2501,7 +2512,8 @@ FSadvisory-crm/
 │   │   └── lib/
 │   │       ├── api.ts                         # Dynamic fetchApi with NEXT_PUBLIC_API_URL
 │   │       ├── permissions.ts                 # Granular RBAC permission checks
-│   │       └── tableSettings.ts               # Global table column persistence & debounced sync
+│   │       ├── tableSettings.ts               # Global table column persistence & debounced sync
+│   │       └── callDialer.ts                  # 3CX Softphone Protocol Trigger & Call Disposition Engine
 │   └── next.config.ts
 ├── whatsapp-gateway/         # Baileys WhatsApp Multi-Device Gateway
 │   ├── server.js             # Gateway Express server & Baileys socket

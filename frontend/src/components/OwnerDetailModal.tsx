@@ -5,9 +5,10 @@ import {
   X, Phone, Smartphone, Mail, Building2, 
   MapPin, Home, MessageSquare, Briefcase, Plus, 
   ExternalLink, Copy, Check, Calendar, User, 
-  Sparkles, FileText
+  Sparkles, FileText, PhoneCall
 } from 'lucide-react';
 import Link from 'next/link';
+import { launch3cxCallDialog } from '@/lib/callDialer';
 
 interface OwnerDetailModalProps {
   owner: any | null;
@@ -139,6 +140,25 @@ export default function OwnerDetailModal({
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
                       </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          launch3cxCallDialog({
+                            phone: primaryPhone || '',
+                            ownerRecordId: owner.id,
+                            contactId: owner.contact_id || null,
+                            contactName: ownerDisplayName,
+                            opportunityId: activeOpp?.id || null,
+                            onSuccess: () => {
+                              onClose();
+                            },
+                          });
+                        }}
+                        className="p-1 rounded text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 transition-colors cursor-pointer"
+                        title="Dial Owner via 3CX Softphone & Log Call"
+                      >
+                        <PhoneCall className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -319,6 +339,27 @@ export default function OwnerDetailModal({
           </button>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                launch3cxCallDialog({
+                  phone: primaryPhone || '',
+                  ownerRecordId: owner.id,
+                  contactId: owner.contact_id || null,
+                  contactName: ownerDisplayName,
+                  opportunityId: activeOpp?.id || null,
+                  onSuccess: () => {
+                    onClose();
+                  },
+                });
+              }}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Dial Owner via 3CX Softphone & Log Call"
+            >
+              <PhoneCall className="w-3.5 h-3.5" />
+              <span>Dial via 3CX</span>
+            </button>
+
             {activeOpp ? (
               <Link
                 href={`/opportunities/${activeOpp.id}`}

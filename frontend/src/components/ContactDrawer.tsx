@@ -13,6 +13,7 @@ import Link from 'next/link';
 import Swal from 'sweetalert2';
 import { fetchApi } from '@/lib/api';
 import { hasAnyPermission, getCurrentUser } from '@/lib/permissions';
+import { launch3cxCallDialog, trigger3cxDial } from '@/lib/callDialer';
 
 const DRAWER_CALL_OUTCOMES = [
   { key: 'Interested', label: 'Interested', icon: ThumbsUp, activeBg: 'bg-emerald-600 text-white border-emerald-600 shadow-sm' },
@@ -564,7 +565,36 @@ export default function ContactDrawer({
     }
   };
 
-  // Internal Quick Call Logger using SweetAlert2 connected directly to DB
+  // 3CX Softphone Call Initiator & Outcome Logger
+  const handleDial3cx = async (targetPhone?: string) => {
+    const phoneToDial = targetPhone || currentContact.phone;
+    if (!phoneToDial) {
+      Swal.fire('No Phone', 'No phone number is available to dial for this contact.', 'warning');
+      return;
+    }
+
+    const opp = activeOpp || (currentContact.opportunities && currentContact.opportunities[0]);
+    const currentUser = getCurrentUser();
+
+    await launch3cxCallDialog({
+      phone: phoneToDial,
+      contactId: currentContact.id,
+      contactName: currentContact.name,
+      opportunityId: opp?.id || null,
+      currentUser,
+      onSuccess: async () => {
+        if (currentContact?.id) {
+          await fetchLiveContact(currentContact.id);
+        }
+        if (onContactUpdated) {
+          onContactUpdated(currentContact);
+        }
+        window.dispatchEvent(new CustomEvent('crm:contact-updated', { detail: { contactId: currentContact.id } }));
+      }
+    });
+  };
+
+  // Internal Call Logger hook
   const handleLogCallInternal = async () => {
     if (onQuickCall) {
       await onQuickCall(currentContact);
@@ -573,173 +603,7 @@ export default function ContactDrawer({
       }
       return;
     }
-
-    const now = new Date();
-    const nowLocalIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
-    const tomorrowLocalIso = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-
-    const { value: formValues } = await Swal.fire({
-      title: `<div class="text-[#081428] font-bold text-base">Log Call Outcome — ${currentContact.name}</div>`,
-      html: `
-        <div class="space-y-3.5 text-left p-1 text-xs font-['Poppins',sans-serif]">
-          <div class="text-[11px] text-[#6E6E6E] bg-[#FAF8F5] p-2.5 rounded border border-[#E8E4DC]">
-            📞 Dial client at <strong>${currentContact.phone}</strong>. Record call outcome and notes to save to CRM database immediately.
-          </div>
-          <div>
-            <label class="block text-[#081428] font-bold mb-1">Call Outcome</label>
-            <select id="drawer-swal-outcome" class="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none">
-              <option value="Interested">Interested</option>
-              <option value="Callback">Callback</option>
-              <option value="Follow-up">Follow-up</option>
-              <option value="No Answer">No Answer</option>
-              <option value="Not Interested">Not Interested</option>
-              <option value="Wrong Number">Wrong Number</option>
-              <option value="Real Estate Agent">Real Estate Agent</option>
-            </select>
-          </div>
-          <div id="drawer-swal-schedule-box">
-            <label class="block text-[#081428] font-bold mb-1">Next Follow-up & SLA Schedule</label>
-            <select id="drawer-swal-schedule" class="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#081428] font-medium focus:ring-2 focus:ring-[#C8A147] focus:outline-none">
-              <option value="24h">📅 Tomorrow at Same Time (24h) — [On Track 🟢]</option>
-              <option value="15m">⚡ Quick Callback in 15 mins — [Due Soon 🟡]</option>
-              <option value="2h">⏰ Later Today (in 2 hours) — [On Track 🟢]</option>
-              <option value="5h">⏳ In 5 Hours — [On Track 🟢]</option>
-              <option value="48h">📆 In 2 Days — [On Track 🟢]</option>
-              <option value="custom">🗓️ Pick Specific Date & Time (Calendar)</option>
-              <option value="now">🚨 Immediate Escalation (Now) — [Overdue 🔴]</option>
-            </select>
-            <div id="drawer-custom-datetime-container" style="display: none;" class="mt-2.5 p-2.5 bg-amber-50/50 border border-amber-200 rounded text-left">
-              <label class="block text-[#081428] font-semibold text-[11px] mb-1">🗓️ Choose Custom Follow-up Date & Time:</label>
-              <input type="datetime-local" id="drawer-custom-datetime" value="${tomorrowLocalIso}" min="${nowLocalIso}" class="w-full p-2 bg-white border border-[#C8A147] rounded text-xs text-[#081428] font-mono focus:ring-2 focus:ring-[#C8A147] focus:outline-none" />
-              <p class="text-[10px] text-slate-500 mt-1">SLA alert will trigger 10 minutes prior to scheduled time.</p>
-            </div>
-          </div>
-          <div>
-            <label class="block text-[#081428] font-bold mb-1">Call Discussion Notes</label>
-            <textarea id="drawer-swal-notes" rows="3" placeholder="Enter key conversation points, requirements, or next steps..." class="w-full p-2.5 bg-white border border-[#E8E4DC] rounded text-xs text-[#081428] focus:ring-2 focus:ring-[#C8A147] focus:outline-none"></textarea>
-          </div>
-        </div>
-      `,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Save Call to Database',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#16A34A',
-      cancelButtonColor: '#6E6E6E',
-      didOpen: (popup) => {
-        const outcomeSel = popup.querySelector('#drawer-swal-outcome') as HTMLSelectElement | null;
-        const scheduleBox = popup.querySelector('#drawer-swal-schedule-box') as HTMLElement | null;
-        const scheduleSelect = popup.querySelector('#drawer-swal-schedule') as HTMLSelectElement | null;
-        const customContainer = popup.querySelector('#drawer-custom-datetime-container') as HTMLElement | null;
-
-        if (scheduleSelect && customContainer) {
-          const toggleCustom = () => {
-            customContainer.style.display = scheduleSelect.value === 'custom' ? 'block' : 'none';
-          };
-          scheduleSelect.addEventListener('change', toggleCustom);
-          toggleCustom();
-        }
-
-        if (outcomeSel && scheduleBox) {
-          const toggle = () => {
-            const isTerminal = outcomeSel.value.includes('Not Interested') || outcomeSel.value.includes('Wrong Number') || outcomeSel.value.includes('Real Estate Agent');
-            scheduleBox.style.display = isTerminal ? 'none' : 'block';
-          };
-          outcomeSel.addEventListener('change', toggle);
-          toggle();
-        }
-      },
-      preConfirm: () => {
-        const outcome = (document.getElementById('drawer-swal-outcome') as HTMLSelectElement)?.value;
-        const schedule = (document.getElementById('drawer-swal-schedule') as HTMLSelectElement)?.value;
-        const customDateTime = (document.getElementById('drawer-custom-datetime') as HTMLInputElement)?.value;
-        const notes = (document.getElementById('drawer-swal-notes') as HTMLTextAreaElement)?.value;
-        if (!notes || !notes.trim()) {
-          Swal.showValidationMessage('Please enter call notes before saving.');
-          return false;
-        }
-        const isTerminal = outcome?.includes('Not Interested') || outcome?.includes('Wrong Number') || outcome?.includes('Real Estate Agent');
-
-        if (!isTerminal && schedule === 'custom') {
-          if (!customDateTime) {
-            Swal.showValidationMessage('Please select a date and time from the calendar.');
-            return false;
-          }
-          const dt = new Date(customDateTime);
-          if (isNaN(dt.getTime())) {
-            Swal.showValidationMessage('Invalid date & time selected.');
-            return false;
-          }
-        }
-
-        return { outcome, schedule: isTerminal ? null : schedule, customDateTime, notes, isTerminal };
-      }
-    });
-
-    if (formValues) {
-      let dueAt: Date | null = null;
-      if (!formValues.isTerminal && formValues.schedule) {
-        if (formValues.schedule === 'custom' && formValues.customDateTime) {
-          dueAt = new Date(formValues.customDateTime);
-        } else if (formValues.schedule === '15m') {
-          dueAt = new Date(Date.now() + 15 * 60 * 1000);
-        } else if (formValues.schedule === '2h') {
-          dueAt = new Date(Date.now() + 2 * 3600 * 1000);
-        } else if (formValues.schedule === '5h') {
-          dueAt = new Date(Date.now() + 5 * 3600 * 1000);
-        } else if (formValues.schedule === '24h') {
-          dueAt = new Date(Date.now() + 24 * 3600 * 1000);
-        } else if (formValues.schedule === '48h') {
-          dueAt = new Date(Date.now() + 48 * 3600 * 1000);
-        } else if (formValues.schedule === 'now') {
-          dueAt = new Date(Date.now() - 5 * 60 * 1000);
-        }
-      }
-
-      let storedUser: any = null;
-      try {
-        const u = localStorage.getItem('crm_user');
-        if (u) storedUser = JSON.parse(u);
-      } catch (e) {}
-
-      try {
-        await fetchApi('/activities', {
-          method: 'POST',
-          body: JSON.stringify({
-            contact_id: currentContact.id,
-            opportunity_id: activeOpp?.id || null,
-            type: 'call',
-            call_outcome: formValues.outcome,
-            description: `Quick Call: ${formValues.outcome} — ${formValues.notes}`,
-            user_name: storedUser?.name || 'Advisor',
-            next_action: formValues.isTerminal ? `Closed: ${formValues.outcome}` : `Follow-up: ${formValues.outcome}`,
-            next_action_due_at: dueAt ? dueAt.toISOString() : null,
-          }),
-        });
-
-        const Toast = Swal.mixin({
-          toast: true,
-          position: 'top-end',
-          showConfirmButton: false,
-          timer: 2000,
-          timerProgressBar: true,
-        });
-        Toast.fire({
-          icon: 'success',
-          title: 'Call logged to database!',
-        });
-
-        // Refresh live contact from DB
-        await fetchLiveContact(currentContact.id);
-        if (onContactUpdated) {
-          onContactUpdated(currentContact);
-        }
-        window.dispatchEvent(new CustomEvent('crm:contact-updated', { detail: { contactId: currentContact.id } }));
-      } catch (err: any) {
-        Swal.fire('Error', err.message || 'Failed to save call activity.', 'error');
-      }
-    }
+    await handleDial3cx(currentContact.phone);
   };
 
   // Outcome badge styling
@@ -914,6 +778,19 @@ export default function ContactDrawer({
                     >
                       {copiedField === 'phone' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                     </button>
+                    {/* 3CX Softphone Call Trigger */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDial3cx(currentContact.phone);
+                      }}
+                      className="px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded border border-emerald-300 font-bold text-[10px] flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                      title="Dial via 3CX Softphone & Log Call"
+                    >
+                      <PhoneCall className="w-2.5 h-2.5" />
+                      <span>3CX</span>
+                    </button>
                   </div>
 
                   {/* Secondary Phone if available */}
@@ -935,6 +812,19 @@ export default function ContactDrawer({
                         title="Copy secondary phone"
                       >
                         {copiedField === 'secondary_phone' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                      {/* 3CX Secondary Call Trigger */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDial3cx(currentContact.secondary_phone);
+                        }}
+                        className="px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded border border-emerald-300 font-bold text-[10px] flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                        title="Dial secondary phone via 3CX & Log Call"
+                      >
+                        <PhoneCall className="w-2.5 h-2.5" />
+                        <span>3CX</span>
                       </button>
                     </div>
                   )}
