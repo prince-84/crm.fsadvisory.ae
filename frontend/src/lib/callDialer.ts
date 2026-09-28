@@ -11,32 +11,121 @@ export interface DialOptions {
   onSuccess?: () => void;
 }
 
-/**
- * Sanitize and clean phone number for 3CX Softphone & Desktop App protocol dialing
- */
-export function sanitizePhoneForDialer(phone: string): string {
-  if (!phone) return '';
-  let clean = phone.trim().replace(/[^0-9+]/g, '');
-  if (clean.startsWith('00')) {
-    clean = '+' + clean.substring(2);
-  }
-  return clean;
+export type DialFormatType = 'intl00' | 'e164' | 'localUae' | 'digitsOnly';
+
+export interface ParsedPhoneNumber {
+  raw: string;
+  digitsOnly: string;
+  e164: string;           // e.g. "+971585686896"
+  intl00: string;         // e.g. "00971585686896"
+  localUae: string | null; // e.g. "0585686896" (if UAE number)
+  recommended: string;    // Based on user preference
+  activeFormat: DialFormatType;
 }
 
 /**
- * Triggers 3CX Click-to-Call using standard OS protocol handler (tel:, 3cx:, or callto:).
- * This hands off the call to the 3CX Desktop App or 3CX Web Client extension on the user's PC.
+ * Intelligent phone parser and normalizer.
+ * Normalizes numbers regardless of whether they were stored:
+ * - with '+' or without '+' (e.g. +9715... vs 9715...)
+ * - with '00' prefix (e.g. 009715...)
+ * - with local UAE mobile format (e.g. 058... or 58...)
+ * - with spaces, dashes, dots, or parentheses
  */
-export function trigger3cxDial(rawPhone: string): boolean {
-  const cleanPhone = sanitizePhoneForDialer(rawPhone);
-  if (!cleanPhone) {
-    console.warn('[3CX Dialer] No valid phone number provided to dial.');
+export function parsePhoneNumber(rawPhone: string): ParsedPhoneNumber | null {
+  if (!rawPhone) return null;
+
+  const raw = String(rawPhone).trim();
+  // Strip spaces, dashes, dots, parentheses, commas
+  const clean = raw.replace(/[\s\-\(\)\.\,]/g, '');
+  if (!clean) return null;
+
+  let digits = '';
+  const hadPlus = clean.startsWith('+');
+  const had00 = clean.startsWith('00');
+
+  if (hadPlus) {
+    digits = clean.substring(1).replace(/[^0-9]/g, '');
+  } else if (had00) {
+    digits = clean.substring(2).replace(/[^0-9]/g, '');
+  } else if (/^05[0-9]{8}$/.test(clean)) {
+    // UAE local mobile e.g. 0585686896 -> 971585686896
+    digits = '971' + clean.substring(1);
+  } else if (/^5[0-9]{8}$/.test(clean)) {
+    // UAE mobile without leading zero e.g. 585686896 -> 971585686896
+    digits = '971' + clean;
+  } else {
+    digits = clean.replace(/[^0-9]/g, '');
+  }
+
+  if (!digits) return null;
+
+  // Detect UAE local equivalent (05x for mobile or 02/03/04/06/07/09 for landlines)
+  let localUae: string | null = null;
+  if (digits.startsWith('9715') && digits.length === 12) {
+    localUae = '0' + digits.substring(3);
+  } else if (digits.startsWith('971') && (digits.length === 11 || digits.length === 12)) {
+    localUae = '0' + digits.substring(3);
+  }
+
+  const e164 = '+' + digits;
+  const intl00 = '00' + digits;
+  const digitsOnly = digits;
+
+  // Retrieve user saved format preference (default to 'intl00' for 3CX compatibility)
+  let activeFormat: DialFormatType = 'intl00';
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('crm_3cx_format');
+      if (saved && ['intl00', 'e164', 'localUae', 'digitsOnly'].includes(saved)) {
+        activeFormat = saved as DialFormatType;
+      }
+    } catch (e) {}
+  }
+
+  let recommended = intl00;
+  if (activeFormat === 'e164') {
+    recommended = e164;
+  } else if (activeFormat === 'localUae' && localUae) {
+    recommended = localUae;
+  } else if (activeFormat === 'digitsOnly') {
+    recommended = digitsOnly;
+  } else {
+    recommended = intl00;
+  }
+
+  return {
+    raw,
+    digitsOnly,
+    e164,
+    intl00,
+    localUae,
+    recommended,
+    activeFormat,
+  };
+}
+
+/**
+ * Backward compatible sanitize function
+ */
+export function sanitizePhoneForDialer(phone: string): string {
+  const parsed = parsePhoneNumber(phone);
+  return parsed ? parsed.recommended : '';
+}
+
+/**
+ * Triggers 3CX Click-to-Call using 3CX Desktop App or standard OS protocol handler.
+ * Default protocol: 'tel' (triggers 3CX Desktop App on Windows)
+ * Alternative protocols: '3cx' or 'callto'
+ */
+export function trigger3cxDial(phone: string, overrideProtocol?: string): boolean {
+  if (!phone) {
+    console.warn('[3CX Dialer] No phone number provided to dial.');
     return false;
   }
 
-  // Retrieve preferred protocol handler (default: 'tel')
-  let protocol = 'tel';
-  if (typeof window !== 'undefined') {
+  // Retrieve protocol
+  let protocol = overrideProtocol;
+  if (!protocol && typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem('crm_3cx_protocol');
       if (stored && ['tel', 'callto', '3cx'].includes(stored)) {
@@ -44,8 +133,22 @@ export function trigger3cxDial(rawPhone: string): boolean {
       }
     } catch (e) {}
   }
+  if (!protocol) protocol = 'tel';
 
-  const dialUri = `${protocol}:${cleanPhone}`;
+  // Construct target URI
+  // If the number already has 00 or + or digits, use as-is; otherwise parse
+  let targetPhone = phone.trim();
+  if (!targetPhone.startsWith('+') && !targetPhone.startsWith('00')) {
+    const parsed = parsePhoneNumber(targetPhone);
+    if (parsed) {
+      targetPhone = parsed.recommended;
+    }
+  }
+
+  // For 3cx: custom protocol, can use 3cx:XXXX or 3cx:dial?number=XXXX
+  const dialUri = protocol === '3cx' 
+    ? `3cx:${encodeURIComponent(targetPhone)}` 
+    : `${protocol}:${encodeURIComponent(targetPhone).replace(/%2B/g, '+')}`;
 
   if (typeof window !== 'undefined') {
     try {
@@ -57,12 +160,17 @@ export function trigger3cxDial(rawPhone: string): boolean {
       link.click();
       document.body.removeChild(link);
 
-      // Dispatch dial event for any reactive CRM listeners
-      window.dispatchEvent(new CustomEvent('crm:3cx-dialed', { detail: { phone: rawPhone, cleanPhone, dialUri } }));
+      window.dispatchEvent(new CustomEvent('crm:3cx-dialed', { detail: { phone, dialUri, protocol } }));
       return true;
     } catch (err) {
-      console.error('[3CX Dialer] Failed to launch dialer URI:', err);
-      return false;
+      console.error('[3CX Dialer] Failed to trigger dial URI:', err);
+      // Fallback
+      try {
+        window.location.href = dialUri;
+        return true;
+      } catch (e) {
+        return false;
+      }
     }
   }
 
@@ -70,11 +178,11 @@ export function trigger3cxDial(rawPhone: string): boolean {
 }
 
 /**
- * Opens 3CX Web Client as a dedicated, compact floating phone dialer widget
- * Docked at the top-right corner of the agent's screen so they can call while viewing the CRM
+ * Opens 3CX Web Client as a dedicated companion floating dialer widget
  */
 export function open3cxFloatingDialer(phone: string): Window | null {
-  const cleanPhone = sanitizePhoneForDialer(phone);
+  const parsed = parsePhoneNumber(phone);
+  const cleanPhone = parsed ? parsed.recommended : phone.trim();
   if (!cleanPhone || typeof window === 'undefined') return null;
 
   const width = 430;
@@ -83,7 +191,8 @@ export function open3cxFloatingDialer(phone: string): Window | null {
   const left = Math.max(0, screenWidth - width - 24);
   const top = 40;
 
-  const url = `https://ukits.3cx.ae/webclient/#/call?phone=${cleanPhone}`;
+  // Use encodeURIComponent to ensure '+' or '00' isn't corrupted by URL query decoding
+  const url = `https://ukits.3cx.ae/webclient/#/call?phone=${encodeURIComponent(cleanPhone)}`;
   try {
     const dialerWin = window.open(
       url,
@@ -102,19 +211,24 @@ export function open3cxFloatingDialer(phone: string): Window | null {
 
 /**
  * Unified 3CX Call Initiation & Outcome Logging Dialog
- * 1. Automatically initiates 3CX call via OS protocol handler and/or companion floating widget
- * 2. Presents disposition modal for 1-click outcome, SLA timer, and discussion notes
- * 3. Saves call log to CRM backend (/activities) and syncs contact state
+ * Default Mode: 3CX Desktop App (Option 1)
+ * Features:
+ * - Triggers 3CX Desktop App directly without obstructing the CRM window
+ * - Smart phone normalizer with 1-click format switcher (+ Prefix, 00 Prefix, UAE Local 05x, Raw Digits)
+ * - Remembers chosen dialing format in localStorage
+ * - Outcome logging, Next follow-up SLA schedule, and Contact Activity recording
  */
 export async function launch3cxCallDialog(options: DialOptions): Promise<boolean> {
   const rawPhone = options.phone || '';
-  const cleanPhone = sanitizePhoneForDialer(rawPhone);
+  const parsed = parsePhoneNumber(rawPhone);
   const contactName = options.contactName || 'Client';
 
-  // 1. Trigger the 3CX softphone dialer and open companion widget
-  if (cleanPhone) {
-    open3cxFloatingDialer(cleanPhone);
-    trigger3cxDial(cleanPhone);
+  let currentDialNumber = parsed ? parsed.recommended : rawPhone;
+  let activeFormat: DialFormatType = parsed ? parsed.activeFormat : 'intl00';
+
+  // 1. Trigger call in 3CX Desktop App (Option 1: Native app direct dial)
+  if (currentDialNumber) {
+    trigger3cxDial(currentDialNumber);
   }
 
   const now = new Date();
@@ -127,8 +241,8 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
     try {
       const u = localStorage.getItem('crm_user');
       if (u) {
-        const parsed = JSON.parse(u);
-        currentAdvisorName = parsed.name || parsed.email;
+        const parsedUser = JSON.parse(u);
+        currentAdvisorName = parsedUser.name || parsedUser.email;
       }
     } catch (e) {}
   }
@@ -137,33 +251,64 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
   const { value: formValues } = await Swal.fire({
     title: `<div class="text-[#081428] font-bold text-base flex items-center justify-center gap-2">
       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
-        3CX Dialer
+        3CX Desktop App
       </span>
       <span>Log Call — ${contactName}</span>
     </div>`,
     html: `
       <div class="space-y-3.5 text-left p-1 text-xs font-['Poppins',sans-serif]">
-        <!-- 3CX Calling Status Banner -->
-        <div class="text-[11px] bg-gradient-to-r from-emerald-50 to-teal-50/50 p-2.5 rounded-lg border border-emerald-200 text-emerald-950 flex flex-col gap-2">
+        <!-- 3CX Calling Status & Format Banner -->
+        <div class="text-[11px] bg-gradient-to-r from-emerald-50 via-teal-50/50 to-blue-50/40 p-3 rounded-lg border border-emerald-200 text-emerald-950 flex flex-col gap-2.5">
           <div class="flex items-center justify-between flex-wrap gap-2">
             <div class="flex items-center gap-2">
               <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0"></span>
               <div>
-                <div class="font-bold text-[#081428]">Dialing: <span class="font-mono text-emerald-700">${rawPhone || 'No phone'}</span></div>
-                <div class="text-[10px] text-slate-500">3CX Dialer widget opened side-by-side with CRM.</div>
+                <div class="font-bold text-[#081428] flex items-center gap-1.5">
+                  <span>Dialing:</span>
+                  <span id="swal-dialed-number-display" class="font-mono text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-300 font-bold text-xs">${currentDialNumber || 'No phone'}</span>
+                </div>
+                <div class="text-[10px] text-slate-500">Connected to 3CX Desktop App (Option 1)</div>
               </div>
             </div>
             <div class="flex items-center gap-1.5">
-              <button type="button" id="swal-floating-dialer-btn" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold transition-colors cursor-pointer shadow-2xs inline-flex items-center gap-1" title="Open or re-focus floating 3CX dialer">
-                📱 3CX Dialer
+              <button type="button" id="swal-redial-btn" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold transition-colors cursor-pointer shadow-2xs inline-flex items-center gap-1" title="Re-dial in 3CX App">
+                ⚡ Re-Dial
               </button>
-              <button type="button" id="swal-redial-btn" class="px-2 py-1 bg-white hover:bg-emerald-100 border border-emerald-300 rounded text-[10px] font-bold text-emerald-800 transition-colors cursor-pointer shadow-2xs" title="Trigger 3CX Desktop App dial">
-                📞 Desktop App
+              <button type="button" id="swal-web-dialer-btn" class="px-2 py-1 bg-white hover:bg-emerald-100 border border-emerald-300 rounded text-[10px] font-bold text-emerald-800 transition-colors cursor-pointer shadow-2xs" title="Open 3CX Web Client Floating Window">
+                🌐 Web Dialer
               </button>
             </div>
           </div>
-          <div class="text-[10px] text-slate-600 bg-white/80 p-1.5 rounded border border-emerald-100 flex items-center justify-between">
-            <span>ℹ️ Call is dialed from your logged-in 3CX extension.</span>
+
+          <!-- Format Switcher Chips (Solves Country Code & '+' issues) -->
+          ${parsed ? `
+          <div class="pt-2 border-t border-emerald-200/60">
+            <div class="text-[10px] font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+              <span>Choose Dial Format (Click to Switch & Re-dial):</span>
+              <span class="text-[9px] text-emerald-700 font-medium">Auto-saves preference</span>
+            </div>
+            <div class="flex items-center gap-1 flex-wrap" id="swal-format-chips">
+              <button type="button" data-format="intl00" data-number="${parsed.intl00}" class="swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer ${activeFormat === 'intl00' ? 'bg-emerald-700 text-white border-emerald-700 font-bold shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50'}">
+                00 Prefix: ${parsed.intl00} (Recommended)
+              </button>
+              <button type="button" data-format="e164" data-number="${parsed.e164}" class="swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer ${activeFormat === 'e164' ? 'bg-emerald-700 text-white border-emerald-700 font-bold shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50'}">
+                + Prefix: ${parsed.e164}
+              </button>
+              ${parsed.localUae ? `
+              <button type="button" data-format="localUae" data-number="${parsed.localUae}" class="swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer ${activeFormat === 'localUae' ? 'bg-emerald-700 text-white border-emerald-700 font-bold shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50'}">
+                UAE Local: ${parsed.localUae}
+              </button>
+              ` : ''}
+              <button type="button" data-format="digitsOnly" data-number="${parsed.digitsOnly}" class="swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer ${activeFormat === 'digitsOnly' ? 'bg-emerald-700 text-white border-emerald-700 font-bold shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50'}">
+                Digits: ${parsed.digitsOnly}
+              </button>
+            </div>
+          </div>
+          ` : ''}
+
+          <!-- Guidance Note for 3CX App Pin -->
+          <div class="text-[10px] text-slate-600 bg-white/90 p-1.5 rounded border border-emerald-100 flex items-center justify-between">
+            <span>📌 <strong>3CX App Tip:</strong> 3CX App ke top bar mein <strong>Pin (📌)</strong> click karein taake dialer hamesha screen par samne rahe.</span>
           </div>
         </div>
 
@@ -215,21 +360,57 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
     confirmButtonColor: '#16A34A',
     cancelButtonColor: '#6E6E6E',
     didOpen: (popup) => {
-      // Re-dial desktop button hook
+      const displaySpan = popup.querySelector('#swal-dialed-number-display');
       const redialBtn = popup.querySelector('#swal-redial-btn');
-      if (redialBtn && cleanPhone) {
+      const webDialerBtn = popup.querySelector('#swal-web-dialer-btn');
+      const chipBtns = popup.querySelectorAll('.swal-chip-btn');
+
+      // Re-dial button click
+      if (redialBtn) {
         redialBtn.addEventListener('click', () => {
-          trigger3cxDial(cleanPhone);
+          if (currentDialNumber) {
+            trigger3cxDial(currentDialNumber);
+          }
         });
       }
 
-      // Floating 3CX dialer widget hook
-      const floatingBtn = popup.querySelector('#swal-floating-dialer-btn');
-      if (floatingBtn && cleanPhone) {
-        floatingBtn.addEventListener('click', () => {
-          open3cxFloatingDialer(cleanPhone);
+      // Web dialer companion button click
+      if (webDialerBtn) {
+        webDialerBtn.addEventListener('click', () => {
+          if (currentDialNumber) {
+            open3cxFloatingDialer(currentDialNumber);
+          }
         });
       }
+
+      // Format switcher chips click
+      chipBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const newNumber = btn.getAttribute('data-number');
+          const newFormat = btn.getAttribute('data-format') as DialFormatType;
+          if (newNumber) {
+            currentDialNumber = newNumber;
+            if (displaySpan) {
+              displaySpan.textContent = newNumber;
+            }
+            if (newFormat) {
+              activeFormat = newFormat;
+              try {
+                localStorage.setItem('crm_3cx_format', newFormat);
+              } catch (e) {}
+
+              // Update active styling
+              chipBtns.forEach((b) => {
+                b.className = 'swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer bg-white text-slate-700 border-slate-300 hover:bg-emerald-50';
+              });
+              btn.className = 'swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer bg-emerald-700 text-white border-emerald-700 font-bold shadow-xs';
+            }
+
+            // Immediately trigger re-dial with the newly chosen format
+            trigger3cxDial(newNumber);
+          }
+        });
+      });
 
       const outcomeSelect = popup.querySelector('#swal-call-outcome') as HTMLSelectElement | null;
       const scheduleContainer = popup.querySelector('#swal-next-schedule-container') as HTMLElement | null;
@@ -327,7 +508,7 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
       payload.owner_record_id = options.ownerRecordId;
     }
     if (!payload.contact_id && rawPhone) {
-      payload.phone = rawPhone;
+      payload.phone = currentDialNumber || rawPhone;
       payload.contact_name = contactName;
     }
 

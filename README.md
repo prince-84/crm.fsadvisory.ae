@@ -2377,6 +2377,19 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Inbound Leads & Opportunities Desk (`page.tsx`)**: Enhanced `Actions` column call button and `phone` / `secondary_phone` cells with 3CX click-to-call dialing.
     - **My Queue Desk (`queue/page.tsx`)**: Upgraded both **Regular Leads** and **Owner Leads** queues with 3CX softphone triggers in table cells and `Actions` buttons, seamlessly logging owner feedback or client follow-ups with single-click ease.
     - **Detail Modals (`ContactDetailModal.tsx`, `OwnerDetailModal.tsx`)**: Added `[ 📞 Dial via 3CX ]` primary action buttons in modal footers and clickable 3CX softphone icons beside contact phone numbers.
+- **180 — 3CX Desktop App Direct Integration (Option 1), Smart Multi-Format Number Normalizer & Instant Format Switcher (`frontend/src/lib/callDialer.ts`)**:
+  - **Native 3CX Desktop App (Option 1) as Default Dialer**:
+    - Configured the native 3CX Windows Desktop App as the default dialer mode via OS protocol handlers (`tel:`, `3cx:`).
+    - Prevented child browser popups from opening automatically, eliminating the OS window focus clash where clicking inside the maximized CRM sent the dialer behind the browser window.
+    - Added in-modal guidance for agents on utilizing the 3CX Desktop App's native **Pin (📌)** icon to keep the softphone keypad permanently on top while typing call notes.
+  - **Smart Multi-Format Phone Normalizer (`parsePhoneNumber`)**:
+    - Solved telecom trunk and PBX outbound rule failures caused by mixed phone number formats across CRM tables (e.g. numbers with `+`, without `+`, with `00`, local UAE mobile formats starting with `05` or `5`, spaces, brackets, and dashes).
+    - Automatically generates 4 normalized formats for every contact: **00 Prefix** (`00971...`), **+ Prefix / E.164** (`+971...`), **UAE Local** (`05...` for UAE mobiles/landlines), and **Raw Digits** (`971...`).
+    - Standardized default dialing to the **`00 Prefix`** (`intl00`), preventing URL decoding issues where `+` can be misconstrued as whitespace by Windows protocol dispatchers.
+  - **Interactive 1-Click Dial Format Switcher & Instant Re-dialer**:
+    - Embedded dynamic format chips inside the Call Outcome modal banner (`00 Prefix (Recommended)`, `+ Prefix`, `UAE Local`, `Digits`).
+    - Clicking any chip instantly updates the active phone string, remembers the agent's preference in `localStorage.crm_3cx_format`, and triggers an immediate re-dial in the 3CX Desktop App.
+    - Included a quick `⚡ Re-Dial` button and an optional `🌐 Web Dialer` button for agents who still wish to open the 3CX Web Client popup side-by-side.
 
 ---
 
