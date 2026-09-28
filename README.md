@@ -2398,6 +2398,33 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
 - **182 — UI Density & Border Radius Harmonization on Leads Desk & Lead Pool (`frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`)**:
   - Harmonized table badge geometry by updating **Lead Type** (`ORGANIC`, `PAID`) and **Call Status** badges (`NEW`, `Qualified`, call outcomes, Lead Pool tags) from pill-shaped `rounded-full` to subtle rectangular `rounded-md`.
   - Matched the elegant, structured border radius of the adjacent `Source` column cards across both the primary Inbound Leads Desk and the Lead Pool Archive.
+- **183 — Executive Command Center Dashboard Overhaul: KPI Ribbon, Lead Sources & Sub-Sources Attribution Intelligence, Appointments Desk, and Role-Based Boss vs. Individual Agent Filtering (`backend/app/Http/Controllers/Api/ReportController.php`, `frontend/src/app/overview/page.tsx`, `frontend/src/app/dashboard/page.tsx`)**:
+  - **Multi-Scope Agent Filter Toolbar**:
+    - Super Admin ("Boss") and managers can view company-wide aggregated intelligence (`👑 All Advisors (Whole Team)`) or filter dynamically by any active individual advisor from the dropdown selector.
+    - Automatically updates all dashboard metrics, sources attribution, sub-sources tables, appointments schedule, and pipeline progress in real time for the selected advisor with single-click reset.
+  - **Top 6 KPI Summary Ribbon**:
+    - **Total Leads**: Displays assigned leads for the selected advisor or total team leads against the master pool.
+    - **New Leads**: Highlights fresh, uncontacted leads awaiting their 1st outreach call.
+    - **Total Appointments**: Live count of scheduled and completed client viewings/meetings with direct link to `/calendar`.
+    - **Qualified Deals**: Active opportunities in Stage 1 Qualified and pipeline with link to `/opportunities`.
+    - **Closed Won Deals**: Deal count and total closed transaction volume in AED.
+    - **Calls Logged**: Outbound and inbound call volume logged via the 3CX PBX telephony integration and manual logs.
+  - **Lead Sources & Sub-Sources Attribution Intelligence Engine**:
+    - Automatically parses source strings into parent source and granular sub-sources (e.g., `Website (uae-offplan)` $\rightarrow$ Parent: `Website & Landing Pages`, Sub: `uae-offplan`; `Facebook Ads (FS - More Volume)` $\rightarrow$ Parent: `Meta Ads`, Sub: `FS - More Volume`; `Meta Ads (Facebook Lead Form)` $\rightarrow$ Sub: `Facebook Lead Form`; `Google Ads (PPC Search Campaign)` $\rightarrow$ Sub: `PPC Search Campaign`).
+    - Dual tabbed views:
+      - **Primary Sources Overview**: Visual cards with gradient progress distribution bars, percentage shares, opportunities generated, and active sub-source chips.
+      - **Sub-Sources Granular Table**: Full analytical breakdown of every sub-source with channel type, leads count, share %, converted opportunities, and conversion rates.
+      - Real-time search filter for both sources and sub-sources.
+  - **Appointments Schedule & Status Widget**:
+    - Displays upcoming scheduled client viewings, meetings, and contract signings with client name, phone number, category, time, location, and assigned advisor.
+    - Status widget detailing scheduled, completed, and rescheduled appointments.
+  - **Opportunity Pipeline Velocity (6 Sales Stages)**:
+    - Visual cards tracking deal progression from Stage 1: `Qualified` through `Option Sent`, `Follow up`, `Meeting`, `Future Prospectus`, and `Closed` with deal counts and AED valuation.
+  - **Advisor Performance Leaderboard & SLA Audit Logs**:
+    - Ranked team leaderboard by closed revenue (AED), calls made, appointments, and SLA compliance percentage with click-to-filter capability.
+    - Live SLA breach audit logs and zero-breach compliance indicator.
+  - **Dashboard Route Alias (`frontend/src/app/dashboard/page.tsx`)**:
+    - Added clean redirect page from `/dashboard` to `/overview` to prevent 404s if accessed directly.
 
 ---
 
@@ -2514,7 +2541,8 @@ FSadvisory-crm/
 │   │   │   ├── calendar/page.tsx              # Appointments & Interactive Calendar Desk
 │   │   │   ├── call-activity/page.tsx         # 3CX Call Logs & Telephony
 │   │   │   ├── recordings/page.tsx            # Audio Recordings Player
-│   │   │   ├── whatsapp/page.tsx              # WhatsApp Multi-Device Suite
+│   │   │   ├── overview/page.tsx              # Executive Command Center Dashboard
+│   │   │   ├── dashboard/page.tsx             # Dashboard redirect to overview
 │   │   │   ├── users/page.tsx                 # User Management & Matrix
 │   │   │   ├── settings/page.tsx              # Settings & Distribution Engine
 │   │   │   └── login/page.tsx                 # Authentication & Approval Notice
