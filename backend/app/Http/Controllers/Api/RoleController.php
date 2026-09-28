@@ -125,10 +125,8 @@ class RoleController extends Controller
                 'module' => 'Lead Pool (Imported Bank)',
                 'description' => 'Master imported archive, cold database repository, and bulk batch lead files',
                 'permissions' => [
-                    ['key' => 'lead_pool.view', 'label' => 'View Lead Pool', 'desc' => 'Access and browse imported lead pool database'],
-                    ['key' => 'lead_pool.view_all', 'label' => 'View Entire Team Lead Pool', 'desc' => 'Unrestricted access to browse all team leads in Lead Pool'],
-                    ['key' => 'lead_pool.assign', 'label' => 'Bulk Assign from Pool', 'desc' => 'Reallocate and distribute batch leads from the pool to advisors'],
-                    ['key' => 'lead_pool.reassign', 'label' => 'Re-assign Pool Leads', 'desc' => 'Transfer pool lead ownership between agents in Drawer & Table'],
+                    ['key' => 'lead_pool.view', 'label' => 'View Lead Pool', 'desc' => 'Access and browse all leads in imported lead pool bank'],
+                    ['key' => 'lead_pool.assign', 'label' => 'Bulk Assign from Pool', 'desc' => 'Allocate and distribute batch leads from the pool to advisors'],
                     ['key' => 'lead_pool.import', 'label' => 'Bulk CSV / Excel Import', 'desc' => 'Upload and ingest external lead sheets into Lead Pool'],
                     ['key' => 'lead_pool.export', 'label' => 'Export Lead Pool (CSV)', 'desc' => 'Download client spreadsheets from Lead Pool'],
                     ['key' => 'lead_pool.delete', 'label' => 'Trash Pool Leads', 'desc' => 'Soft-delete leads from pool to trash archive'],

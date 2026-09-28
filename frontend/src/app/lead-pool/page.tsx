@@ -6,9 +6,7 @@ import Navbar from '@/components/Navbar';
 import ContactDrawer from '@/components/ContactDrawer';
 import CreateContactModal from '@/components/CreateContactModal';
 import CreateLeadModal from '@/components/CreateLeadModal';
-import CreateOpportunityModal from '@/components/CreateOpportunityModal';
 import ImportLeadsModal from '@/components/ImportLeadsModal';
-import OpportunityQuickViewModal from '@/components/OpportunityQuickViewModal';
 import AdvancedFilterModal, { AdvancedFiltersState, INITIAL_ADVANCED_FILTERS } from '@/components/AdvancedFilterModal';
 import DateRangePicker, { DateRangeValue } from '@/components/DateRangePicker';
 import { fetchApi } from '@/lib/api';
@@ -98,7 +96,7 @@ export default function LeadPoolPage() {
   const [activeAgents, setActiveAgents] = useState<any[]>([]);
   const [canViewLeads, setCanViewLeads] = useState<boolean | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [selectedOwner, setSelectedOwner] = useState<string>('auto');
+  const [selectedOwner, setSelectedOwner] = useState<string>('all');
   const [mounted, setMounted] = useState<boolean>(false);
 
   // Real-time 10-minute follow-up alerts state
@@ -262,10 +260,6 @@ export default function LeadPoolPage() {
         if (raw) {
           const u = JSON.parse(raw);
           setCurrentUser(u);
-          const canViewAll = isSuperUser(u) || (u?.permissions && (u.permissions.includes('*') || u.permissions.includes('leads.view_all')));
-          if (!canViewAll && u?.name) {
-            setSelectedOwner(u.name);
-          }
         }
       } catch {}
     };
@@ -309,16 +303,9 @@ export default function LeadPoolPage() {
       .catch(console.error);
   }, []);
 
-  // Top Tabs State: 'all' | 'new' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'
-  const [activeTab, setActiveTab] = useState<'all' | 'new' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'>('all');
-  const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, contacted: 0, overdue: 0, opportunities: 0, unassigned: 0, duplicate: 0, deleted: 0 });
-  const [isQuickViewModalOpen, setIsQuickViewModalOpen] = useState(false);
-  const [quickViewContact, setQuickViewContact] = useState<any | null>(null);
-
-  const handleOpenQuickView = (contact: any) => {
-    setQuickViewContact(contact);
-    setIsQuickViewModalOpen(true);
-  };
+  // Top Tabs State: only 'all' | 'deleted'
+  const [activeTab, setActiveTab] = useState<'all' | 'deleted'>('all');
+  const [tabCounts, setTabCounts] = useState({ all: 0, deleted: 0 });
 
   // Sorting State connected to database (default: newest Created Date first)
   const [sortBy, setSortBy] = useState('created_at');
@@ -326,11 +313,6 @@ export default function LeadPoolPage() {
 
   // Secondary Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLeadType, setSelectedLeadType] = useState<string>('all');
-  const [selectedStage, setSelectedStage] = useState<string>('all');
-  const [selectedCallOutcome, setSelectedCallOutcome] = useState<string>('all');
-  const [opportunityModalContact, setOpportunityModalContact] = useState<any | null>(null);
-  const [isOpportunityModalOpen, setIsOpportunityModalOpen] = useState<boolean>(false);
   
   // Date Range Calendar State (filters created_at in database)
   const [dateRange, setDateRange] = useState<DateRangeValue>({
@@ -1016,18 +998,6 @@ export default function LeadPoolPage() {
                 <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 whitespace-nowrap">
                   No Deal
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpportunityModalContact(ct);
-                    setIsOpportunityModalOpen(true);
-                  }}
-                  className="px-1.5 py-0.5 text-[10px] font-bold text-[#C8A147] hover:text-[#081428] hover:bg-amber-100/50 rounded border border-[#C8A147]/50 flex items-center gap-0.5 transition-colors cursor-pointer shrink-0"
-                  title="Create deal for this lead"
-                >
-                  <Plus className="w-2.5 h-2.5" />
-                  <span>Deal</span>
-                </button>
               </div>
             </td>
           );
@@ -1077,16 +1047,6 @@ export default function LeadPoolPage() {
                           <Briefcase className="w-3 h-3 text-[#C8A147]" />
                           <span>All Deals ({opps.length})</span>
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpportunityModalContact(ct);
-                            setIsOpportunityModalOpen(true);
-                          }}
-                          className="text-[9px] font-bold text-[#C8A147] hover:underline flex items-center gap-0.5 cursor-pointer"
-                        >
-                          <Plus className="w-2.5 h-2.5" /> New Deal
-                        </button>
                       </div>
 
                       <div className="divide-y divide-slate-100 max-h-52 overflow-y-auto mt-1">
@@ -1338,12 +1298,6 @@ export default function LeadPoolPage() {
     setTimeout(() => setCopiedField(null), 1500);
   };
 
-  const handleOpenOpportunityModalForContact = (contact: any) => {
-    setSelectedContact(contact);
-    setOpportunityModalContact(contact);
-    setIsOpportunityModalOpen(true);
-  };
-
   const handleQuickCall = async (contact: any) => {
     const opp = contact.active_opportunity || contact.opportunities?.[0];
     const oppId = opp?.id || null;
@@ -1379,15 +1333,6 @@ export default function LeadPoolPage() {
       if (searchQuery) {
         endpoint += `&search=${encodeURIComponent(searchQuery)}`;
       }
-      if (selectedLeadType && selectedLeadType !== 'all') {
-        endpoint += `&lead_type=${encodeURIComponent(selectedLeadType)}`;
-      }
-      if (selectedStage && selectedStage !== 'all') {
-        endpoint += `&stage=${encodeURIComponent(selectedStage)}`;
-      }
-      if (selectedCallOutcome && selectedCallOutcome !== 'all') {
-        endpoint += `&call_outcome=${encodeURIComponent(selectedCallOutcome)}`;
-      }
 
       // Date Range Calendar Filter
       const curDateRange = dateRangeOverride || dateRange;
@@ -1420,17 +1365,8 @@ export default function LeadPoolPage() {
       if (activeFilters.budgetMin) endpoint += `&budget_min=${encodeURIComponent(activeFilters.budgetMin)}`;
       if (activeFilters.budgetMax) endpoint += `&budget_max=${encodeURIComponent(activeFilters.budgetMax)}`;
 
-      let raw = localStorage.getItem('crm_user');
-      let user = currentUser;
-      if (!user && raw) {
-        try { user = JSON.parse(raw); } catch {}
-      }
-
-      const canViewAllLeads = isSuperUser(user) || (user?.permissions && (user.permissions.includes('*') || user.permissions.includes('lead_pool.view_all') || user.permissions.includes('leads.view_all')));
       let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
-      if (!canViewAllLeads) {
-        targetOwner = user?.name || 'Unassigned';
-      } else if (targetOwner === 'auto') {
+      if (targetOwner === 'auto') {
         targetOwner = 'all';
       }
 
@@ -1455,7 +1391,10 @@ export default function LeadPoolPage() {
       }
 
       setStats(res.stats || { total: 0, available: 0, active: 0, reactivation: 0, duplicates: 0, new_leads: 0, contacted: 0, contacted_today: 0, overdue: 0 });
-      setTabCounts(res.tab_counts || { all: 0, new: 0, contacted: 0, overdue: 0, unassigned: 0, duplicate: 0, deleted: 0 });
+      setTabCounts({
+        all: res.tab_counts?.all || 0,
+        deleted: res.tab_counts?.deleted || 0,
+      });
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('crm_new_leads_count', { detail: res.tab_counts?.new ?? 0 }));
       }
@@ -1682,7 +1621,7 @@ export default function LeadPoolPage() {
   useEffect(() => {
     setCurrentPage(1);
     loadData(1, perPage, sortBy, sortOrder, selectedOwner);
-  }, [activeTab, searchQuery, selectedOwner, selectedLeadType, selectedStage, selectedCallOutcome, advancedFilters, dateRange]);
+  }, [activeTab, searchQuery, selectedOwner, advancedFilters, dateRange]);
 
   const handleSort = (columnKey: string) => {
     let newOrder: 'asc' | 'desc' = 'asc';
@@ -1716,11 +1655,7 @@ export default function LeadPoolPage() {
 
   const handleResetFilters = () => {
     setActiveTab('all');
-    const canViewAll = isSuperUser(currentUser) || hasPermission('lead_pool.view_all') || hasPermission('leads.view_all');
-    setSelectedOwner(canViewAll ? 'all' : (currentUser?.name || 'Unassigned'));
-    setSelectedLeadType('all');
-    setSelectedStage('all');
-    setSelectedCallOutcome('all');
+    setSelectedOwner('all');
     setAdvancedFilters(INITIAL_ADVANCED_FILTERS);
     setDateRange({ from: '', to: '', preset: 'all' });
     setSearchQuery('');
@@ -1888,7 +1823,7 @@ export default function LeadPoolPage() {
         <div className="flex-1 pl-56 flex flex-col min-w-0">
           <Navbar 
             teamSelector={
-              mounted && (isSuperUser(currentUser) || hasPermission('lead_pool.view_all') || hasPermission('leads.view_all')) ? (
+              mounted ? (
                 <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] hover:border-[#C8A147] rounded-md px-2.5 py-1.5 text-xs shadow-2xs transition-colors">
                   <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
                   <select
@@ -1899,20 +1834,15 @@ export default function LeadPoolPage() {
                     }}
                     className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer pr-1"
                   >
-                    <option value="all">👥 All Assigned Leads (Entire Team)</option>
+                    <option value="all">👥 All Leads Pool (Bank)</option>
                     <option value="unassigned">⏳ Unassigned Leads (Pool)</option>
                     {currentUser?.name && (
-                      <option value={currentUser.name}>⭐ My Leads ({currentUser.name})</option>
+                      <option value={currentUser.name}>⭐ My Assigned Leads ({currentUser.name})</option>
                     )}
                     {activeAgents.filter((a) => a.name !== currentUser?.name).map((a) => (
                       <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
                     ))}
                   </select>
-                </div>
-              ) : mounted && currentUser?.name ? (
-                <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] rounded-md px-2.5 py-1.5 text-xs text-[#081428] font-bold shadow-2xs">
-                  <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
-                  <span>⭐ My Assigned Leads ({currentUser.name})</span>
                 </div>
               ) : null
             }
@@ -1924,10 +1854,6 @@ export default function LeadPoolPage() {
             <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto">
               {[
                 { id: 'all', label: 'All Leads Pool', count: tabCounts.all },
-                { id: 'new', label: 'New', count: tabCounts.new },
-                { id: 'contacted', label: 'Contacted', count: tabCounts.contacted },
-                { id: 'overdue', label: 'Overdue', count: tabCounts.overdue },
-                { id: 'opportunities', label: 'Opportunity Quick View', count: tabCounts.opportunities || 0 },
                 { id: 'deleted', label: 'Deleted', count: tabCounts.deleted },
               ].map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -2023,70 +1949,7 @@ export default function LeadPoolPage() {
                 }}
               />
 
-              {/* Lead Type Filter Dropdown (Paid / Organic) */}
-              <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
-                <Zap className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
-                <select
-                  value={selectedLeadType}
-                  onChange={(e) => {
-                    setSelectedLeadType(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer max-w-[140px] truncate"
-                >
-                  <option value="all">⚡ All Lead Types</option>
-                  <option value="Paid">⚡ Paid</option>
-                  <option value="Organic">🌿 Organic</option>
-                </select>
-              </div>
 
-              {/* Pipeline Stage Filter Dropdown */}
-              <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
-                <Briefcase className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
-                <select
-                  value={selectedStage}
-                  onChange={(e) => {
-                    setSelectedStage(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer max-w-[130px] truncate"
-                >
-                  <option value="all">📊 All Stages</option>
-                  <option value="no_deal">⚠️ No Deal Created</option>
-                  <option value="new_inquiry">New Inquiry</option>
-                  <option value="contacted">Contacted</option>
-                  <option value="qualified">Qualified</option>
-                  <option value="meeting_scheduled">Meeting Scheduled</option>
-                  <option value="negotiation">Negotiation</option>
-                  <option value="closed_won">Won</option>
-                  <option value="closed_lost">Lost</option>
-                </select>
-              </div>
-
-              {/* Call Outcome Filter Dropdown */}
-              <div className="flex items-center gap-1 bg-[#FAF8F5] border border-[#E8E4DC] rounded px-2.5 py-1.5 shrink-0">
-                <PhoneCall className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
-                <select
-                  value={selectedCallOutcome}
-                  onChange={(e) => {
-                    setSelectedCallOutcome(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer max-w-[140px] truncate"
-                >
-                  <option value="all">📞 All Outcomes</option>
-                  <option value="deal">💼 Deals / Opportunities</option>
-                  <option value="uncontacted">🟢 New / Uncontacted</option>
-                  <option value="lead_pool">🌸 Lead Pool (Awaiting Call)</option>
-                  <option value="Interested">Interested</option>
-                  <option value="Callback">Callback</option>
-                  <option value="Follow-up">Follow-up</option>
-                  <option value="No Answer">No Answer</option>
-                  <option value="Not Interested">Not Interested</option>
-                  <option value="Wrong Number">Wrong Number</option>
-                  <option value="Real Estate Agent">Real Estate Agent</option>
-                </select>
-              </div>
 
               {/* Advanced Filter Button */}
               <button
@@ -2429,10 +2292,8 @@ export default function LeadPoolPage() {
         contact={selectedContact}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        onCreateOpportunity={(ct) => {
-          setIsDrawerOpen(false);
-          handleOpenOpportunityModalForContact(ct);
-        }}
+        allowOpportunityCreation={false}
+        allowReassign={false}
         onQuickCall={async (ct) => {
           await handleQuickCall(ct);
           if (ct?.id) {
@@ -2469,21 +2330,6 @@ export default function LeadPoolPage() {
           setCurrentPage(1);
         }}
         activeCount={activeAdvancedCount}
-      />
-
-      {/* Contextual Create Opportunity Modal */}
-      <CreateOpportunityModal
-        isOpen={isOpportunityModalOpen}
-        onClose={() => {
-          setIsOpportunityModalOpen(false);
-          setOpportunityModalContact(null);
-        }}
-        contact={opportunityModalContact}
-        onSuccess={() => {
-          setIsOpportunityModalOpen(false);
-          setOpportunityModalContact(null);
-          loadData(currentPage);
-        }}
       />
 
       {/* FLOATING CHAT-STYLE 10-MINUTE FOLLOW-UP & SLA ALERT WIDGET */}
@@ -2747,15 +2593,6 @@ export default function LeadPoolPage() {
           </div>
         );
       })()}
-      {/* Opportunity Quick View Modal */}
-      <OpportunityQuickViewModal
-        isOpen={isQuickViewModalOpen}
-        onClose={() => {
-          setIsQuickViewModalOpen(false);
-          setQuickViewContact(null);
-        }}
-        contact={quickViewContact}
-      />
     </div>
   );
 }

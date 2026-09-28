@@ -2427,6 +2427,40 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
 
 ---
 
+- **184 — Lead Pool Page Optimization: Streamlined Top Tabs, Removed Secondary Dropdown Filters & Strict Opportunity Creation Enforcement (`frontend/src/app/lead-pool/page.tsx`, `frontend/src/components/ContactDrawer.tsx`)**:
+  - **Single-Purpose Lead Ingestion & Assignment Desk**:
+    - Retained high-throughput batch data import (`Import Leads (CSV / Excel)`) and bulk/individual advisor assignment.
+    - Strictly prohibited Opportunity creation on the Lead Pool page. In real estate operations, raw imported batch data must first be assigned to an advisor, flowing to their live Leads Desk (`/`) where it can be worked, qualified, and converted into an active opportunity.
+  - **Contact Drawer & Table Opportunity Actions Suppression**:
+    - Enhanced `ContactDrawer.tsx` with an `allowOpportunityCreation?: boolean` prop (defaults to `true`). In `lead-pool/page.tsx`, `allowOpportunityCreation={false}` is passed, cleanly suppressing both `+ New Deal` and `Qualify Deal` actions from the slide-over drawer while preserving them across the primary Leads Desk (`page.tsx`) and all other CRM pages.
+    - Removed `+ Deal` creation button in the table's `opportunity` column for empty deals, cleanly displaying only the `No Deal` badge.
+    - Removed `+ New Deal` creation shortcut from the multiple-deals popover in `lead-pool/page.tsx`.
+    - Removed `CreateOpportunityModal` and `OpportunityQuickViewModal` components from the Lead Pool view.
+  - **Top Tabs Consolidation (Preserved Only `All Leads Pool` & `Deleted`)**:
+    - Removed cluttering tabs (`Overdue`, `Opportunity Quick View`, `New`, `Contacted`) from the Lead Pool navigation ribbon.
+    - Simplified the top bar to strictly 2 core tabs:
+      - **All Leads Pool** (`id: 'all'`): Master repository of all imported raw contacts and batch leads.
+      - **Deleted** (`id: 'deleted'`): Soft-deleted archive with one-click restore and permanent delete actions.
+  - **Secondary Filter Bar Simplification**:
+    - Removed redundant filters from the secondary filter bar:
+      - `All Lead Types` (`selectedLeadType`)
+      - `All Stages` (`selectedStage`)
+      - `All Outcomes` (`selectedCallOutcome`)
+    - Maintained live real-time search input, date range picker calendar, and advanced attributes modal while ensuring zero regressions on the primary Inbound Leads Desk (`/`).
+
+- **185 — Lead Pool Bank Architecture & Permissions Unification (`backend/app/Http/Controllers/Api/RoleController.php`, `backend/database/seeders/RoleAndPermissionSeeder.php`, `frontend/src/app/lead-pool/page.tsx`, `frontend/src/components/ContactDrawer.tsx`)**:
+  - **Single Unified Bank View (Eliminated `lead_pool.view_all`)**:
+    - Architected Lead Pool as a shared company bank/inventory of imported and raw unassigned leads.
+    - Removed redundant `lead_pool.view_all` permission from `RoleController::permissionsMatrix` and `RoleAndPermissionSeeder.php`. Anyone with Lead Pool access (`lead_pool.view`) now has complete visibility over all leads in the pool.
+    - Updated `lead-pool/page.tsx` and `loadData` to eliminate user-ownership restrictions by default (`selectedOwner = 'all'`), ensuring advisors and managers view all bank leads seamlessly without owner scoping.
+    - Updated the top bar team selector dropdown to be available to all authenticated users with Lead Pool access, defaulting to `👥 All Leads Pool (Bank)`.
+  - **Eliminated Re-Assign Feature from Lead Pool Permissions (`lead_pool.reassign`)**:
+    - Removed `lead_pool.reassign` from the CRM permissions matrix and seeders.
+    - Since Lead Pool functions as a source bank, leads are distributed via batch checkbox allocation (`lead_pool.assign`) or automated distribution. Lead re-assignment is only relevant after leads enter an advisor's active sales workflow on the Leads page (`leads.reassign`).
+  - **Drawer Re-Assign Action Suppression (`ContactDrawer.tsx`)**:
+    - Added `allowReassign?: boolean` prop to `ContactDrawer.tsx` (default: `true`).
+    - In `lead-pool/page.tsx`, passed `allowReassign={false}`, cleanly hiding the `[⇄ RE-ASSIGN]` button next to `ASSIGNED ADVISOR` inside the slide-over profile drawer while preserving full re-assignment capabilities across the main Leads Desk (`/`).
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

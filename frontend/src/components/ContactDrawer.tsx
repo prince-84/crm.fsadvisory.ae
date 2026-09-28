@@ -61,6 +61,8 @@ interface ContactDrawerProps {
   onEditLead?: (contact: any) => void;
   onQuickCall?: (contact: any) => void;
   onContactUpdated?: (updatedContact: any) => void;
+  allowOpportunityCreation?: boolean;
+  allowReassign?: boolean;
 }
 
 export default function ContactDrawer({ 
@@ -70,7 +72,9 @@ export default function ContactDrawer({
   onCreateOpportunity,
   onEditLead,
   onQuickCall,
-  onContactUpdated
+  onContactUpdated,
+  allowOpportunityCreation = true,
+  allowReassign = true
 }: ContactDrawerProps) {
   const [liveContact, setLiveContact] = useState<any | null>(contact);
   const [isLoading, setIsLoading] = useState(false);
@@ -865,7 +869,7 @@ export default function ContactDrawer({
                     <User className="w-3 h-3 text-[#C8A147] shrink-0" />
                     <span className="truncate">{currentContact.assigned_to || currentContact.assigned_owner_name || 'Unassigned'}</span>
                   </span>
-                  {canReassign && (
+                  {allowReassign && canReassign && (
                     <button
                       type="button"
                       onClick={handleReassignLead}
@@ -975,16 +979,18 @@ export default function ContactDrawer({
                         <Briefcase className="w-3.5 h-3.5" />
                         <span>All Deals for this Client ({currentContact.opportunities.length})</span>
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (onCreateOpportunity) onCreateOpportunity(currentContact);
-                          else window.location.href = `/opportunities/create?contact_id=${currentContact.id}`;
-                        }}
-                        className="text-[10px] font-bold text-[#C8A147] hover:underline flex items-center gap-0.5 cursor-pointer"
-                      >
-                        <Plus className="w-2.5 h-2.5" /> New Deal
-                      </button>
+                      {allowOpportunityCreation && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onCreateOpportunity) onCreateOpportunity(currentContact);
+                            else window.location.href = `/opportunities/create?contact_id=${currentContact.id}`;
+                          }}
+                          className="text-[10px] font-bold text-[#C8A147] hover:underline flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <Plus className="w-2.5 h-2.5" /> New Deal
+                        </button>
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       {currentContact.opportunities
@@ -1184,21 +1190,23 @@ export default function ContactDrawer({
                     <span>{savingInlineCall ? 'Saving Call...' : 'Save Call Outcome'}</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onCreateOpportunity) {
-                        onCreateOpportunity(currentContact);
-                      } else {
-                        window.location.href = `/opportunities/create?contact_id=${currentContact.id}`;
-                      }
-                    }}
-                    className="py-2.5 px-3 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-xs shrink-0 cursor-pointer"
-                    title="Qualify buyer requirements to open a dedicated deal"
-                  >
-                    <Briefcase className="w-3.5 h-3.5 text-[#C8A147]" />
-                    <span>Qualify Deal</span>
-                  </button>
+                  {allowOpportunityCreation && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onCreateOpportunity) {
+                          onCreateOpportunity(currentContact);
+                        } else {
+                          window.location.href = `/opportunities/create?contact_id=${currentContact.id}`;
+                        }
+                      }}
+                      className="py-2.5 px-3 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold text-xs rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-xs shrink-0 cursor-pointer"
+                      title="Qualify buyer requirements to open a dedicated deal"
+                    >
+                      <Briefcase className="w-3.5 h-3.5 text-[#C8A147]" />
+                      <span>Qualify Deal</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
