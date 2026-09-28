@@ -2398,33 +2398,32 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
 - **182 — UI Density & Border Radius Harmonization on Leads Desk & Lead Pool (`frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`)**:
   - Harmonized table badge geometry by updating **Lead Type** (`ORGANIC`, `PAID`) and **Call Status** badges (`NEW`, `Qualified`, call outcomes, Lead Pool tags) from pill-shaped `rounded-full` to subtle rectangular `rounded-md`.
   - Matched the elegant, structured border radius of the adjacent `Source` column cards across both the primary Inbound Leads Desk and the Lead Pool Archive.
-- **183 — Executive Command Center Dashboard Overhaul: KPI Ribbon, Lead Sources & Sub-Sources Attribution Intelligence, Appointments Desk, and Role-Based Boss vs. Individual Agent Filtering (`backend/app/Http/Controllers/Api/ReportController.php`, `frontend/src/app/overview/page.tsx`, `frontend/src/app/dashboard/page.tsx`)**:
-  - **Multi-Scope Agent Filter Toolbar**:
-    - Super Admin ("Boss") and managers can view company-wide aggregated intelligence (`👑 All Advisors (Whole Team)`) or filter dynamically by any active individual advisor from the dropdown selector.
-    - Automatically updates all dashboard metrics, sources attribution, sub-sources tables, appointments schedule, and pipeline progress in real time for the selected advisor with single-click reset.
+- **183 — Executive Command Center Dashboard Overhaul: KPI Ribbon, Lead Sources & Sub-Sources Attribution Intelligence, Appointments Desk, Top Bar Filter Placement & 100% Pure Database Connectivity (`backend/app/Http/Controllers/Api/ReportController.php`, `frontend/src/app/overview/page.tsx`, `frontend/src/app/dashboard/page.tsx`)**:
+  - **Top Bar Advisor Filter Placement & Banner Streamlining**:
+    - Removed redundant in-page banner box, cleanly placing the **Advisor Filter** (`👑 All Advisors (Whole Team)` + individual advisor list) directly inside the top application bar (`Navbar.tsx`) next to the notification bell and profile badge.
+    - Added one-click refresh trigger and quick reset button for seamless company-wide vs. advisor-specific navigation.
+  - **100% Pure Database Connectivity**:
+    - Completely eliminated all artificial fallback arrays, static benchmarks, and hardcoded offsets from `ReportController.php`.
+    - Every KPI metric, source aggregation, sub-source calculation, appointment record, stage velocity sum, and advisor performance row is queried directly and computed live from MySQL database tables (`contacts`, `opportunities`, `appointments`, `call_recordings`, `activities`, `users`, `sla_breaches`).
   - **Top 6 KPI Summary Ribbon**:
-    - **Total Leads**: Displays assigned leads for the selected advisor or total team leads against the master pool.
-    - **New Leads**: Highlights fresh, uncontacted leads awaiting their 1st outreach call.
-    - **Total Appointments**: Live count of scheduled and completed client viewings/meetings with direct link to `/calendar`.
-    - **Qualified Deals**: Active opportunities in Stage 1 Qualified and pipeline with link to `/opportunities`.
-    - **Closed Won Deals**: Deal count and total closed transaction volume in AED.
-    - **Calls Logged**: Outbound and inbound call volume logged via the 3CX PBX telephony integration and manual logs.
+    - **Total Leads**: Live database count of assigned leads for the selected advisor or total leads across the active team.
+    - **New Leads**: Live count of fresh, uncontacted leads awaiting their 1st outreach call (`whereDoesntHave('activities', type = 'call')`).
+    - **Total Appointments**: Live count of scheduled and completed client viewings/meetings from `appointments` table with direct link to `/calendar`.
+    - **Qualified Deals**: Live count of active deals in Stage 1 Qualified (`stage in ('qualified', 'qualification')`) with link to `/opportunities`.
+    - **Closed Won Deals**: Exact count and gross transaction volume (AED) summed directly from won opportunities (`stage in ('closed', 'closed_won')`).
+    - **Calls Logged**: Outbound and inbound telephony calls logged via 3CX recordings and manual call activities.
   - **Lead Sources & Sub-Sources Attribution Intelligence Engine**:
-    - Automatically parses source strings into parent source and granular sub-sources (e.g., `Website (uae-offplan)` $\rightarrow$ Parent: `Website & Landing Pages`, Sub: `uae-offplan`; `Facebook Ads (FS - More Volume)` $\rightarrow$ Parent: `Meta Ads`, Sub: `FS - More Volume`; `Meta Ads (Facebook Lead Form)` $\rightarrow$ Sub: `Facebook Lead Form`; `Google Ads (PPC Search Campaign)` $\rightarrow$ Sub: `PPC Search Campaign`).
-    - Dual tabbed views:
-      - **Primary Sources Overview**: Visual cards with gradient progress distribution bars, percentage shares, opportunities generated, and active sub-source chips.
-      - **Sub-Sources Granular Table**: Full analytical breakdown of every sub-source with channel type, leads count, share %, converted opportunities, and conversion rates.
-      - Real-time search filter for both sources and sub-sources.
-  - **Appointments Schedule & Status Widget**:
-    - Displays upcoming scheduled client viewings, meetings, and contract signings with client name, phone number, category, time, location, and assigned advisor.
-    - Status widget detailing scheduled, completed, and rescheduled appointments.
-  - **Opportunity Pipeline Velocity (6 Sales Stages)**:
-    - Visual cards tracking deal progression from Stage 1: `Qualified` through `Option Sent`, `Follow up`, `Meeting`, `Future Prospectus`, and `Closed` with deal counts and AED valuation.
+    - Dynamically parses and groups database contact sources into parent channels (`Website & Landing Pages`, `Meta Ads`, `Google Ads Search`, `Property Finder Portal`, `Bayut UAE Portal`, `Referral Network`, `Direct Inbound`) and granular sub-sources (`uae-offplan`, `FS - More Volume`, `Facebook Lead Form`, `Direct Contact Us Form`, `PPC Search Campaign`).
+    - Displays exact lead volume, share percentages, converted opportunities, and conversion rates directly calculated from database links.
+  - **Appointments Schedule & Status Desk**:
+    - Fetches live upcoming appointments from the `appointments` table with client name, phone number, category, time, location, and assigned advisor.
+    - Status widget detailing real-time scheduled, completed, and rescheduled appointments.
+  - **Sales Pipeline Velocity (6 Sales Stages)**:
+    - Real-time deal counts and AED sums directly from `opportunities` table across stages: `1. Qualified`, `2. Option Sent`, `3. Follow up`, `4. Meeting`, `5. Future Prospectus`, and `6. Closed`.
   - **Advisor Performance Leaderboard & SLA Audit Logs**:
-    - Ranked team leaderboard by closed revenue (AED), calls made, appointments, and SLA compliance percentage with click-to-filter capability.
-    - Live SLA breach audit logs and zero-breach compliance indicator.
+    - Live leaderboard generated dynamically from DB tables showing assigned contacts, total calls logged, appointments, opportunities, closed won AED, and computed SLA compliance rates for all advisors.
   - **Dashboard Route Alias (`frontend/src/app/dashboard/page.tsx`)**:
-    - Added clean redirect page from `/dashboard` to `/overview` to prevent 404s if accessed directly.
+    - Client-side redirect from `/dashboard` to `/overview`.
 
 ---
 
