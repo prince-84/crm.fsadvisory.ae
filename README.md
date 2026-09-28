@@ -2395,6 +2395,9 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Replaced `Deal 1, Deal 2` with `Qualified` in Leads Tables (`page.tsx`, `lead-pool/page.tsx`)**: Upgraded the `call_status` column across both the primary Inbound Leads Desk and the Lead Pool Archive. Leads with created opportunities now display a sleek `Qualified` badge instead of `Deal 1` / `Deal 2`, maintaining click-through access to the client drawer.
   - **Kanban Board & Opportunity Workspaces Realigned (`pipeline/page.tsx`, `opportunities/page.tsx`, `opportunities/[id]/page.tsx`)**: Updated sales pipeline Kanban columns across all views to start with `1. Qualified`, seamlessly followed by `2. Option Sent`, `3. Follow up`, `4. Meeting`, `5. Future Prospectus`, and `6. Closed`. Realigned the Bitrix24 deal stage bar in single opportunity workspaces.
   - **Database Auto-Migration**: Executed `2026_09_28_120000_update_contacted_opportunities_to_qualified.php` to immediately migrate all legacy `contacted` and `new` records in the database to `qualified`.
+- **182 — UI Density & Border Radius Harmonization on Leads Desk & Lead Pool (`frontend/src/app/page.tsx`, `frontend/src/app/lead-pool/page.tsx`)**:
+  - Harmonized table badge geometry by updating **Lead Type** (`ORGANIC`, `PAID`) and **Call Status** badges (`NEW`, `Qualified`, call outcomes, Lead Pool tags) from pill-shaped `rounded-full` to subtle rectangular `rounded-md`.
+  - Matched the elegant, structured border radius of the adjacent `Source` column cards across both the primary Inbound Leads Desk and the Lead Pool Archive.
 
 ---
 

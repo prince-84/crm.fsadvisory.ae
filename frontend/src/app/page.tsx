@@ -735,7 +735,7 @@ export default function LeadPoolPage() {
             <td key={colKey} className="p-3">
               <div className="flex flex-col items-start gap-1">
                 <span 
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#081428] text-[#C8A147] border border-[#C8A147] shadow-xs cursor-pointer hover:bg-[#C8A147] hover:text-[#081428] transition-all"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#081428] text-[#C8A147] border border-[#C8A147] shadow-xs cursor-pointer hover:bg-[#C8A147] hover:text-[#081428] transition-all"
                   title={`Qualified Opportunity created for this lead${oppCount > 1 ? ` (${oppCount} Deals)` : ''}${ct.latest_call_outcome ? ` | Last Call: ${ct.latest_call_outcome}` : ''}. Click to open client profile.`}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -747,7 +747,7 @@ export default function LeadPoolPage() {
                 </span>
                 {isLeadPool && (
                   <span 
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-300 shadow-2xs"
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-300 shadow-2xs"
                     title="Lead assigned from Lead Pool"
                   >
                     <Layers className="w-2.5 h-2.5 text-pink-600 shrink-0" />
@@ -766,7 +766,7 @@ export default function LeadPoolPage() {
             <td key={colKey} className="p-3">
               <div className="flex flex-col items-start gap-1">
                 <span 
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-xs ${getOutcomeBadgeClass(rawOutcome)}`}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border shadow-xs ${getOutcomeBadgeClass(rawOutcome)}`}
                   title={`Last Call Outcome: ${rawOutcome}`}
                 >
                   <Phone className="w-2.5 h-2.5 shrink-0" />
@@ -774,7 +774,7 @@ export default function LeadPoolPage() {
                 </span>
                 {isLeadPool && (
                   <span 
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-300 shadow-2xs"
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-300 shadow-2xs"
                     title="Lead assigned from Lead Pool"
                   >
                     <Layers className="w-2.5 h-2.5 text-pink-600 shrink-0" />
@@ -791,7 +791,7 @@ export default function LeadPoolPage() {
           return (
             <td key={colKey} className="p-3">
               <span 
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-300 shadow-xs"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-pink-100 text-pink-800 border border-pink-300 shadow-xs"
                 title={ct.assigned_to ? `Assigned from Lead Pool to ${ct.assigned_to} (Awaiting first call)` : "Assigned from Lead Pool (Awaiting call)"}
               >
                 <Layers className="w-2.5 h-2.5 text-pink-600 shrink-0" />
@@ -804,7 +804,7 @@ export default function LeadPoolPage() {
         return (
           <td key={colKey} className="p-3">
             <span 
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-xs border border-emerald-400"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-xs border border-emerald-400"
               title={ct.assigned_to ? `Assigned to ${ct.assigned_to} (Awaiting first call)` : "Fresh Inbound Lead in Pool (Awaiting call)"}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0" />
@@ -855,7 +855,7 @@ export default function LeadPoolPage() {
         return (
           <td key={colKey} className="p-3">
             <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border shadow-xs ${
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-xs ${
                 isPaid
                   ? 'bg-amber-100 text-amber-900 border-amber-300'
                   : 'bg-emerald-50 text-emerald-800 border-emerald-300'
