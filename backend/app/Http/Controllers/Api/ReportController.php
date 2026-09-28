@@ -169,46 +169,40 @@ class ReportController extends Controller
             ? round((($totalOpportunities - $totalOverdue) / $totalOpportunities) * 100, 1)
             : 95.4;
 
-        // Stage Breakdown with pipeline valuation (7 Sales Stages)
+        // Stage Breakdown with pipeline valuation (6 Sales Stages)
         $stageBreakdown = [
-            'contacted' => [
-                'label' => '1. Contacted',
-                'count' => max(184, Opportunity::whereIn('stage', ['contacted', 'new'])->count()),
-                'volume_aed' => 34500000,
-                'color' => '#0284C7',
-            ],
             'qualified' => [
-                'label' => '2. Qualified',
-                'count' => max(96, Opportunity::whereIn('stage', ['qualified', 'qualification'])->count()),
+                'label' => '1. Qualified',
+                'count' => max(96, Opportunity::whereIn('stage', ['qualified', 'qualification', 'contacted', 'new'])->count()),
                 'volume_aed' => 48200000,
                 'color' => '#2563EB',
             ],
             'option_sent' => [
-                'label' => '3. Option Sent',
+                'label' => '2. Option Sent',
                 'count' => max(62, Opportunity::where('stage', 'option_sent')->count()),
                 'volume_aed' => 38400000,
                 'color' => '#6366F1',
             ],
             'follow_up' => [
-                'label' => '4. Follow up',
+                'label' => '3. Follow up',
                 'count' => max(48, Opportunity::where('stage', 'follow_up')->count()),
                 'volume_aed' => 31200000,
                 'color' => '#D97706',
             ],
             'meeting' => [
-                'label' => '5. Meeting',
+                'label' => '4. Meeting',
                 'count' => max(38, Opportunity::whereIn('stage', ['meeting', 'sales_in_progress'])->count()),
                 'volume_aed' => 52800000,
                 'color' => '#9333EA',
             ],
             'future_prospectus' => [
-                'label' => '6. Future Prospectus',
+                'label' => '5. Future Prospectus',
                 'count' => max(26, Opportunity::where('stage', 'future_prospectus')->count()),
                 'volume_aed' => 24500000,
                 'color' => '#0D9488',
             ],
             'closed' => [
-                'label' => '7. Closed',
+                'label' => '6. Closed',
                 'count' => max(43, Opportunity::whereIn('stage', ['closed', 'closed_won'])->count()),
                 'volume_aed' => 106800000,
                 'color' => '#059669',

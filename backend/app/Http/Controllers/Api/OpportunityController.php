@@ -113,8 +113,7 @@ class OpportunityController extends Controller
         $opportunities = $query->get();
 
         $pipeline = [
-            'contacted' => $opportunities->whereIn('stage', ['contacted', 'new'])->values(),
-            'qualified' => $opportunities->whereIn('stage', ['qualified', 'qualification'])->values(),
+            'qualified' => $opportunities->whereIn('stage', ['qualified', 'qualification', 'contacted', 'new'])->values(),
             'option_sent' => $opportunities->whereIn('stage', ['option_sent', 'handover_pending'])->values(),
             'follow_up' => $opportunities->where('stage', 'follow_up')->values(),
             'meeting' => $opportunities->whereIn('stage', ['meeting', 'sales_in_progress'])->values(),
@@ -132,13 +131,12 @@ class OpportunityController extends Controller
     public function getStages()
     {
         $canonicalStages = [
-            ['key' => 'contacted', 'label' => '1. Contacted'],
-            ['key' => 'qualified', 'label' => '2. Qualified / Lead Qualification'],
-            ['key' => 'option_sent', 'label' => '3. Option Sent'],
-            ['key' => 'follow_up', 'label' => '4. Follow up'],
-            ['key' => 'meeting', 'label' => '5. Meeting / Viewing Scheduled'],
-            ['key' => 'future_prospectus', 'label' => '6. Future Prospectus'],
-            ['key' => 'closed', 'label' => '7. Closed Won 🏆'],
+            ['key' => 'qualified', 'label' => '1. Qualified / Lead Qualification'],
+            ['key' => 'option_sent', 'label' => '2. Option Sent'],
+            ['key' => 'follow_up', 'label' => '3. Follow up'],
+            ['key' => 'meeting', 'label' => '4. Meeting / Viewing Scheduled'],
+            ['key' => 'future_prospectus', 'label' => '5. Future Prospectus'],
+            ['key' => 'closed', 'label' => '6. Closed Won 🏆'],
             ['key' => 'closed_lost', 'label' => 'Closed Lost'],
         ];
 
@@ -151,7 +149,7 @@ class OpportunityController extends Controller
 
         $existingKeys = array_column($canonicalStages, 'key');
         foreach ($dbStages as $st) {
-            if (!in_array($st, $existingKeys) && !in_array($st, ['new', 'qualification', 'handover_pending', 'sales_in_progress', 'closed_won'])) {
+            if (!in_array($st, $existingKeys) && !in_array($st, ['contacted', 'new', 'qualification', 'handover_pending', 'sales_in_progress', 'closed_won'])) {
                 $canonicalStages[] = [
                     'key' => $st,
                     'label' => ucwords(str_replace('_', ' ', $st)),
@@ -260,7 +258,7 @@ class OpportunityController extends Controller
         $opportunity = Opportunity::create([
             'contact_id' => $contact->id,
             'opportunity_type' => $oppType,
-            'stage' => $validated['stage'] ?? 'contacted',
+            'stage' => $validated['stage'] ?? 'qualified',
             'temperature' => !empty($validated['temperature']) ? $validated['temperature'] : 'hot',
             'current_owner_name' => $owner ?: 'Unassigned',
             'originating_agent_name' => $owner ?: ($ownerRecord ? 'Owner Data Bank' : 'System Ingest'),

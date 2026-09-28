@@ -242,6 +242,7 @@ export default function CreateOpportunityModal({
       const payload: any = {
         opportunity_type: opportunityType || 'buyer',
         temperature: temperature || 'hot',
+        stage: 'qualified',
         developer: developer || null,
         community: community || null,
         property_type: propertyType || null,

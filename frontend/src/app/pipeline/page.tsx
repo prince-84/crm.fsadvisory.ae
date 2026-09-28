@@ -73,13 +73,12 @@ export default function SalesPipelinePage() {
   };
 
   const columns = [
-    { key: 'contacted', label: '1. Contacted', color: 'border-sky-500', bg: 'bg-sky-50/50' },
-    { key: 'qualified', label: '2. Qualified', color: 'border-blue-600', bg: 'bg-blue-50/50' },
-    { key: 'option_sent', label: '3. Option Sent', color: 'border-indigo-500', bg: 'bg-indigo-50/50' },
-    { key: 'follow_up', label: '4. Follow up', color: 'border-amber-500', bg: 'bg-amber-50/50' },
-    { key: 'meeting', label: '5. Meeting', color: 'border-purple-600', bg: 'bg-purple-50/50' },
-    { key: 'future_prospectus', label: '6. Future Prospectus', color: 'border-teal-600', bg: 'bg-teal-50/50' },
-    { key: 'closed', label: '7. Closed 🏆', color: 'border-emerald-700', bg: 'bg-emerald-100/50' },
+    { key: 'qualified', label: '1. Qualified', color: 'border-blue-600', bg: 'bg-blue-50/50' },
+    { key: 'option_sent', label: '2. Option Sent', color: 'border-indigo-500', bg: 'bg-indigo-50/50' },
+    { key: 'follow_up', label: '3. Follow up', color: 'border-amber-500', bg: 'bg-amber-50/50' },
+    { key: 'meeting', label: '4. Meeting', color: 'border-purple-600', bg: 'bg-purple-50/50' },
+    { key: 'future_prospectus', label: '5. Future Prospectus', color: 'border-teal-600', bg: 'bg-teal-50/50' },
+    { key: 'closed', label: '6. Closed 🏆', color: 'border-emerald-700', bg: 'bg-emerald-100/50' },
   ];
 
   return (

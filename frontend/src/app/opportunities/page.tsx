@@ -67,7 +67,6 @@ export default function OpportunitiesPage() {
   const [selectedOppIds, setSelectedOppIds] = useState<number[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [pipelineData, setPipelineData] = useState<any>({
-    contacted: [],
     qualified: [],
     option_sent: [],
     follow_up: [],
@@ -379,7 +378,6 @@ export default function OpportunitiesPage() {
 
       const res = await fetchApi(url);
       const pipe = res.pipeline || {
-        contacted: [],
         qualified: [],
         option_sent: [],
         follow_up: [],
@@ -390,8 +388,8 @@ export default function OpportunitiesPage() {
       setPipelineData(pipe);
 
       const flattened = [
-        ...(pipe.contacted || []),
         ...(pipe.qualified || []),
+        ...(pipe.contacted || []),
         ...(pipe.option_sent || []),
         ...(pipe.follow_up || []),
         ...(pipe.meeting || []),
@@ -593,19 +591,11 @@ export default function OpportunitiesPage() {
     setIsOppModalOpen(true);
   };
 
-  // Stage column definitions (7 Sales Stages)
+  // Stage column definitions (6 Sales Stages)
   const STAGE_COLUMNS = [
     {
-      key: 'contacted',
-      label: '1. Contacted',
-      color: 'border-sky-500',
-      headerBg: 'bg-sky-50/70',
-      tagBg: 'bg-sky-100 text-sky-800',
-      desc: 'Initial outreach & call connected',
-    },
-    {
       key: 'qualified',
-      label: '2. Qualified',
+      label: '1. Qualified',
       color: 'border-blue-600',
       headerBg: 'bg-blue-50/70',
       tagBg: 'bg-blue-100 text-blue-800',
@@ -613,7 +603,7 @@ export default function OpportunitiesPage() {
     },
     {
       key: 'option_sent',
-      label: '3. Option Sent',
+      label: '2. Option Sent',
       color: 'border-indigo-500',
       headerBg: 'bg-indigo-50/70',
       tagBg: 'bg-indigo-100 text-indigo-800',
@@ -621,7 +611,7 @@ export default function OpportunitiesPage() {
     },
     {
       key: 'follow_up',
-      label: '4. Follow up',
+      label: '3. Follow up',
       color: 'border-amber-500',
       headerBg: 'bg-amber-50/70',
       tagBg: 'bg-amber-100 text-amber-800',
@@ -629,7 +619,7 @@ export default function OpportunitiesPage() {
     },
     {
       key: 'meeting',
-      label: '5. Meeting',
+      label: '4. Meeting',
       color: 'border-purple-600',
       headerBg: 'bg-purple-50/70',
       tagBg: 'bg-purple-100 text-purple-800',
@@ -637,7 +627,7 @@ export default function OpportunitiesPage() {
     },
     {
       key: 'future_prospectus',
-      label: '6. Future Prospectus',
+      label: '5. Future Prospectus',
       color: 'border-teal-600',
       headerBg: 'bg-teal-50/70',
       tagBg: 'bg-teal-100 text-teal-800',
@@ -645,7 +635,7 @@ export default function OpportunitiesPage() {
     },
     {
       key: 'closed',
-      label: '7. Closed 🏆',
+      label: '6. Closed 🏆',
       color: 'border-emerald-700',
       headerBg: 'bg-emerald-100/80',
       tagBg: 'bg-emerald-700 text-white',
@@ -1251,7 +1241,7 @@ export default function OpportunitiesPage() {
                 <div className="flex gap-4 items-start min-w-max">
                   {STAGE_COLUMNS.map((col) => {
                     const items = filteredOpps.filter(
-                      (o) => o.stage === col.key || (col.key === 'contacted' && (!o.stage || o.stage === 'new'))
+                      (o) => o.stage === col.key || (col.key === 'qualified' && (!o.stage || o.stage === 'new' || o.stage === 'contacted'))
                     );
                   const isOver = dragOverCol === col.key;
 

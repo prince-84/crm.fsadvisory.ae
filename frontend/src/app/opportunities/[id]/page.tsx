@@ -877,21 +877,19 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
                   <span className="text-[#C8A147] font-mono text-[10px]">1-Click Instant DB Sync</span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 font-semibold text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 font-semibold text-xs">
                   {[
-                    { id: 'contacted', label: '1. Contacted', activeBg: 'bg-sky-600 text-white ring-2 ring-sky-300' },
-                    { id: 'qualified', label: '2. Qualified', activeBg: 'bg-blue-600 text-white ring-2 ring-blue-300' },
-                    { id: 'option_sent', label: '3. Option Sent', activeBg: 'bg-indigo-600 text-white ring-2 ring-indigo-300' },
-                    { id: 'follow_up', label: '4. Follow up', activeBg: 'bg-amber-600 text-white ring-2 ring-amber-300' },
-                    { id: 'meeting', label: '5. Meeting', activeBg: 'bg-purple-600 text-white ring-2 ring-purple-300' },
-                    { id: 'future_prospectus', label: '6. Future Prospectus', activeBg: 'bg-teal-600 text-white ring-2 ring-teal-300' },
-                    { id: 'closed', label: '7. Closed 🏆', activeBg: 'bg-emerald-600 text-white ring-2 ring-emerald-300' },
+                    { id: 'qualified', label: '1. Qualified', activeBg: 'bg-blue-600 text-white ring-2 ring-blue-300' },
+                    { id: 'option_sent', label: '2. Option Sent', activeBg: 'bg-indigo-600 text-white ring-2 ring-indigo-300' },
+                    { id: 'follow_up', label: '3. Follow up', activeBg: 'bg-amber-600 text-white ring-2 ring-amber-300' },
+                    { id: 'meeting', label: '4. Meeting', activeBg: 'bg-purple-600 text-white ring-2 ring-purple-300' },
+                    { id: 'future_prospectus', label: '5. Future Prospectus', activeBg: 'bg-teal-600 text-white ring-2 ring-teal-300' },
+                    { id: 'closed', label: '6. Closed 🏆', activeBg: 'bg-emerald-600 text-white ring-2 ring-emerald-300' },
                   ].map((st, idx) => {
                     const normalizeStage = (s: string) => {
-                      if (!s) return 'contacted';
+                      if (!s) return 'qualified';
                       const lower = s.toLowerCase();
-                      if (lower === 'new' || lower === 'contacted') return 'contacted';
-                      if (lower === 'qualification' || lower === 'qualified') return 'qualified';
+                      if (lower === 'new' || lower === 'contacted' || lower === 'qualification' || lower === 'qualified') return 'qualified';
                       if (lower === 'option_sent' || lower === 'handover_pending' || lower === 'handover') return 'option_sent';
                       if (lower === 'follow_up' || lower === 'followup') return 'follow_up';
                       if (lower === 'meeting' || lower === 'sales_in_progress') return 'meeting';
@@ -900,7 +898,7 @@ export default function OpportunityWorkspacePage({ params }: { params: Promise<{
                       return lower;
                     };
 
-                    const stagesOrder = ['contacted', 'qualified', 'option_sent', 'follow_up', 'meeting', 'future_prospectus', 'closed'];
+                    const stagesOrder = ['qualified', 'option_sent', 'follow_up', 'meeting', 'future_prospectus', 'closed'];
                     const currentStage = normalizeStage(opp.stage);
                     
                     const currentIdx = stagesOrder.indexOf(currentStage);

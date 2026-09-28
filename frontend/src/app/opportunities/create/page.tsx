@@ -137,6 +137,7 @@ export default function CreateOpportunityPage() {
           contact_id: Number(selectedContactId),
           opportunity_type: opportunityType,
           temperature,
+          stage: 'qualified',
           developer,
           community,
           property_type: propertyType,

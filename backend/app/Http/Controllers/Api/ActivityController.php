@@ -110,9 +110,9 @@ class ActivityController extends Controller
                 $opp->sla_status = $slaStatus;
                 $opp->is_orphaned = false;
 
-                // If stage was still 'new' or 'new_inquiry', advance to contacted
-                if (in_array($opp->stage, ['new', 'new_inquiry'])) {
-                    $opp->stage = 'contacted';
+                // If stage was still 'new' or 'new_inquiry', advance to qualified
+                if (in_array($opp->stage, ['new', 'new_inquiry', 'contacted'])) {
+                    $opp->stage = 'qualified';
                 }
 
                 $opp->save();

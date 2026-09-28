@@ -763,7 +763,7 @@ export default function EditLeadPage({ params }: { params: Promise<{ id: string 
           method: 'POST',
           body: JSON.stringify({
             ...oppPayload,
-            stage: 'new',
+            stage: 'qualified',
           }),
         });
       }

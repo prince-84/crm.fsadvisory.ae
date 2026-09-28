@@ -167,11 +167,9 @@ function MyQueueContent() {
   const [bulkStage, setBulkStage] = useState<string>('');
   const [bulkLoading, setBulkLoading] = useState<boolean>(false);
   const [availableStages, setAvailableStages] = useState<Array<{ key: string; label: string }>>([
-    { key: 'new', label: 'New' },
-    { key: 'contacted', label: '1. Contacted' },
-    { key: 'qualified', label: '2. Qualified / Lead Qualification' },
-    { key: 'option_sent', label: '3. Option Sent' },
-    { key: 'follow_up', label: '4. Follow up' },
+    { key: 'qualified', label: '1. Qualified / Lead Qualification' },
+    { key: 'option_sent', label: '2. Option Sent' },
+    { key: 'follow_up', label: '3. Follow up' },
     { key: 'meeting', label: '5. Meeting / Viewing Scheduled' },
     { key: 'future_prospectus', label: '6. Future Prospectus' },
     { key: 'closed_won', label: '7. Closed Won 🏆' },

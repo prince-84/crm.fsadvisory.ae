@@ -691,14 +691,14 @@ export default function LeadPoolPage() {
               <div className="flex flex-col items-start gap-1">
                 <span 
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#081428] text-[#C8A147] border border-[#C8A147] shadow-xs cursor-pointer hover:bg-[#C8A147] hover:text-[#081428] transition-all"
-                  title={`${oppCount} Deal / Opportunity created for this lead${ct.latest_call_outcome ? ` | Last Call: ${ct.latest_call_outcome}` : ''}. Click to open client profile.`}
+                  title={`Qualified Opportunity created for this lead${oppCount > 1 ? ` (${oppCount} Deals)` : ''}${ct.latest_call_outcome ? ` | Last Call: ${ct.latest_call_outcome}` : ''}. Click to open client profile.`}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleOpenDrawer(ct);
                   }}
                 >
                   <Briefcase className="w-3 h-3 text-[#C8A147] shrink-0" />
-                  <span>Deal {oppCount}</span>
+                  <span>Qualified{oppCount > 1 ? ` (${oppCount})` : ''}</span>
                 </span>
                 {isLeadPool && (
                   <span 
