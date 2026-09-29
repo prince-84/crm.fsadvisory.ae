@@ -2516,6 +2516,41 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Updated `bulkAssign` and `reassign` routines to explicitly initialize assigned pool contacts with `sla_status = 'on_track'` and `next_action_due_at = null`.
     - Updated [`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx) to suppress false flashing overdue badges for imported pool contacts without active opportunities.
 
+- **192 — Dedicated "Lead Pool" Tab on Leads Desk & Strict Partitioning from Fresh Inbound Leads (`frontend/src/app/page.tsx`, `backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Dedicated "Lead Pool" Tab on Leads Desk**:
+    - Added a dedicated top navigation tab **`Lead Pool`** on the main Leads desk ([`frontend/src/app/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)), positioned immediately after the **`New`** tab:
+      `All Leads` | `New` | `Lead Pool` | `Contacted` | `Overdue` | `Opportunity Quick View` | `Deleted`.
+    - Connected `tabCounts.lead_pool` with live count badge and real-time active tab switching (`activeTab === 'lead_pool'`).
+    - Updated empty-state message handling to cleanly display `LEAD POOL view` when no matching records are present.
+  - **Strict Isolation of Fresh Inbound Leads in "New" Tab**:
+    - In [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php), updated `$tab === 'new'` and `$newUncontactedQuery` to strictly filter `where(is_imported = false OR is_imported IS NULL)`.
+    - Prevents assigned imported leads from Lead Pool from polluting the `New` tab on the Leads Desk, keeping the `New` tab purely reserved for uncontacted fresh live inbound inquiries.
+  - **Automatic & Ongoing Ingestion for Lead Pool Tab**:
+    - Handled `$tab === 'lead_pool'` in [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) by filtering `where('contacts.is_imported', true)`.
+    - Leads Desk filter (`leads_desk=1`) automatically ensures that all assigned imported leads from Lead Pool (both currently assigned and any assigned later via single, bulk, or round-robin auto-distribution) are displayed inside the `Lead Pool` tab.
+    - Calculated `$leadPoolCount` from `$baseCountQuery->where('is_imported', true)->count()` and integrated it into both `$stats['lead_pool']` and `$tabCounts['lead_pool']`.
+  - **Zero Regressions & Domain Integrity**:
+    - `All Leads` continues to display all leads seamlessly.
+    - `Contacted`, `Overdue`, `Opportunity Quick View`, and `Deleted` tabs remain fully operational.
+    - Role-based scoping (Super Admin team view vs advisor personal pipeline) is preserved across all tabs.
+
+- **193 — Default "Warm" Lead Type for Lead Pool Archive & Assignments (`Contact.php`, `ContactController.php`, `LeadDistributionService.php`, `ImportController.php`, `page.tsx`, `lead-pool/page.tsx`, `ContactDrawer.tsx`)**:
+  - **Automatic "Warm" Lead Type Attribution**:
+    - Leads originating from the **Lead Pool** (`contacts.is_imported = true`) are systematically categorized as **`Warm`** leads, distinguishing them from fresh inbound marketing traffic (**`Paid`** for paid ads or **`Organic`** for direct/web inbound).
+    - In [`Contact.php`](file:///d:/FSadvisory-crm/backend/app/Models/Contact.php), implemented dynamic Eloquent accessor `getLeadTypeAttribute($value)` returning `'Warm'` for any imported contact if not explicitly specified.
+  - **Assignment & Redistribution Enforcement**:
+    - **Single & Bulk Assignment**: In [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php), updated `bulkAssign` and `reassign` routines so that any contact being assigned from the Lead Pool has its `lead_type` stamped as `'Warm'`.
+    - **Round-Robin Auto-Distribution**: In [`LeadDistributionService.php`](file:///d:/FSadvisory-crm/backend/app/Services/LeadDistributionService.php), updated `autoAssignContact` (both assigned agent and fallback agent branches) and `processIdleAndDormantLeads` (3-day inactivity rotation) to ensure pool contacts maintain `lead_type = 'Warm'`.
+    - **File Importer Default**: In [`ImportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ImportController.php), batch CSV/Excel imports default newly inserted contacts to `lead_type = 'Warm'`.
+    - **Database Migration/Sync**: Updated all existing imported database contacts to `lead_type = 'Warm'`.
+  - **Frontend UI & Filter Integration**:
+    - Added luxury orange **`WARM`** badge styling (`bg-orange-100 text-orange-900 border-orange-300`) with an inline flame icon ([`Flame`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)) across:
+      - Main Leads Desk table ([`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx))
+      - Lead Pool master table ([`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx))
+      - Contact Profile Slide-over Drawer ([`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx)) in both client header and Lead Details card.
+    - Updated `selectedLeadType` filter dropdown on Leads Desk with `<option value="Warm">🔥 Warm</option>`.
+    - Updated backend API filtering in `ContactController.php` so `?lead_type=Warm` accurately queries contacts with `lead_type = 'Warm'` as well as imported records.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

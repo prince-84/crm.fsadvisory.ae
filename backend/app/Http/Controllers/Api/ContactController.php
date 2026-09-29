@@ -77,15 +77,19 @@ class ContactController extends Controller
                 });
             });
         } elseif ($tab === 'new' || $tab === 'uncontacted') {
-            // New / Uncontacted: Leads that have not been called yet
-            if (!$request->boolean('leads_desk') && !$request->boolean('imported_only')) {
-                $query->where('contacts.is_imported', false);
-            }
+            // New / Uncontacted: Inbound leads that have not been called yet
+            $query->where(function($q) {
+                $q->where('contacts.is_imported', false)
+                  ->orWhereNull('contacts.is_imported');
+            });
             $query->whereDoesntHave('activities', function($actQ) {
                 $actQ->where('type', 'call');
             })->whereDoesntHave('opportunities.activities', function($actQ) {
                 $actQ->where('type', 'call');
             });
+        } elseif ($tab === 'lead_pool' || $tab === 'lead-pool') {
+            // Lead Pool: Leads originating from Lead Pool (imported)
+            $query->where('contacts.is_imported', true);
         } elseif ($tab === 'contacted') {
             // Contacted: At least 1 call activity logged
             $query->where(function($q) {
@@ -315,14 +319,38 @@ class ContactController extends Controller
             }
         }
 
-        // Lead Type filter (Paid / Organic)
+        // Lead Type filter (Paid / Organic / Warm)
         if ($request->filled('lead_type') && $request->lead_type !== 'all') {
             $lt = trim($request->lead_type);
-            if (strtolower($lt) === 'organic') {
+            if (strtolower($lt) === 'warm') {
                 $query->where(function($q) {
-                    $q->where('contacts.lead_type', 'like', 'Organic')
-                      ->orWhereNull('contacts.lead_type')
-                      ->orWhere('contacts.lead_type', '');
+                    $q->where('contacts.lead_type', 'like', 'Warm')
+                      ->orWhere(function($sub) {
+                          $sub->where('contacts.is_imported', true)
+                              ->where(function($s) {
+                                  $s->whereNull('contacts.lead_type')
+                                    ->orWhere('contacts.lead_type', '')
+                                    ->orWhere('contacts.lead_type', 'Organic');
+                              });
+                      });
+                });
+            } elseif (strtolower($lt) === 'organic') {
+                $query->where(function($q) {
+                    $q->where(function($sub) {
+                        $sub->where('contacts.lead_type', 'like', 'Organic')
+                            ->where(function($s) {
+                                $s->where('contacts.is_imported', false)
+                                  ->orWhereNull('contacts.is_imported');
+                            });
+                    })->orWhere(function($sub) {
+                        $sub->where(function($s) {
+                            $s->where('contacts.is_imported', false)
+                              ->orWhereNull('contacts.is_imported');
+                        })->where(function($s2) {
+                            $s2->whereNull('contacts.lead_type')
+                               ->orWhere('contacts.lead_type', '');
+                        });
+                    });
                 });
             } else {
                 $query->where('contacts.lead_type', 'like', "%{$lt}%");
@@ -611,15 +639,20 @@ class ContactController extends Controller
         })->count();
 
         $newUncontactedQuery = (clone $baseCountQuery)
+            ->where(function($q) {
+                $q->where('is_imported', false)
+                  ->orWhereNull('is_imported');
+            })
             ->whereDoesntHave('activities', function($actQ) {
                 $actQ->where('type', 'call');
             })->whereDoesntHave('opportunities.activities', function($actQ) {
                 $actQ->where('type', 'call');
             });
-        if (!$isLeadsDesk && !$isImportedOnly) {
-            $newUncontactedQuery->where('is_imported', false);
-        }
         $newUncontactedCount = $newUncontactedQuery->count();
+
+        $leadPoolCount = (clone $baseCountQuery)
+            ->where('is_imported', true)
+            ->count();
 
         $contactedCount = (clone $baseCountQuery)->where(function($q) {
             $q->whereHas('activities', function($actQ) {
@@ -663,6 +696,7 @@ class ContactController extends Controller
             'reactivation' => (clone $baseCountQuery)->where('state', 'reactivation')->count(),
             'duplicates' => (clone $baseCountQuery)->where('state', 'duplicate')->count(),
             'new_leads' => $newUncontactedCount,
+            'lead_pool' => $leadPoolCount,
             'contacted' => $contactedCount,
             'contacted_today' => $contactedTodayCount,
             'overdue' => $overdueCount,
@@ -727,6 +761,7 @@ class ContactController extends Controller
             'all' => (clone $baseCountQuery)->count(),
             'unassigned' => $unassignedCount,
             'new' => $newUncontactedCount,
+            'lead_pool' => $leadPoolCount,
             'contacted' => $contactedCount,
             'overdue' => $overdueCount,
             'assigned' => $assignedCount,
@@ -1149,7 +1184,19 @@ class ContactController extends Controller
             $opp->update(['current_owner_name' => $owner]);
         }
 
-        Contact::whereIn('id', $ids)->update([
+        // Partition pool leads vs inbound leads for accurate lead_type setting
+        Contact::whereIn('id', $ids)->where('is_imported', true)->update([
+            'assigned_to' => $owner,
+            'assigned_at' => now(),
+            'state'       => 'assigned',
+            'sla_status'  => 'on_track',
+            'next_action_due_at' => null,
+            'lead_type'   => 'Warm',
+        ]);
+
+        Contact::whereIn('id', $ids)->where(function($q) {
+            $q->where('is_imported', false)->orWhereNull('is_imported');
+        })->update([
             'assigned_to' => $owner,
             'assigned_at' => now(),
             'state'       => 'assigned',
@@ -1184,13 +1231,17 @@ class ContactController extends Controller
         $oldOwner = $contact->assigned_to ?: 'Unassigned';
         $assignedBy = $request->input('assigned_by') ?? ($request->user()?->name ?? 'Admin');
 
-        $contact->update([
+        $reassignData = [
             'assigned_to' => $newOwner,
             'assigned_at' => now(),
             'state'       => 'assigned',
             'sla_status'  => 'on_track',
             'next_action_due_at' => null,
-        ]);
+        ];
+        if ($contact->is_imported) {
+            $reassignData['lead_type'] = 'Warm';
+        }
+        $contact->update($reassignData);
 
         // Update all associated opportunities
         Opportunity::where('contact_id', $contact->id)->update([

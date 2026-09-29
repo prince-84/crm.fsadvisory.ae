@@ -19,7 +19,7 @@ import {
   RotateCcw, Copy, ChevronLeft, ChevronRight, RefreshCw, Trash2, Undo2, UserX,
   ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, GripVertical, UserCheck, X,
   Eye, Edit3, MessageSquare, Check, Zap, Filter, PhoneCall, AlertCircle, Sparkles, ListOrdered, Phone,
-  Bell, Clock, Calendar, ChevronDown, ChevronUp, Layers, Database
+  Bell, Clock, Calendar, ChevronDown, ChevronUp, Layers, Database, Flame
 } from 'lucide-react';
 import Link from 'next/link';
 import { hasPermission, refreshCurrentUser, isSuperUser } from '@/lib/permissions';
@@ -354,9 +354,9 @@ export default function LeadPoolPage() {
     };
   }, [fetchCallingStats]);
 
-  // Top Tabs State: 'all' | 'new' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'
-  const [activeTab, setActiveTab] = useState<'all' | 'new' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'>('all');
-  const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, contacted: 0, overdue: 0, opportunities: 0, unassigned: 0, duplicate: 0, deleted: 0 });
+  // Top Tabs State: 'all' | 'new' | 'lead_pool' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'
+  const [activeTab, setActiveTab] = useState<'all' | 'new' | 'lead_pool' | 'contacted' | 'overdue' | 'opportunities' | 'unassigned' | 'duplicate' | 'deleted'>('all');
+  const [tabCounts, setTabCounts] = useState({ all: 0, new: 0, lead_pool: 0, contacted: 0, overdue: 0, opportunities: 0, unassigned: 0, duplicate: 0, deleted: 0 });
   const [isQuickViewModalOpen, setIsQuickViewModalOpen] = useState(false);
   const [quickViewContact, setQuickViewContact] = useState<any | null>(null);
 
@@ -850,8 +850,25 @@ export default function LeadPoolPage() {
         );
 
       case 'lead_type': {
-        const rawType = (ct.lead_type || 'Organic').trim();
-        const isPaid = rawType.toLowerCase() === 'paid';
+        const rawType = (ct.lead_type || (ct.is_imported ? 'Warm' : 'Organic')).trim();
+        const lower = rawType.toLowerCase();
+        const isPaid = lower === 'paid';
+        const isWarm = lower === 'warm';
+
+        if (isWarm) {
+          return (
+            <td key={colKey} className="p-3">
+              <span
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-xs bg-orange-100 text-orange-900 border-orange-300"
+                title="Lead Type: Warm (Lead Pool Archive)"
+              >
+                <Flame className="w-2.5 h-2.5 text-orange-600 shrink-0" />
+                <span>WARM</span>
+              </span>
+            </td>
+          );
+        }
+
         return (
           <td key={colKey} className="p-3">
             <span
@@ -1530,7 +1547,7 @@ export default function LeadPoolPage() {
       }
 
       setStats(res.stats || { total: 0, available: 0, active: 0, reactivation: 0, duplicates: 0, new_leads: 0, contacted: 0, contacted_today: 0, overdue: 0 });
-      setTabCounts(res.tab_counts || { all: 0, new: 0, contacted: 0, overdue: 0, unassigned: 0, duplicate: 0, deleted: 0 });
+      setTabCounts(res.tab_counts || { all: 0, new: 0, lead_pool: 0, contacted: 0, overdue: 0, unassigned: 0, duplicate: 0, deleted: 0 });
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('crm_new_leads_count', { detail: res.tab_counts?.new ?? 0 }));
       }
@@ -2001,6 +2018,7 @@ export default function LeadPoolPage() {
               {[
                 { id: 'all', label: 'All Leads', count: tabCounts.all },
                 { id: 'new', label: 'New', count: tabCounts.new },
+                { id: 'lead_pool', label: 'Lead Pool', count: tabCounts.lead_pool },
                 { id: 'contacted', label: 'Contacted', count: tabCounts.contacted },
                 { id: 'overdue', label: 'Overdue', count: tabCounts.overdue },
                 { id: 'opportunities', label: 'Opportunity Quick View', count: tabCounts.opportunities || 0 },
@@ -2183,6 +2201,7 @@ export default function LeadPoolPage() {
                   <option value="all">⚡ All Lead Types</option>
                   <option value="Paid">⚡ Paid</option>
                   <option value="Organic">🌿 Organic</option>
+                  <option value="Warm">🔥 Warm</option>
                 </select>
               </div>
 
@@ -2359,7 +2378,7 @@ export default function LeadPoolPage() {
                   ) : contacts.length === 0 ? (
                     <tr>
                       <td colSpan={(Object.values(columnVisibility).filter(Boolean).length || 1) + 1} className="p-8 text-center text-[#6E6E6E]">
-                        No contacts found in &quot;{activeTab.toUpperCase()}&quot; view.
+                        No contacts found in &quot;{activeTab === 'lead_pool' ? 'LEAD POOL' : activeTab.toUpperCase()}&quot; view.
                       </td>
                     </tr>
                   ) : contacts.map((ct) => {

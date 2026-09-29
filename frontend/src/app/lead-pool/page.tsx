@@ -17,7 +17,7 @@ import {
   RotateCcw, Copy, ChevronLeft, ChevronRight, RefreshCw, Trash2, Undo2, UserX,
   ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, GripVertical, UserCheck, X,
   Eye, Edit3, MessageSquare, Check, Zap, Filter, PhoneCall, AlertCircle, Sparkles, ListOrdered, Phone,
-  Bell, Clock, Calendar, ChevronDown, ChevronUp, Layers, Database
+  Bell, Clock, Calendar, ChevronDown, ChevronUp, Layers, Database, Flame
 } from 'lucide-react';
 import Link from 'next/link';
 import { hasPermission, refreshCurrentUser, isSuperUser, getCurrentUser } from '@/lib/permissions';
@@ -556,7 +556,7 @@ export default function LeadPoolPage() {
   const ALL_COLUMNS = [
     { key: 'name', label: 'Client Profile', category: 'Core' },
     { key: 'phone', label: 'Primary Phone', category: 'Client Details' },
-    { key: 'lead_type', label: 'Lead Type (Paid/Organic)', category: 'Core' },
+    { key: 'lead_type', label: 'Lead Type (Paid/Organic/Warm)', category: 'Core' },
     { key: 'call_status', label: 'Call Status', category: 'Core' },
     { key: 'source', label: 'Source', category: 'Core' },
     { key: 'assigned_owner', label: 'Assigned Owner', category: 'SLA & Owner' },
@@ -787,22 +787,30 @@ export default function LeadPoolPage() {
         );
 
       case 'lead_type': {
-        const rawType = (ct.lead_type || 'Organic').trim();
+        const rawType = (ct.lead_type || (ct.is_imported ? 'Warm' : 'Organic')).trim();
         const isPaid = rawType.toLowerCase() === 'paid';
+        const isWarm = rawType.toLowerCase() === 'warm' || (ct.is_imported && !isPaid);
         return (
           <td key={colKey} className="p-3">
             <span
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border shadow-xs ${
                 isPaid
                   ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : isWarm
+                  ? 'bg-orange-100 text-orange-900 border-orange-300'
                   : 'bg-emerald-50 text-emerald-800 border-emerald-300'
               }`}
-              title={`Traffic Channel: ${isPaid ? 'Paid Ads Campaign' : 'Organic Traffic'}`}
+              title={`Traffic Channel: ${isPaid ? 'Paid Ads Campaign' : isWarm ? 'Warm Lead (Lead Pool Archive)' : 'Organic Traffic'}`}
             >
               {isPaid ? (
                 <>
                   <Zap className="w-2.5 h-2.5 text-amber-600 shrink-0" />
                   <span>PAID</span>
+                </>
+              ) : isWarm ? (
+                <>
+                  <Flame className="w-2.5 h-2.5 text-orange-600 shrink-0" />
+                  <span>WARM</span>
                 </>
               ) : (
                 <>

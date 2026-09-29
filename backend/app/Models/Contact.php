@@ -79,6 +79,14 @@ class Contact extends Model
         return $this->landing_page_url;
     }
 
+    public function getLeadTypeAttribute($value)
+    {
+        if (!empty($value)) {
+            return $value;
+        }
+        return $this->is_imported ? 'Warm' : 'Organic';
+    }
+
     public function getSubSourceAttribute()
     {
         if (preg_match('/\((.*?)\)/', $this->source ?? '', $matches)) {

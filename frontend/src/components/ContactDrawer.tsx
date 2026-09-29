@@ -7,7 +7,8 @@ import {
   Building2, Home, DollarSign, User, Sparkles, Plus, RefreshCw,
   Calendar, Layers, CheckCircle2, AlertCircle, Briefcase, FileText, UserCheck, ArrowRightLeft,
   FileAudio, PhoneIncoming, PhoneOutgoing, Send, Download,
-  ThumbsUp, ThumbsDown, PhoneOff, AlertTriangle, Users, Ban
+  ThumbsUp, ThumbsDown, PhoneOff, AlertTriangle, Users, Ban,
+  Zap, Flame
 } from 'lucide-react';
 import Link from 'next/link';
 import Swal from 'sweetalert2';
@@ -752,13 +753,33 @@ export default function ContactDrawer({
                       Inbound
                     </span>
                   )}
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
-                    (currentContact.lead_type || 'Organic').toLowerCase() === 'paid'
-                      ? 'bg-amber-100 text-amber-900 border-amber-300'
-                      : 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                  }`}>
-                    {(currentContact.lead_type || 'Organic').toLowerCase() === 'paid' ? 'Paid' : 'Organic'}
-                  </span>
+                  {(() => {
+                    const rawType = (currentContact.lead_type || (currentContact.is_imported ? 'Warm' : 'Organic')).trim();
+                    const isPaid = rawType.toLowerCase() === 'paid';
+                    const isWarm = rawType.toLowerCase() === 'warm' || (currentContact.is_imported && !isPaid);
+                    if (isPaid) {
+                      return (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border bg-amber-100 text-amber-900 border-amber-300">
+                          <Zap className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                          <span>Paid</span>
+                        </span>
+                      );
+                    }
+                    if (isWarm) {
+                      return (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border bg-orange-100 text-orange-900 border-orange-300">
+                          <Flame className="w-2.5 h-2.5 text-orange-600 shrink-0" />
+                          <span>Warm</span>
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border bg-emerald-50 text-emerald-800 border-emerald-300">
+                        <Sparkles className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                        <span>Organic</span>
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <div className="text-xs text-[#6E6E6E] space-y-1">
@@ -1234,13 +1255,33 @@ export default function ContactDrawer({
 
                   <div className="bg-white p-2 rounded border border-[#E8E4DC]">
                     <span className="text-[10px] text-slate-400 block uppercase font-medium">Lead Type</span>
-                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
-                      (currentContact.lead_type || 'Organic').toLowerCase() === 'paid'
-                        ? 'bg-amber-100 text-amber-900 border-amber-300'
-                        : 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                    }`}>
-                      {currentContact.lead_type || 'Organic'}
-                    </span>
+                    {(() => {
+                      const rawType = (currentContact.lead_type || (currentContact.is_imported ? 'Warm' : 'Organic')).trim();
+                      const isPaid = rawType.toLowerCase() === 'paid';
+                      const isWarm = rawType.toLowerCase() === 'warm' || (currentContact.is_imported && !isPaid);
+                      if (isPaid) {
+                        return (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase border bg-amber-100 text-amber-900 border-amber-300">
+                            <Zap className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                            <span>Paid</span>
+                          </span>
+                        );
+                      }
+                      if (isWarm) {
+                        return (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase border bg-orange-100 text-orange-900 border-orange-300">
+                            <Flame className="w-2.5 h-2.5 text-orange-600 shrink-0" />
+                            <span>Warm</span>
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase border bg-emerald-50 text-emerald-800 border-emerald-300">
+                          <Sparkles className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                          <span>Organic</span>
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   {currentContact.sub_source && (

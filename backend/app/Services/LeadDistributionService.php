@@ -240,21 +240,29 @@ class LeadDistributionService
         $agent = static::getNextAgent($scope);
         if (!$agent) {
             if (!empty($settings->fallback_user_name)) {
-                $contact->update([
+                $fallbackData = [
                     'assigned_to' => $settings->fallback_user_name,
                     'assigned_at' => Carbon::now(),
                     'state'       => 'assigned',
-                ]);
+                ];
+                if ($contact->is_imported) {
+                    $fallbackData['lead_type'] = 'Warm';
+                }
+                $contact->update($fallbackData);
             }
             return null;
         }
 
         // Auto-assign the contact to the chosen advisor
-        $contact->update([
+        $assignData = [
             'assigned_to' => $agent->name,
             'assigned_at' => Carbon::now(),
             'state'       => 'assigned',
-        ]);
+        ];
+        if ($contact->is_imported) {
+            $assignData['lead_type'] = 'Warm';
+        }
+        $contact->update($assignData);
 
         // If an opportunity already exists for this contact, synchronize its owner
         $opp = $contact->opportunities()->first();
@@ -602,11 +610,15 @@ class LeadDistributionService
             $daysWithAgentInt = (int) round($daysWithAgent);
 
             // Update contact ownership
-            $contact->update([
+            $reassignUpdate = [
                 'assigned_to' => $nextAgent->name,
                 'assigned_at' => Carbon::now(),
                 'state'       => 'assigned',
-            ]);
+            ];
+            if ($contact->is_imported) {
+                $reassignUpdate['lead_type'] = 'Warm';
+            }
+            $contact->update($reassignUpdate);
 
             if ($opp && !in_array(strtolower($opp->stage), ['closed_won', 'won'])) {
                 $opp->update([
