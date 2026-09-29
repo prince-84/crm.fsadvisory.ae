@@ -112,6 +112,7 @@ class RoleController extends Controller
                 'permissions' => [
                     ['key' => 'leads.view', 'label' => 'View Assigned Leads', 'desc' => 'Access and browse personal assigned client leads on Leads Page'],
                     ['key' => 'leads.view_all', 'label' => 'View All Leads (Entire Team)', 'desc' => 'Unrestricted access to browse all team leads on Leads Page'],
+                    ['key' => 'leads.filter_agent', 'label' => 'Team & Advisor Filter', 'desc' => 'Allow switching between individual advisors and team views in top bar filter across CRM pages'],
                     ['key' => 'leads.create', 'label' => 'Create New Lead', 'desc' => 'Manually add new inbound lead profiles'],
                     ['key' => 'leads.edit', 'label' => 'Edit Lead Profiles', 'desc' => 'Modify client details, budgets and requirements'],
                     ['key' => 'leads.delete', 'label' => 'Trash Leads', 'desc' => 'Soft-delete leads to trash archive'],

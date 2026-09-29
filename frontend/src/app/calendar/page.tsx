@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { fetchApi } from '@/lib/api';
-import { isSuperUser } from '@/lib/permissions';
+import { isSuperUser, hasPermission } from '@/lib/permissions';
 import Link from 'next/link';
 
 interface Appointment {
@@ -386,7 +386,7 @@ export default function CalendarPage() {
                   onChange={(e) => setSelectedOwner(e.target.value)}
                   className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
                 >
-                  {isSuperUser(currentUser) ? (
+                  {isSuperUser(currentUser) || hasPermission('leads.filter_agent') ? (
                     <>
                       <option value="all">👥 All Advisors (Entire Team)</option>
                       {currentUser?.name && (

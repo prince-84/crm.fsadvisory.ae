@@ -262,7 +262,7 @@ export default function LeadPoolPage() {
         if (raw) {
           const u = JSON.parse(raw);
           setCurrentUser(u);
-          const canViewAll = isSuperUser(u) || (u?.permissions && (u.permissions.includes('*') || u.permissions.includes('leads.view_all')));
+          const canViewAll = isSuperUser(u) || (u?.permissions && (u.permissions.includes('*') || u.permissions.includes('leads.view_all') || u.permissions.includes('leads.filter_agent')));
           if (!canViewAll && u?.name) {
             setSelectedOwner(u.name);
           }
@@ -1501,7 +1501,7 @@ export default function LeadPoolPage() {
         try { user = JSON.parse(raw); } catch {}
       }
 
-      const canViewAllLeads = isSuperUser(user) || (user?.permissions && (user.permissions.includes('*') || user.permissions.includes('leads.view_all')));
+      const canViewAllLeads = isSuperUser(user) || (user?.permissions && (user.permissions.includes('*') || user.permissions.includes('leads.view_all') || user.permissions.includes('leads.filter_agent')));
       let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
       if (!canViewAllLeads) {
         targetOwner = user?.name || 'Unassigned';
@@ -1964,7 +1964,7 @@ export default function LeadPoolPage() {
           <Navbar 
             onOpenContact={handleOpenDrawer}
             teamSelector={
-              mounted && (isSuperUser(currentUser) || hasPermission('leads.view_all')) ? (
+              mounted && (isSuperUser(currentUser) || hasPermission('leads.view_all') || hasPermission('leads.filter_agent')) ? (
                 <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] hover:border-[#C8A147] rounded-md px-2.5 py-1.5 text-xs shadow-2xs transition-colors">
                   <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
                   <select

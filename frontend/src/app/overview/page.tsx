@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import { fetchApi } from '@/lib/api';
+import { hasPermission, isSuperUser } from '@/lib/permissions';
 import { 
   TrendingUp, ShieldAlert, Award, 
   Users, CheckCircle2, ArrowUpRight, RefreshCw, Zap,
@@ -21,14 +22,20 @@ export default function OverviewPage() {
   const [sourcesTab, setSourcesTab] = useState<'sources' | 'sub_sources'>('sources');
   const [sourceSearch, setSourceSearch] = useState<string>('');
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [mounted, setMounted] = useState<boolean>(false);
 
   // Sync logged in user
   useEffect(() => {
+    setMounted(true);
     try {
       const raw = localStorage.getItem('crm_user');
       if (raw) {
         const u = JSON.parse(raw);
         setCurrentUser(u);
+        const canFilter = isSuperUser(u) || (u?.permissions && (u.permissions.includes('*') || u.permissions.includes('leads.filter_agent') || u.permissions.includes('reports.view_team')));
+        if (!canFilter && u?.name) {
+          setSelectedAgent(u.name);
+        }
       }
     } catch (e) {
       console.error('Failed to parse crm_user', e);
@@ -106,33 +113,40 @@ export default function OverviewPage() {
         {/* Top Navbar with Advisor Filter set directly in the top bar */}
         <Navbar 
           teamSelector={
-            <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] hover:border-[#C8A147] rounded-md px-2.5 py-1.5 text-xs shadow-2xs transition-colors">
-              <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
-              <span className="text-[10px] font-bold text-[#7A7A7A] uppercase tracking-wider hidden md:inline">
-                Advisor:
-              </span>
-              <select
-                value={selectedAgent}
-                onChange={handleAgentChange}
-                className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer pr-1"
-              >
-                <option value="all">👑 All Advisors (Whole Team)</option>
-                {advisors.map((adv: any) => (
-                  <option key={adv.id} value={adv.name}>
-                    👤 {adv.name} ({adv.role})
-                  </option>
-                ))}
-              </select>
-              {selectedAgent !== 'all' && (
-                <button
-                  onClick={() => setSelectedAgent('all')}
-                  title="Reset to All Advisors"
-                  className="text-[10px] bg-[#E8E4DC] hover:bg-[#D5D0C5] text-[#081428] px-1.5 py-0.5 rounded font-bold transition-colors ml-1"
+            mounted && (isSuperUser(currentUser) || hasPermission('leads.filter_agent') || hasPermission('reports.view_team')) ? (
+              <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] hover:border-[#C8A147] rounded-md px-2.5 py-1.5 text-xs shadow-2xs transition-colors">
+                <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                <span className="text-[10px] font-bold text-[#7A7A7A] uppercase tracking-wider hidden md:inline">
+                  Advisor:
+                </span>
+                <select
+                  value={selectedAgent}
+                  onChange={handleAgentChange}
+                  className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer pr-1"
                 >
-                  Reset
-                </button>
-              )}
-            </div>
+                  <option value="all">👑 All Advisors (Whole Team)</option>
+                  {advisors.map((adv: any) => (
+                    <option key={adv.id} value={adv.name}>
+                      👤 {adv.name} ({adv.role})
+                    </option>
+                  ))}
+                </select>
+                {selectedAgent !== 'all' && (
+                  <button
+                    onClick={() => setSelectedAgent('all')}
+                    title="Reset to All Advisors"
+                    className="text-[10px] bg-[#E8E4DC] hover:bg-[#D5D0C5] text-[#081428] px-1.5 py-0.5 rounded font-bold transition-colors ml-1"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            ) : mounted && currentUser?.name ? (
+              <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] rounded-md px-2.5 py-1.5 text-xs text-[#081428] font-bold shadow-2xs">
+                <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                <span>👤 Advisor: {currentUser.name}</span>
+              </div>
+            ) : null
           }
           actions={
             <button

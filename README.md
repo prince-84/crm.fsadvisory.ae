@@ -2457,9 +2457,23 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Eliminated Re-Assign Feature from Lead Pool Permissions (`lead_pool.reassign`)**:
     - Removed `lead_pool.reassign` from the CRM permissions matrix and seeders.
     - Since Lead Pool functions as a source bank, leads are distributed via batch checkbox allocation (`lead_pool.assign`) or automated distribution. Lead re-assignment is only relevant after leads enter an advisor's active sales workflow on the Leads page (`leads.reassign`).
-  - **Drawer Re-Assign Action Suppression (`ContactDrawer.tsx`)**:
-    - Added `allowReassign?: boolean` prop to `ContactDrawer.tsx` (default: `true`).
-    - In `lead-pool/page.tsx`, passed `allowReassign={false}`, cleanly hiding the `[⇄ RE-ASSIGN]` button next to `ASSIGNED ADVISOR` inside the slide-over profile drawer while preserving full re-assignment capabilities across the main Leads Desk (`/`).
+- **186 — Universal Team & Advisor Filter Permission Control (`RoleController.php`, `RoleAndPermissionSeeder.php`, `frontend/src/app/...`)**:
+  - **Granular RBAC Permission Key (`leads.filter_agent`)**:
+    - Registered a new permission key `leads.filter_agent` (*"Team & Advisor Filter"*) under `Leads Desk (Inbound)` in [`RoleController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/RoleController.php).
+    - Description: *"Allow switching between individual advisors and team views in top bar filter across CRM pages"*.
+    - Added by default to `salesManager` and `operations` roles in [`RoleAndPermissionSeeder.php`](file:///d:/FSadvisory-crm/backend/database/seeders/RoleAndPermissionSeeder.php), and universally accessible by Super Admin (`*`).
+    - Automatically populates in User Management (`/users`) Role Permissions modal and User Granular Permissions matrix.
+  - **Universal Top Bar Agent Filter Scoping Across All CRM Pages**:
+    - **Inbound Leads Desk ([`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx))**: Guarded the top bar `[👤✓ 👥 All Assigned Leads (Entire Team) ⌄]` dropdown with `canFilterAgent = isSuperUser(currentUser) || hasPermission('leads.filter_agent')`. Non-permitted users are strictly scoped to their own leads without the ability to switch between teammates.
+    - **Lead Pool ([`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx))**: Filter dropdown is only active for users with `leads.filter_agent` or Super Admin status. Standard users cleanly see the static luxury badge `👥 All Leads Pool (Bank)`.
+    - **Dashboard Overview ([`overview/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/overview/page.tsx))**: Guarded top advisor selector with `isSuperUser(currentUser) || hasPermission('leads.filter_agent') || hasPermission('reports.view_team')`. Standard advisors see a static gold badge with their own name and their dashboard metrics are strictly filtered to their own pipeline.
+    - **Sales Queue Desk ([`queue/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/queue/page.tsx))**: Guarded advisor filter dropdown with `leads.filter_agent`; non-permitted users are locked to their own queue.
+    - **Calendar & Appointments ([`calendar/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/calendar/page.tsx))**: Advisor dropdown guarded with `leads.filter_agent`.
+    - **Opportunities Pipeline ([`opportunities/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/opportunities/page.tsx))**: Team advisor selector in the top bar guarded with `leads.filter_agent`.
+    - **3CX Call Recordings ([`recordings/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/recordings/page.tsx))**: Agent extension/advisor selector guarded with `leads.filter_agent`.
+    - **Telephony Activity Logs ([`call-activity/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/call-activity/page.tsx))**: Agent selector dropdown guarded with `leads.filter_agent`.
+  - **Zero Regression & Layout Stability**:
+    - Non-permitted users see clean static indicator badges or have the dropdown selector disabled/hidden without causing layout shifts, UI clipping, or breaking existing functionality.
 
 ## ⚙️ Installation & Running Instructions
 

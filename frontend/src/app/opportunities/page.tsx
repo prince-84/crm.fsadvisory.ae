@@ -1047,11 +1047,11 @@ export default function OpportunitiesPage() {
               <div className="flex items-center gap-1.5 bg-[#FAF8F5] border border-[#E8E4DC] hover:border-[#C8A147] rounded-md px-3 py-1.5 shrink-0 transition-colors">
                 <User className="w-3.5 h-3.5 text-[#C8A147]" />
                 <select
-                  value={selectedOwner === 'auto' ? (isSuperUser(currentUser) ? 'all' : (currentUser?.name || 'auto')) : selectedOwner}
+                  value={selectedOwner === 'auto' ? ((isSuperUser(currentUser) || hasPermission('leads.filter_agent')) ? 'all' : (currentUser?.name || 'auto')) : selectedOwner}
                   onChange={(e) => setSelectedOwner(e.target.value)}
                   className="bg-transparent border-none text-xs text-[#081428] font-bold focus:outline-none cursor-pointer"
                 >
-                  {isSuperUser(currentUser) ? (
+                  {(isSuperUser(currentUser) || hasPermission('leads.filter_agent')) ? (
                     <>
                       <option value="all">👥 All Deals (Entire Team)</option>
                       {currentUser?.name && (

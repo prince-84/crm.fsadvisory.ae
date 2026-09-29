@@ -1823,7 +1823,7 @@ export default function LeadPoolPage() {
         <div className="flex-1 pl-56 flex flex-col min-w-0">
           <Navbar 
             teamSelector={
-              mounted ? (
+              mounted && (isSuperUser(currentUser) || hasPermission('leads.filter_agent') || hasPermission('leads.view_all')) ? (
                 <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] hover:border-[#C8A147] rounded-md px-2.5 py-1.5 text-xs shadow-2xs transition-colors">
                   <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
                   <select
@@ -1843,6 +1843,11 @@ export default function LeadPoolPage() {
                       <option key={a.id} value={a.name}>👤 {a.name} ({a.role})</option>
                     ))}
                   </select>
+                </div>
+              ) : mounted ? (
+                <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] rounded-md px-2.5 py-1.5 text-xs text-[#081428] font-bold shadow-2xs">
+                  <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
+                  <span>👥 All Leads Pool (Bank)</span>
                 </div>
               ) : null
             }

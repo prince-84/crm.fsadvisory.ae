@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import { fetchApi, API_BASE_URL } from '@/lib/api';
+import { hasPermission, isSuperUser, getCurrentUser } from '@/lib/permissions';
 import { 
   Mic, 
   Play, 
@@ -88,6 +89,13 @@ export default function CallRecordingsPage() {
   const [selectedDirection, setSelectedDirection] = useState('all');
   const [selectedAgent, setSelectedAgent] = useState('all');
   const [selectedDuration, setSelectedDuration] = useState('all');
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    setCurrentUser(getCurrentUser());
+  }, []);
+
+  const canFilterAgent = isSuperUser(currentUser) || hasPermission('leads.filter_agent');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -528,18 +536,20 @@ export default function CallRecordingsPage() {
               </select>
 
               {/* Agent Filter */}
-              <select
-                value={selectedAgent}
-                onChange={(e) => setSelectedAgent(e.target.value)}
-                className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none cursor-pointer"
-              >
-                <option value="all">All 3CX Advisors</option>
-                <option value="Mako Real Estate">Mako Real Estate (Ext 1030)</option>
-                <option value="Shafi Core">Shafi Core (Ext 1031)</option>
-                <option value="Hiba Alam">Hiba Alam (Ext 1033)</option>
-                <option value="Rayyan">Rayyan (Ext 1034)</option>
-                <option value="Saad">Saad (Ext 1035/1036)</option>
-              </select>
+              {canFilterAgent && (
+                <select
+                  value={selectedAgent}
+                  onChange={(e) => setSelectedAgent(e.target.value)}
+                  className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none cursor-pointer"
+                >
+                  <option value="all">All 3CX Advisors</option>
+                  <option value="Mako Real Estate">Mako Real Estate (Ext 1030)</option>
+                  <option value="Shafi Core">Shafi Core (Ext 1031)</option>
+                  <option value="Hiba Alam">Hiba Alam (Ext 1033)</option>
+                  <option value="Rayyan">Rayyan (Ext 1034)</option>
+                  <option value="Saad">Saad (Ext 1035/1036)</option>
+                </select>
+              )}
 
               {/* Duration Filter */}
               <select

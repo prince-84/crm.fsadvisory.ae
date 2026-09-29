@@ -584,7 +584,8 @@ function MyQueueContent() {
       const activeChannel = channelOverride !== undefined ? channelOverride : queueChannel;
       let url = `/queue?channel=${activeChannel}`;
       let targetOwner = ownerOverride !== undefined ? ownerOverride : selectedOwner;
-      if (!isSuperUser(user)) {
+      const canFilter = isSuperUser(user) || (user?.permissions && (user.permissions.includes('*') || user.permissions.includes('leads.filter_agent')));
+      if (!canFilter) {
         targetOwner = user?.name || 'auto';
       } else if (targetOwner === 'auto') {
         targetOwner = 'all';
@@ -1942,7 +1943,7 @@ function MyQueueContent() {
       setSelectedOwnerPropertyTypes([]);
       setSelectedOwnerBedrooms([]);
     }
-    if (isSuperUser(currentUser)) {
+    if (isSuperUser(currentUser) || hasPermission('leads.filter_agent')) {
       setSelectedOwner('all');
     } else {
       setSelectedOwner(currentUser?.name || 'auto');
@@ -1953,9 +1954,11 @@ function MyQueueContent() {
     setSortOrder('desc');
   };
 
+  const canFilterAgent = isSuperUser(currentUser) || hasPermission('leads.filter_agent');
+
   const isFilterActive = queueChannel === 'regular'
-    ? (searchQuery !== '' || regDateRange.preset !== 'all' || activeAdvancedCount > 0 || activeTab !== 'all' || selectedStage !== 'all' || selectedCallOutcome !== 'all' || (isSuperUser(currentUser) && selectedOwner !== 'all'))
-    : (searchQuery !== '' || ownerDateRange.preset !== 'all' || selectedOwnerAreas.length > 0 || selectedOwnerPropertyTypes.length > 0 || selectedOwnerBedrooms.length > 0 || activeTab !== 'all' || selectedStage !== 'all' || selectedCallOutcome !== 'all' || (isSuperUser(currentUser) && selectedOwner !== 'all'));
+    ? (searchQuery !== '' || regDateRange.preset !== 'all' || activeAdvancedCount > 0 || activeTab !== 'all' || selectedStage !== 'all' || selectedCallOutcome !== 'all' || (canFilterAgent && selectedOwner !== 'all'))
+    : (searchQuery !== '' || ownerDateRange.preset !== 'all' || selectedOwnerAreas.length > 0 || selectedOwnerPropertyTypes.length > 0 || selectedOwnerBedrooms.length > 0 || activeTab !== 'all' || selectedStage !== 'all' || selectedCallOutcome !== 'all' || (canFilterAgent && selectedOwner !== 'all'));
 
   const isAllPageSelected = queueChannel === 'regular'
     ? (paginatedOpps.length > 0 && paginatedOpps.every((o: any) => selectedOppIds.includes(o.id)))
@@ -2056,8 +2059,8 @@ function MyQueueContent() {
               </button>
             </div>
 
-            {/* Agent / Scope Selector - ONLY visible for Super Admin above the cards! */}
-            {isSuperUser(currentUser) && (
+            {/* Agent / Scope Selector - visible for Super Admin or users with leads.filter_agent! */}
+            {canFilterAgent && (
               <div className="flex items-center gap-2 bg-white border border-[#E8E4DC] rounded-xl px-3 py-2 shadow-2xs">
                 <UserCheck className="w-4 h-4 text-[#C8A147]" />
                 <span className="text-xs font-bold text-[#6E6E6E]">Team View:</span>

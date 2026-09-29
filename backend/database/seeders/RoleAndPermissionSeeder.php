@@ -16,6 +16,7 @@ class RoleAndPermissionSeeder extends Seeder
             // 1. Leads Desk (Inbound)
             'leads.view',
             'leads.view_all',
+            'leads.filter_agent',
             'leads.create',
             'leads.edit',
             'leads.delete',
@@ -94,7 +95,7 @@ class RoleAndPermissionSeeder extends Seeder
                 'name' => 'Sales Manager',
                 'description' => 'Full control over sales pipeline, agent queue routing, lead assignment, call monitoring and performance reports.',
                 'permissions' => [
-                    'leads.view', 'leads.view_all', 'leads.create', 'leads.edit', 'leads.delete', 'leads.assign', 'leads.reassign', 'leads.export',
+                    'leads.view', 'leads.view_all', 'leads.filter_agent', 'leads.create', 'leads.edit', 'leads.delete', 'leads.assign', 'leads.reassign', 'leads.export',
                     'lead_pool.view', 'lead_pool.assign', 'lead_pool.import', 'lead_pool.export', 'lead_pool.delete', 'lead_pool.restore',
                     'owner_data.view', 'owner_data.create', 'owner_data.edit', 'owner_data.export',
                     'queue.view', 'queue.update_status', 'queue.calendar', 'queue.bulk_delete',
@@ -153,7 +154,7 @@ class RoleAndPermissionSeeder extends Seeder
                 'name' => 'Operations Coordinator',
                 'description' => 'Responsible for data hygiene, lead imports, owner database verification and CSV reports.',
                 'permissions' => [
-                    'leads.view', 'leads.view_all', 'leads.create', 'leads.edit', 'leads.assign', 'leads.export',
+                    'leads.view', 'leads.view_all', 'leads.filter_agent', 'leads.create', 'leads.edit', 'leads.assign', 'leads.export',
                     'lead_pool.view', 'lead_pool.assign', 'lead_pool.import', 'lead_pool.export',
                     'owner_data.view', 'owner_data.create', 'owner_data.edit', 'owner_data.export', 'owner_data.import',
                     'reports.view_team', 'reports.export',

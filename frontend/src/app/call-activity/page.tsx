@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import { fetchApi } from '@/lib/api';
+import { hasPermission, isSuperUser, getCurrentUser } from '@/lib/permissions';
 import { 
   PhoneCall, 
   Search, 
@@ -44,6 +45,13 @@ export default function CallActivityPage() {
   const [selectedOutcome, setSelectedOutcome] = useState('all');
   const [selectedAgent, setSelectedAgent] = useState('all');
   const [activeTab, setActiveTab] = useState<'all' | 'interested' | 'callback' | 'voicemail' | 'not_interested'>('all');
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    setCurrentUser(getCurrentUser());
+  }, []);
+
+  const canFilterAgent = isSuperUser(currentUser) || hasPermission('leads.filter_agent');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -337,20 +345,22 @@ export default function CallActivityPage() {
               </select>
 
               {/* Agent Filter */}
-              <select
-                value={selectedAgent}
-                onChange={(e) => setSelectedAgent(e.target.value)}
-                className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none cursor-pointer"
-              >
-                <option value="all">All Agents</option>
-                <option value="Hiba Aslam">Hiba Aslam</option>
-                <option value="Shafiuddin">Shafiuddin</option>
-                <option value="Rayyan">Rayyan</option>
-                <option value="Saad">Saad</option>
-                <option value="Mako">Mako</option>
-                <option value="Faraz Shafi">Faraz Shafi</option>
-                <option value="Babar Ali Khan">Babar Ali Khan</option>
-              </select>
+              {canFilterAgent && (
+                <select
+                  value={selectedAgent}
+                  onChange={(e) => setSelectedAgent(e.target.value)}
+                  className="p-1.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded text-xs text-[#1A1A1A] font-semibold focus:border-[#C8A147] focus:outline-none cursor-pointer"
+                >
+                  <option value="all">All Agents</option>
+                  <option value="Hiba Aslam">Hiba Aslam</option>
+                  <option value="Shafiuddin">Shafiuddin</option>
+                  <option value="Rayyan">Rayyan</option>
+                  <option value="Saad">Saad</option>
+                  <option value="Mako">Mako</option>
+                  <option value="Faraz Shafi">Faraz Shafi</option>
+                  <option value="Babar Ali Khan">Babar Ali Khan</option>
+                </select>
+              )}
 
               {isFilterActive && (
                 <button
