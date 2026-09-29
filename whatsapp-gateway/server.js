@@ -73,6 +73,7 @@ function saveContacts() {
 // ── State ───────────────────────────────────────────────────────────────────
 let client         = null;
 let isInitializing = false;
+let isAuthenticating = false;
 let connectionStatus = 'disconnected';
 let currentQrImage   = null;
 let currentQrRaw     = null;
@@ -111,7 +112,7 @@ async function triggerPageQrReload() {
 }
 
 async function refreshQrSession() {
-  if (connectionStatus === 'connected') return;
+  if (connectionStatus === 'connected' || connectionStatus === 'connecting' || isAuthenticating) return;
   console.log('🔄 Refreshing WhatsApp Web session for fresh cryptographic QR code...');
   currentQrImage = null;
   currentQrRaw = null;
@@ -133,6 +134,7 @@ async function refreshQrSession() {
 async function initClient() {
   if (isInitializing) return;
   isInitializing   = true;
+  isAuthenticating = false;
   connectionStatus = 'connecting';
   currentQrImage   = null;
   currentQrRaw     = null;
@@ -151,15 +153,27 @@ async function initClient() {
     authStrategy: new LocalAuth({
       dataPath: path.join(__dirname, 'auth_sessions'),
     }),
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1044062641-alpha.html',
+    },
     qrMaxRetries: 0,
     takeoverOnConflict: true,
     takeoverTimeoutMs: 0,
     puppeteer: {
       headless: true,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-blink-features=AutomationControlled',
+        '--no-default-browser-check',
+        '--disable-extensions',
         '--autoplay-policy=no-user-gesture-required',
         '--enable-features=NetworkService,AudioServiceOutOfProcess',
         '--use-fake-ui-for-media-stream',
@@ -170,6 +184,7 @@ async function initClient() {
   // QR
   client.on('qr', async (qr) => {
     connectionStatus = 'qr_ready';
+    isAuthenticating = false;
     currentQrRaw     = qr;
     currentQrTimestamp = Date.now();
     try {
@@ -178,9 +193,26 @@ async function initClient() {
     } catch (e) { console.error('QR error:', e.message); }
   });
 
+  // Authenticated (Phone scanned QR code)
+  client.on('authenticated', () => {
+    console.log('🔑 WhatsApp Authenticated! Phone scanned QR successfully. Finalizing handshake...');
+    isAuthenticating = true;
+    connectionStatus = 'connecting';
+    currentQrImage   = null;
+    currentQrRaw     = null;
+  });
+
+  // Loading Screen (Device linking & message decrypting)
+  client.on('loading_screen', (percent, message) => {
+    console.log(`⏳ WhatsApp Loading Screen: ${percent}% — ${message}`);
+    isAuthenticating = true;
+    connectionStatus = 'connecting';
+  });
+
   // Ready
   client.on('ready', async () => {
     isInitializing   = false;
+    isAuthenticating = false;
     connectionStatus = 'connected';
     currentQrImage   = null;
     currentQrRaw     = null;
@@ -208,6 +240,7 @@ async function initClient() {
     console.log('⚠️  WhatsApp Disconnected / Logged Out from Mobile:', reason);
     connectionStatus = 'disconnected';
     isInitializing   = false;
+    isAuthenticating = false;
     connectedUser    = null;
     currentQrImage   = null;
     currentQrRaw     = null;
@@ -232,6 +265,7 @@ async function initClient() {
     console.log('⚠️ Auth Failure:', msg);
     connectionStatus = 'disconnected';
     isInitializing = false;
+    isAuthenticating = false;
     connectedUser = null;
     currentQrImage = null;
     currentQrRaw = null;

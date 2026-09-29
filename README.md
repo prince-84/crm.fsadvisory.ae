@@ -2553,6 +2553,12 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Updated `selectedLeadType` filter dropdown on Leads Desk with `<option value="Warm">🔥 Warm</option>`.
     - Updated backend API filtering in `ContactController.php` so `?lead_type=Warm` accurately queries contacts with `lead_type = 'Warm'` as well as imported records.
 
+- **194 — WhatsApp Gateway Multi-Device Linking & Anti-Detection Handshake Fix (`whatsapp-gateway/server.js`)**:
+  - **Resolution of "Could Not Connect Device" on QR Scan**:
+    - **Pinned Stable WhatsApp Web Version**: Integrated `webVersionCache` with verified stable remote client (`https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1044062641-alpha.html`) preventing WhatsApp from loading experimental canary builds that reject `whatsapp-web.js` key exchanges.
+    - **Anti-Automation Bypass & User-Agent**: Configured genuine Chrome desktop user agent (`Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0`) and added `--disable-blink-features=AutomationControlled` to eliminate `HeadlessChrome` headers and `navigator.webdriver` bot detection during mobile cryptographic key negotiation.
+    - **Protected Handshake State (`isAuthenticating`)**: Added dedicated `client.on('authenticated')` and `client.on('loading_screen')` lifecycle listeners. Guarded `refreshQrSession()` against executing page reloads or client resets while the mobile phone is actively synchronizing credentials, completely preventing aborted WebSocket connection errors.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
