@@ -1237,7 +1237,7 @@ export default function LeadPoolPage() {
 
       case 'next_action_due_at': {
         const dueAtVal = ct.next_action_due_at || opp?.next_action_due_at;
-        if (!dueAtVal) {
+        if (!dueAtVal || (ct.is_imported && !opp?.next_action_due_at)) {
           return <td key={colKey} className="p-3 text-slate-400 text-xs">—</td>;
         }
         const dueTime = new Date(dueAtVal).getTime();

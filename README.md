@@ -2506,6 +2506,16 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Assigned Leads**: As soon as an agent is assigned a lead (via single assignment, bulk assignment, or round-robin), `contacts.assigned_at` is stamped with `now()`, propelling the lead directly to the top of the agent's active desk for immediate outreach.
     - **Unassigned Leads**: Fall back to `contacts.created_at`, preserving chronological freshness in the Lead Pool.
 
+- **191 — Lead Pool Archive Leads Overdue Exemption & 2-Hour Response SLA Isolation (`QueueController.php`, `ContactController.php`, `frontend/src/app/page.tsx`)**:
+  - **Inbound vs Lead Pool SLA Separation**:
+    - Fresh inbound leads (Meta Ads, Website, Portals, Webhooks) maintain their strict 2-hour response timer (`$dueAt = $assignedAt->addHours(2)`), transitioning to `due_soon` and `overdue` if uncontacted.
+    - Leads originating from the **Lead Pool** (`contacts.is_imported = true`) are recognized as warm/cold archive bank data and are **strictly exempt** from default 2-hour expiry.
+  - **Zero Default Overdue for Pool Leads**:
+    - Updated [`QueueController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/QueueController.php) so that leads from Lead Pool have `$dueAt = null` by default and maintain `$slaStatus = 'on_track'` without ever becoming overdue.
+    - Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) so that `is_imported` contacts are excluded from the `overdue` tab filter, `$overdueCount` metric cards, and automated overdue background synchronization.
+    - Updated `bulkAssign` and `reassign` routines to explicitly initialize assigned pool contacts with `sla_status = 'on_track'` and `next_action_due_at = null`.
+    - Updated [`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx) to suppress false flashing overdue badges for imported pool contacts without active opportunities.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

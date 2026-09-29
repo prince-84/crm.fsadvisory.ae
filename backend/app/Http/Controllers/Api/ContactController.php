@@ -98,10 +98,13 @@ class ContactController extends Controller
         } elseif ($tab === 'overdue') {
             $query->where(function($q) {
                 $q->where(function($cq) {
-                    $cq->where('contacts.sla_status', 'overdue')
-                       ->orWhere(function($sub) {
-                           $sub->whereNotNull('contacts.next_action_due_at')
-                               ->where('contacts.next_action_due_at', '<', now());
+                    $cq->where('contacts.is_imported', false)
+                       ->where(function($subC) {
+                           $subC->where('contacts.sla_status', 'overdue')
+                                ->orWhere(function($sub) {
+                                    $sub->whereNotNull('contacts.next_action_due_at')
+                                        ->where('contacts.next_action_due_at', '<', now());
+                                });
                        });
                 })->orWhereHas('opportunities', function($oppQ) {
                     $oppQ->where('sla_status', 'overdue')
@@ -636,10 +639,13 @@ class ContactController extends Controller
 
         $overdueCount = (clone $baseCountQuery)->where(function($q) {
             $q->where(function($cq) {
-                $cq->where('contacts.sla_status', 'overdue')
-                   ->orWhere(function($sub) {
-                       $sub->whereNotNull('contacts.next_action_due_at')
-                           ->where('contacts.next_action_due_at', '<', now());
+                $cq->where('contacts.is_imported', false)
+                   ->where(function($subC) {
+                       $subC->where('contacts.sla_status', 'overdue')
+                            ->orWhere(function($sub) {
+                                $sub->whereNotNull('contacts.next_action_due_at')
+                                    ->where('contacts.next_action_due_at', '<', now());
+                            });
                    });
             })->orWhereHas('opportunities', function($oppQ) {
                 $oppQ->where('sla_status', 'overdue')
@@ -1147,6 +1153,8 @@ class ContactController extends Controller
             'assigned_to' => $owner,
             'assigned_at' => now(),
             'state'       => 'assigned',
+            'sla_status'  => 'on_track',
+            'next_action_due_at' => null,
         ]);
 
         $assignedBy = $request->input('assigned_by') ?? ($request->user()?->name ?? 'Admin');
@@ -1180,6 +1188,8 @@ class ContactController extends Controller
             'assigned_to' => $newOwner,
             'assigned_at' => now(),
             'state'       => 'assigned',
+            'sla_status'  => 'on_track',
+            'next_action_due_at' => null,
         ]);
 
         // Update all associated opportunities
@@ -1367,6 +1377,7 @@ class ContactController extends Controller
             ->update(['sla_status' => 'overdue']);
 
         Contact::whereNotNull('next_action_due_at')
+            ->where('is_imported', false)
             ->where('next_action_due_at', '<', $now)
             ->where('sla_status', '!=', 'overdue')
             ->update(['sla_status' => 'overdue']);
@@ -1404,8 +1415,9 @@ class ContactController extends Controller
 
         $opportunities = $oppQuery->orderBy('next_action_due_at', 'asc')->limit(40)->get();
 
-        // 2. Contacts with scheduled follow-ups (pre-deal / no active deal yet)
-        $contactQuery = Contact::whereNotNull('next_action_due_at')
+        // 2. Contacts with scheduled follow-ups (pre-deal / no active deal yet, excluding cold lead pool)
+        $contactQuery = Contact::where('is_imported', false)
+            ->whereNotNull('next_action_due_at')
             ->where(function ($q) use ($now, $endOfDay) {
                 // Due today OR overdue within past 48 hours
                 $q->whereBetween('next_action_due_at', [$now, $endOfDay])

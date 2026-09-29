@@ -196,9 +196,11 @@ class QueueController extends Controller
         $virtualItems = $assignedContacts->map(function ($c) use ($now) {
             $latestCall = $c->activities->first();
             $assignedAt = $c->assigned_at ? Carbon::parse($c->assigned_at) : ($c->created_at ? Carbon::parse($c->created_at) : $now);
+            $isFromLeadPool = (bool) ($c->is_imported);
             
             $nextAction = 'Contact new lead — confirm requirement details';
-            $dueAt = $assignedAt->copy()->addHours(2);
+            // Inbound leads have 2-hour response SLA; Lead Pool archive leads never expire or become overdue by default
+            $dueAt = $isFromLeadPool ? null : $assignedAt->copy()->addHours(2);
             $slaStatus = 'on_track';
 
             if ($latestCall && $latestCall->call_outcome) {
@@ -210,17 +212,21 @@ class QueueController extends Controller
                 } else {
                     $nextAction = "Follow-up: {$latestCall->call_outcome}";
                     $dueAt = Carbon::parse($latestCall->created_at)->addHours(24);
+                    if (!$isFromLeadPool) {
+                        if ($dueAt->isPast()) {
+                            $slaStatus = 'overdue';
+                        } elseif ($dueAt->diffInMinutes($now) <= 30) {
+                            $slaStatus = 'due_soon';
+                        }
+                    }
+                }
+            } else {
+                if (!$isFromLeadPool && $dueAt) {
                     if ($dueAt->isPast()) {
                         $slaStatus = 'overdue';
                     } elseif ($dueAt->diffInMinutes($now) <= 30) {
                         $slaStatus = 'due_soon';
                     }
-                }
-            } else {
-                if ($dueAt->isPast()) {
-                    $slaStatus = 'overdue';
-                } elseif ($dueAt->diffInMinutes($now) <= 30) {
-                    $slaStatus = 'due_soon';
                 }
             }
 
