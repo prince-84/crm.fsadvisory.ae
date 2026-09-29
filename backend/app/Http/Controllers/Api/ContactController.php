@@ -484,7 +484,11 @@ class ContactController extends Controller
 
         if (!empty($sortBy) && isset($contactDirectMap[$sortBy])) {
             $col = $contactDirectMap[$sortBy];
-            $query->orderBy("contacts.{$col}", $sortOrder);
+            if ($col === 'created_at') {
+                $query->orderByRaw("COALESCE(contacts.assigned_at, contacts.created_at) {$sortOrder}");
+            } else {
+                $query->orderBy("contacts.{$col}", $sortOrder);
+            }
         } elseif ($sortBy === 'assigned_owner') {
             $query->orderByRaw("COALESCE(NULLIF(contacts.assigned_to, 'Unassigned'), '') {$sortOrder}");
         } elseif ($sortBy === 'sub_source') {
@@ -520,8 +524,8 @@ class ContactController extends Controller
                 $sortOrder
             );
         } else {
-            // Default Sort: Created Date latest first
-            $query->orderBy('contacts.created_at', 'desc');
+            // Default Sort: Latest Assigned Date or Created Date first
+            $query->orderByRaw("COALESCE(contacts.assigned_at, contacts.created_at) desc");
         }
 
         $query->orderBy('contacts.id', 'desc');

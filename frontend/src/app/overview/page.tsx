@@ -23,8 +23,9 @@ export default function OverviewPage() {
   const [sourceSearch, setSourceSearch] = useState<string>('');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [mounted, setMounted] = useState<boolean>(false);
+  const [userInitialized, setUserInitialized] = useState<boolean>(false);
 
-  // Sync logged in user
+  // Sync logged in user once on mount before triggering initial analytics load
   useEffect(() => {
     setMounted(true);
     try {
@@ -40,6 +41,7 @@ export default function OverviewPage() {
     } catch (e) {
       console.error('Failed to parse crm_user', e);
     }
+    setUserInitialized(true);
   }, []);
 
   const loadAnalytics = async (agentName: string = selectedAgent, isManual: boolean = false) => {
@@ -60,8 +62,9 @@ export default function OverviewPage() {
   };
 
   useEffect(() => {
+    if (!userInitialized) return;
     loadAnalytics(selectedAgent);
-  }, [selectedAgent]);
+  }, [userInitialized, selectedAgent]);
 
   const handleAgentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
@@ -196,9 +199,13 @@ export default function OverviewPage() {
                   <Users className="w-4 h-4 text-[#C8A147]" />
                 </div>
               </div>
-              <div className="font-heading font-bold text-2xl text-[#081428]">
-                {metrics.total_leads || 0}
-              </div>
+              {loading && !data ? (
+                <div className="h-8 w-20 bg-slate-100 animate-pulse rounded my-1" />
+              ) : (
+                <div className="font-heading font-bold text-2xl text-[#081428]">
+                  {metrics.total_leads || 0}
+                </div>
+              )}
               <div className="text-[11px] text-slate-500 font-medium truncate">
                 {selectedAgent === 'all' 
                   ? `Across active team (${metrics.total_leads_master || 0} in DB)`
@@ -214,9 +221,13 @@ export default function OverviewPage() {
                   <Flame className="w-4 h-4 text-amber-600" />
                 </div>
               </div>
-              <div className="font-heading font-bold text-2xl text-amber-600">
-                {metrics.new_leads || 0}
-              </div>
+              {loading && !data ? (
+                <div className="h-8 w-20 bg-amber-50 animate-pulse rounded my-1" />
+              ) : (
+                <div className="font-heading font-bold text-2xl text-amber-600">
+                  {metrics.new_leads || 0}
+                </div>
+              )}
               <div className="text-[11px] text-amber-700/80 font-medium truncate">
                 Awaiting 1st outreach call
               </div>
@@ -235,10 +246,14 @@ export default function OverviewPage() {
                   <CalendarDays className="w-4 h-4 text-purple-600" />
                 </div>
               </div>
-              <div className="font-heading font-bold text-2xl text-[#081428] flex items-center justify-between">
-                <span>{metrics.total_appointments || 0}</span>
-                <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-purple-600 transition-colors" />
-              </div>
+              {loading && !data ? (
+                <div className="h-8 w-20 bg-purple-50 animate-pulse rounded my-1" />
+              ) : (
+                <div className="font-heading font-bold text-2xl text-[#081428] flex items-center justify-between">
+                  <span>{metrics.total_appointments || 0}</span>
+                  <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-purple-600 transition-colors" />
+                </div>
+              )}
               <div className="text-[11px] text-purple-700/80 font-medium truncate">
                 {metrics.scheduled_appointments || 0} Scheduled • {metrics.completed_appointments || 0} Completed
               </div>
@@ -257,10 +272,14 @@ export default function OverviewPage() {
                   <Briefcase className="w-4 h-4 text-blue-600" />
                 </div>
               </div>
-              <div className="font-heading font-bold text-2xl text-[#081428] flex items-center justify-between">
-                <span>{metrics.qualified_opportunities || 0}</span>
-                <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 transition-colors" />
-              </div>
+              {loading && !data ? (
+                <div className="h-8 w-20 bg-blue-50 animate-pulse rounded my-1" />
+              ) : (
+                <div className="font-heading font-bold text-2xl text-[#081428] flex items-center justify-between">
+                  <span>{metrics.qualified_opportunities || 0}</span>
+                  <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-blue-600 transition-colors" />
+                </div>
+              )}
               <div className="text-[11px] text-blue-600 font-medium truncate">
                 {metrics.active_opportunities || 0} Active Deals in Pipeline
               </div>
@@ -274,9 +293,13 @@ export default function OverviewPage() {
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 </div>
               </div>
-              <div className="font-heading font-bold text-2xl text-emerald-700">
-                {metrics.closed_deals || 0}
-              </div>
+              {loading && !data ? (
+                <div className="h-8 w-20 bg-emerald-50 animate-pulse rounded my-1" />
+              ) : (
+                <div className="font-heading font-bold text-2xl text-emerald-700">
+                  {metrics.closed_deals || 0}
+                </div>
+              )}
               <div className="text-[11px] text-emerald-700/80 font-medium truncate">
                 AED {formatAED(metrics.total_closed_won_aed)} Closed Volume
               </div>
@@ -290,9 +313,13 @@ export default function OverviewPage() {
                   <PhoneCall className="w-4 h-4 text-cyan-600" />
                 </div>
               </div>
-              <div className="font-heading font-bold text-2xl text-[#081428]">
-                {metrics.calls_logged || 0}
-              </div>
+              {loading && !data ? (
+                <div className="h-8 w-20 bg-cyan-50 animate-pulse rounded my-1" />
+              ) : (
+                <div className="font-heading font-bold text-2xl text-[#081428]">
+                  {metrics.calls_logged || 0}
+                </div>
+              )}
               <div className="text-[11px] text-cyan-700 font-medium truncate">
                 3CX Telephony & Outbound
               </div>

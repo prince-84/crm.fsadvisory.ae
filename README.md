@@ -2487,6 +2487,25 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Removed the redundant dial format selector chips (`00 Prefix`, `+ Prefix`, `Digits`) and helper text (*"Agar dialer CRM ke peeche chala jaye..."*).
     - Preserved essential live calling controls: Dialed Number badge, side-by-side indicator, **`[📱 Bring to Front ⬆]`**, and **`[⚡ Re-Dial]`** actions, ensuring maximum screen real estate for call outcome, SLA schedule, and discussion notes.
 
+- **189 — Overview Page Double-Fetch Race Condition Prevention & Skeleton Shimmer Polish (`frontend/src/app/overview/page.tsx`)**:
+  - **100% Real Database Connectivity Verified**:
+    - Confirmed zero mock/dummy/hardcoded data across both frontend ([`overview/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/overview/page.tsx)) and backend ([`ReportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ReportController.php)).
+    - All KPI metrics (Total Leads, New Leads, Appointments, Qualified Opportunities, Closed Won Volume, and Calls Logged) are computed dynamically from MySQL tables (`contacts`, `opportunities`, `appointments`, `call_recordings`, and `activities`).
+  - **Eliminated Double-Fetch Race Condition**:
+    - Added `userInitialized` state to ensure the authenticated user's permissions and assigned advisor identity are cleanly evaluated before dispatching the initial analytics query.
+    - Prevents competing asynchronous network requests between company-wide (`agent=all`) and individual advisor scopes (`agent={name}`) upon page initialization.
+  - **Luxury Skeleton Shimmer Placeholders**:
+    - Implemented animated pulse skeleton shimmers on all 6 KPI cards while initial database calculations resolve, completely eliminating visual jump from default zeroes to loaded values.
+
+- **190 — Smart Assignment & Inbound Chronological Sorting (`backend/app/Http/Controllers/Api/ContactController.php`)**:
+  - **Problem Solved**:
+    - Previously, default sorting strictly ordered on `contacts.created_at DESC`. When historic or batch-imported leads were assigned to an agent, they appeared deep down on older pages rather than appearing at the top of the agent's desk.
+  - **Smart `COALESCE(assigned_at, created_at)` Prioritization**:
+    - Updated default sorting and `created_at` column sorting in [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) to use `COALESCE(contacts.assigned_at, contacts.created_at) DESC`.
+    - **Fresh Inbound Leads (Meta Ads, Webhooks, Portals)**: Retain their `created_at` (and immediate `assigned_at`), guaranteeing brand-new leads consistently arrive at Rank 1.
+    - **Assigned Leads**: As soon as an agent is assigned a lead (via single assignment, bulk assignment, or round-robin), `contacts.assigned_at` is stamped with `now()`, propelling the lead directly to the top of the agent's active desk for immediate outreach.
+    - **Unassigned Leads**: Fall back to `contacts.created_at`, preserving chronological freshness in the Lead Pool.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
