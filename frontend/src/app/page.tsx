@@ -2035,19 +2035,10 @@ export default function LeadPoolPage() {
               })}
             </div>
 
-            {/* Right: Import CSV, Export & Create Lead Action Buttons */}
+            {/* Right: Export & Create Lead Action Buttons */}
             <div className="flex items-center gap-2 text-xs font-medium shrink-0 py-1.5 md:py-0">
               {mounted ? (
                 <>
-                  {hasPermission('leads.import') && (
-                    <button 
-                      onClick={() => setIsImportModalOpen(true)}
-                      className="px-3 py-1.5 bg-white border border-[#E8E4DC] rounded-md text-[#1A1A1A] hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer font-medium"
-                    >
-                      <Download className="w-3.5 h-3.5 text-[#6E6E6E]" />
-                      <span>Import CSV</span>
-                    </button>
-                  )}
                   {hasPermission('leads.export') && (
                     <button 
                       onClick={handleExportCsv}

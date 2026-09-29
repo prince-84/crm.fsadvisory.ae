@@ -2475,6 +2475,18 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Zero Regression & Layout Stability**:
     - Non-permitted users see clean static indicator badges or have the dropdown selector disabled/hidden without causing layout shifts, UI clipping, or breaking existing functionality.
 
+- **187 — Leads Page Actions Bar Optimization: Import CSV Removal (`frontend/src/app/page.tsx`)**:
+  - **Single Source Ingestion Workflow Alignment**:
+    - In accordance with CRM architectural separation, raw batch lead files (CSV / Excel) are ingested strictly via the **Lead Pool Desk** ([`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx)), where bulk data is imported and allocated to advisors.
+    - Removed the redundant **`Import CSV`** button from the top actions bar of the primary Inbound Leads Desk ([`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)).
+    - The top action ribbon now focuses purely on active advisor operations: **`Export`** (with CSV format preservation) and **`+ Create Lead`** (manual client entry).
+
+- **188 — Log Call & Telephony Disposition Modal Streamlining (`frontend/src/lib/callDialer.ts`)**:
+  - **High-Density Disposition UI**:
+    - Streamlined the 3CX calling banner in the Log Call disposition modal ([`callDialer.ts`](file:///d:/FSadvisory-crm/frontend/src/lib/callDialer.ts)).
+    - Removed the redundant dial format selector chips (`00 Prefix`, `+ Prefix`, `Digits`) and helper text (*"Agar dialer CRM ke peeche chala jaye..."*).
+    - Preserved essential live calling controls: Dialed Number badge, side-by-side indicator, **`[📱 Bring to Front ⬆]`**, and **`[⚡ Re-Dial]`** actions, ensuring maximum screen real estate for call outcome, SLA schedule, and discussion notes.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

@@ -333,37 +333,6 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
               </button>
             </div>
           </div>
-
-          <!-- Format Switcher Chips (Solves Country Code & '+' issues) -->
-          ${parsed ? `
-          <div class="pt-2 border-t border-emerald-200/60">
-            <div class="text-[10px] font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-              <span>Choose Dial Format (Click to Switch & Re-dial):</span>
-              <span class="text-[9px] text-emerald-700 font-medium">Auto-saves preference</span>
-            </div>
-            <div class="flex items-center gap-1 flex-wrap" id="swal-format-chips">
-              <button type="button" data-format="intl00" data-number="${parsed.intl00}" class="swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer ${activeFormat === 'intl00' ? 'bg-emerald-700 text-white border-emerald-700 font-bold shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50'}">
-                00 Prefix: ${parsed.intl00} (Recommended)
-              </button>
-              <button type="button" data-format="e164" data-number="${parsed.e164}" class="swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer ${activeFormat === 'e164' ? 'bg-emerald-700 text-white border-emerald-700 font-bold shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50'}">
-                + Prefix: ${parsed.e164}
-              </button>
-              ${parsed.localUae ? `
-              <button type="button" data-format="localUae" data-number="${parsed.localUae}" class="swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer ${activeFormat === 'localUae' ? 'bg-emerald-700 text-white border-emerald-700 font-bold shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50'}">
-                UAE Local: ${parsed.localUae}
-              </button>
-              ` : ''}
-              <button type="button" data-format="digitsOnly" data-number="${parsed.digitsOnly}" class="swal-chip-btn px-2 py-1 rounded text-[10px] font-mono border transition-all cursor-pointer ${activeFormat === 'digitsOnly' ? 'bg-emerald-700 text-white border-emerald-700 font-bold shadow-xs' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50'}">
-                Digits: ${parsed.digitsOnly}
-              </button>
-            </div>
-          </div>
-          ` : ''}
-
-          <!-- Guidance Note for 3CX App Pin -->
-          <div class="text-[10px] text-slate-600 bg-white/90 p-1.5 rounded border border-emerald-100 flex items-center justify-between">
-            <span>📌 Agar dialer CRM ke peeche chala jaye, to upar <strong>"Bring to Front ⬆"</strong> button click karein.</span>
-          </div>
         </div>
 
         <!-- Outcome Selector -->
