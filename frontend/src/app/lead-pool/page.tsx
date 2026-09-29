@@ -556,7 +556,7 @@ export default function LeadPoolPage() {
   const ALL_COLUMNS = [
     { key: 'name', label: 'Client Profile', category: 'Core' },
     { key: 'phone', label: 'Primary Phone', category: 'Client Details' },
-    { key: 'lead_type', label: 'Lead Type (Paid/Organic/Warm)', category: 'Core' },
+    { key: 'lead_type', label: 'Lead Type', category: 'Core' },
     { key: 'call_status', label: 'Call Status', category: 'Core' },
     { key: 'source', label: 'Source', category: 'Core' },
     { key: 'assigned_owner', label: 'Assigned Owner', category: 'SLA & Owner' },
@@ -787,9 +787,9 @@ export default function LeadPoolPage() {
         );
 
       case 'lead_type': {
-        const rawType = (ct.lead_type || (ct.is_imported ? 'Warm' : 'Organic')).trim();
-        const isPaid = rawType.toLowerCase() === 'paid';
-        const isWarm = rawType.toLowerCase() === 'warm' || (ct.is_imported && !isPaid);
+        const rawType = (ct.lead_type || '').trim().toLowerCase();
+        const isPaid = rawType === 'paid';
+        const isWarm = !isPaid;
         return (
           <td key={colKey} className="p-3">
             <span

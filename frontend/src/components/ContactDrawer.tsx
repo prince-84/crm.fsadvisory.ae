@@ -754,9 +754,9 @@ export default function ContactDrawer({
                     </span>
                   )}
                   {(() => {
-                    const rawType = (currentContact.lead_type || (currentContact.is_imported ? 'Warm' : 'Organic')).trim();
-                    const isPaid = rawType.toLowerCase() === 'paid';
-                    const isWarm = rawType.toLowerCase() === 'warm' || (currentContact.is_imported && !isPaid);
+                    const rawType = (currentContact.lead_type || '').trim().toLowerCase();
+                    const isPaid = rawType === 'paid';
+                    const isWarm = currentContact.is_imported ? !isPaid : rawType === 'warm';
                     if (isPaid) {
                       return (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase border bg-amber-100 text-amber-900 border-amber-300">
@@ -1256,9 +1256,9 @@ export default function ContactDrawer({
                   <div className="bg-white p-2 rounded border border-[#E8E4DC]">
                     <span className="text-[10px] text-slate-400 block uppercase font-medium">Lead Type</span>
                     {(() => {
-                      const rawType = (currentContact.lead_type || (currentContact.is_imported ? 'Warm' : 'Organic')).trim();
-                      const isPaid = rawType.toLowerCase() === 'paid';
-                      const isWarm = rawType.toLowerCase() === 'warm' || (currentContact.is_imported && !isPaid);
+                      const rawType = (currentContact.lead_type || '').trim().toLowerCase();
+                      const isPaid = rawType === 'paid';
+                      const isWarm = currentContact.is_imported ? !isPaid : rawType === 'warm';
                       if (isPaid) {
                         return (
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold uppercase border bg-amber-100 text-amber-900 border-amber-300">

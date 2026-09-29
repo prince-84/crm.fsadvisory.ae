@@ -2543,11 +2543,13 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Round-Robin Auto-Distribution**: In [`LeadDistributionService.php`](file:///d:/FSadvisory-crm/backend/app/Services/LeadDistributionService.php), updated `autoAssignContact` (both assigned agent and fallback agent branches) and `processIdleAndDormantLeads` (3-day inactivity rotation) to ensure pool contacts maintain `lead_type = 'Warm'`.
     - **File Importer Default**: In [`ImportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ImportController.php), batch CSV/Excel imports default newly inserted contacts to `lead_type = 'Warm'`.
     - **Database Migration/Sync**: Updated all existing imported database contacts to `lead_type = 'Warm'`.
-  - **Frontend UI & Filter Integration**:
-    - Added luxury orange **`WARM`** badge styling (`bg-orange-100 text-orange-900 border-orange-300`) with an inline flame icon ([`Flame`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)) across:
-      - Main Leads Desk table ([`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx))
-      - Lead Pool master table ([`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx))
-      - Contact Profile Slide-over Drawer ([`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx)) in both client header and Lead Details card.
+  - **Frontend UI & Tab Navigation Enhancements**:
+    - **Tab Color Coding**:
+      - **`New` Tab**: Text and badge styled in **Red** (`text-red-600`, active: `border-red-600 text-red-600 bg-red-50/50`, badge: `bg-red-600 text-white font-bold`, inactive badge: `bg-red-50 text-red-700 border-red-200`) for instant visual isolation of urgent fresh inbound leads.
+      - **`Lead Pool` Tab**: Text and badge styled in **Blue** (`text-blue-600`, active: `border-blue-600 text-blue-600 bg-blue-50/50`, badge: `bg-blue-600 text-white font-bold`, inactive badge: `bg-blue-50 text-blue-700 border-blue-200`) for clear distinction of database archive leads.
+    - **Unconditional Warm Badge in Lead Pool Context**:
+      - Updated cell rendering in [`page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx) and [`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx) so that any lead displayed within the Lead Pool tab or marked with `is_imported` automatically renders the luxury orange **`WARM`** badge (`bg-orange-100 text-orange-900 border-orange-300`) with flame icon ([`Flame`](file:///d:/FSadvisory-crm/frontend/src/app/page.tsx)) unless explicitly tagged as Paid Ads.
+      - Simplified table column header label from `Lead Type (Paid/Organic)` to **`Lead Type`** across table columns.
     - Updated `selectedLeadType` filter dropdown on Leads Desk with `<option value="Warm">🔥 Warm</option>`.
     - Updated backend API filtering in `ContactController.php` so `?lead_type=Warm` accurately queries contacts with `lead_type = 'Warm'` as well as imported records.
 

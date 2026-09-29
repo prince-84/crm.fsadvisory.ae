@@ -136,6 +136,14 @@ class Contact extends Model
         return (object) $specs;
     }
 
+    public function getLeadTypeAttribute($value)
+    {
+        if ($this->is_imported && (empty($value) || strtolower($value) === 'organic')) {
+            return 'Warm';
+        }
+        return $value ?: ($this->is_imported ? 'Warm' : 'Organic');
+    }
+
     public function opportunities()
     {
         return $this->hasMany(Opportunity::class);

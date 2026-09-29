@@ -619,7 +619,7 @@ export default function LeadPoolPage() {
   const ALL_COLUMNS = [
     { key: 'name', label: 'Client Profile', category: 'Core' },
     { key: 'phone', label: 'Primary Phone', category: 'Client Details' },
-    { key: 'lead_type', label: 'Lead Type (Paid/Organic)', category: 'Core' },
+    { key: 'lead_type', label: 'Lead Type', category: 'Core' },
     { key: 'call_status', label: 'Call Status', category: 'Core' },
     { key: 'source', label: 'Source', category: 'Core' },
     { key: 'assigned_owner', label: 'Assigned Owner', category: 'SLA & Owner' },
@@ -850,10 +850,11 @@ export default function LeadPoolPage() {
         );
 
       case 'lead_type': {
-        const rawType = (ct.lead_type || (ct.is_imported ? 'Warm' : 'Organic')).trim();
-        const lower = rawType.toLowerCase();
-        const isPaid = lower === 'paid';
-        const isWarm = lower === 'warm';
+        const isPoolContext = activeTab === 'lead_pool' || !!ct.is_imported;
+        const rawType = (ct.lead_type || '').trim().toLowerCase();
+        const isPaid = rawType === 'paid';
+        // In Lead Pool tab or for any imported lead, it is Warm by default unless explicitly paid
+        const isWarm = isPoolContext ? !isPaid : rawType === 'warm';
 
         if (isWarm) {
           return (
@@ -2025,6 +2026,33 @@ export default function LeadPoolPage() {
                 { id: 'deleted', label: 'Deleted', count: tabCounts.deleted },
               ].map((tab) => {
                 const isActive = activeTab === tab.id;
+                const isNewTab = tab.id === 'new';
+                const isLeadPoolTab = tab.id === 'lead_pool';
+
+                let tabClasses = 'border-transparent text-[#6E6E6E] hover:text-[#081428] hover:border-slate-300';
+                let badgeClasses = 'bg-slate-100 text-[#6E6E6E] border border-slate-200';
+
+                if (isActive) {
+                  if (isNewTab) {
+                    tabClasses = 'border-red-600 text-red-600 bg-red-50/50';
+                    badgeClasses = 'bg-red-600 text-white font-bold';
+                  } else if (isLeadPoolTab) {
+                    tabClasses = 'border-blue-600 text-blue-600 bg-blue-50/50';
+                    badgeClasses = 'bg-blue-600 text-white font-bold';
+                  } else {
+                    tabClasses = 'border-[#C8A147] text-[#081428]';
+                    badgeClasses = 'bg-[#081428] text-[#C8A147]';
+                  }
+                } else {
+                  if (isNewTab) {
+                    tabClasses = 'border-transparent text-red-600 hover:text-red-700 hover:border-red-300';
+                    badgeClasses = 'bg-red-50 text-red-700 border border-red-200';
+                  } else if (isLeadPoolTab) {
+                    tabClasses = 'border-transparent text-blue-600 hover:text-blue-700 hover:border-blue-300';
+                    badgeClasses = 'bg-blue-50 text-blue-700 border border-blue-200';
+                  }
+                }
+
                 return (
                   <button
                     key={tab.id}
@@ -2032,20 +2060,10 @@ export default function LeadPoolPage() {
                       setActiveTab(tab.id as any);
                       setCurrentPage(1);
                     }}
-                    className={`px-3 sm:px-4 py-3 text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 border-b-2 whitespace-nowrap cursor-pointer ${
-                      isActive
-                        ? 'border-[#C8A147] text-[#081428]'
-                        : 'border-transparent text-[#6E6E6E] hover:text-[#081428] hover:border-slate-300'
-                    }`}
+                    className={`px-3 sm:px-4 py-3 text-xs font-bold transition-all flex items-center gap-1.5 sm:gap-2 border-b-2 whitespace-nowrap cursor-pointer ${tabClasses}`}
                   >
                     <span>{tab.label}</span>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-mono transition-colors ${
-                        isActive
-                          ? 'bg-[#081428] text-[#C8A147]'
-                          : 'bg-slate-100 text-[#6E6E6E] border border-slate-200'
-                      }`}
-                    >
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono transition-colors ${badgeClasses}`}>
                       {Number(tab.count || 0).toLocaleString()}
                     </span>
                   </button>
