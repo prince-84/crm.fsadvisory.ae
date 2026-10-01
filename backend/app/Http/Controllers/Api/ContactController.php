@@ -513,10 +513,16 @@ class ContactController extends Controller
             'cash_or_finance' => 'cash_or_finance',
         ];
 
+        $isIndividualAgent = !empty($targetOwner) && $targetOwner !== 'all' && strtolower($targetOwner) !== 'unassigned';
+
         if (!empty($sortBy) && isset($contactDirectMap[$sortBy])) {
             $col = $contactDirectMap[$sortBy];
             if ($col === 'created_at') {
-                $query->orderByRaw("COALESCE(contacts.assigned_at, contacts.created_at) {$sortOrder}");
+                if ($isIndividualAgent) {
+                    $query->orderByRaw("COALESCE(contacts.assigned_at, contacts.created_at) {$sortOrder}");
+                } else {
+                    $query->orderBy("contacts.created_at", $sortOrder);
+                }
             } else {
                 $query->orderBy("contacts.{$col}", $sortOrder);
             }
@@ -555,8 +561,12 @@ class ContactController extends Controller
                 $sortOrder
             );
         } else {
-            // Default Sort: Latest Assigned Date or Created Date first
-            $query->orderByRaw("COALESCE(contacts.assigned_at, contacts.created_at) desc");
+            // Default Sort: If individual agent portal, latest assigned first; otherwise fresh new incoming created_at first
+            if ($isIndividualAgent) {
+                $query->orderByRaw("COALESCE(contacts.assigned_at, contacts.created_at) desc");
+            } else {
+                $query->orderBy("contacts.created_at", "desc");
+            }
         }
 
         $query->orderBy('contacts.id', 'desc');

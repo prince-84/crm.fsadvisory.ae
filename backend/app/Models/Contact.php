@@ -81,10 +81,10 @@ class Contact extends Model
 
     public function getLeadTypeAttribute($value)
     {
-        if (!empty($value)) {
-            return $value;
+        if ($this->is_imported && (empty($value) || strtolower($value) === 'organic')) {
+            return 'Warm';
         }
-        return $this->is_imported ? 'Warm' : 'Organic';
+        return $value ?: ($this->is_imported ? 'Warm' : 'Organic');
     }
 
     public function getSubSourceAttribute()
@@ -134,14 +134,6 @@ class Contact extends Model
         }
 
         return (object) $specs;
-    }
-
-    public function getLeadTypeAttribute($value)
-    {
-        if ($this->is_imported && (empty($value) || strtolower($value) === 'organic')) {
-            return 'Warm';
-        }
-        return $value ?: ($this->is_imported ? 'Warm' : 'Organic');
     }
 
     public function opportunities()

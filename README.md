@@ -2559,6 +2559,19 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Anti-Automation Bypass & User-Agent**: Configured genuine Chrome desktop user agent (`Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0`) and added `--disable-blink-features=AutomationControlled` to eliminate `HeadlessChrome` headers and `navigator.webdriver` bot detection during mobile cryptographic key negotiation.
     - **Protected Handshake State (`isAuthenticating`)**: Added dedicated `client.on('authenticated')` and `client.on('loading_screen')` lifecycle listeners. Guarded `refreshQrSession()` against executing page reloads or client resets while the mobile phone is actively synchronizing credentials, completely preventing aborted WebSocket connection errors.
 
+- **195 — Scoped Inbound vs. Assigned Lead Prioritization & Chronological Sorting (`ContactController.php`)**:
+  - **Problem Solved**:
+    - Previously, leads assigned to agents were timestamped with `assigned_at = now()`. Because the backend sorting applied `COALESCE(assigned_at, created_at) DESC` globally across all views (including Super Admin's "All Assigned Leads (Entire Team)" view and the general Leads Desk), batch-assigned older leads were jumping above brand-new incoming inquiries (e.g., website/portal inbound leads created today), burying fresh unassigned/team leads down the list.
+  - **Intelligent Scoped Sorting Engine**:
+    - Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) to distinguish between **Individual Agent Portals** and **Team / Desk / Unassigned Views**:
+      - `$isIndividualAgent = !empty($targetOwner) && $targetOwner !== 'all' && strtolower($targetOwner) !== 'unassigned';`
+    - **General Team / Super Admin View (`$isIndividualAgent = false`)**:
+      - Default sorting and `created_at` column sort strictly enforce `contacts.created_at DESC`.
+      - Guarantees that all incoming leads (fresh Meta Ads, Website Forms, Portal inquiries) always arrive at Rank 1 at the very top of the team desk and are never displaced by older assigned records.
+    - **Individual Agent Portal (`$isIndividualAgent = true`)**:
+      - Strictly uses `COALESCE(contacts.assigned_at, contacts.created_at) DESC`.
+      - When an agent logs into their personal portal or filters specifically for their queue, freshly assigned leads jump directly to the top of **their own workspace** for rapid first outreach, without affecting any other agents or the global leads desk.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
