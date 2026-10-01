@@ -167,8 +167,8 @@ class UserController extends Controller
 
     /**
      * Update Granular Permissions directly for a user.
-     * Ensures permissions are isolated strictly to this specific user profile
-     * without modifying the global Role or other users.
+     * Synchronizes permissions both to the user profile and to the assigned Role
+     * so that the Granular Permissions Modal and the Role & Permissions Matrix stay 100% in sync.
      */
     public function updatePermissions(Request $request, $id)
     {
@@ -181,11 +181,39 @@ class UserController extends Controller
         $user->permissions = $validated['permissions'];
         $user->save();
 
+        // Also synchronize the updated permissions to the user's assigned Role
+        $role = null;
+        if ($user->role_id) {
+            $role = Role::find($user->role_id);
+        }
+        if (!$role && $user->role) {
+            $role = Role::where('name', $user->role)->first();
+        }
+
+        if ($role && strtolower($role->name) !== 'super admin') {
+            $role->update([
+                'permissions' => $validated['permissions'],
+            ]);
+
+            // Sync to any other users who share this same role
+            User::where(function($q) use ($role) {
+                    $q->where('role_id', $role->id)
+                      ->orWhere('role', $role->name);
+                })
+                ->where('id', '!=', $user->id)
+                ->get()
+                ->each(function ($otherUser) use ($validated) {
+                    $otherUser->update([
+                        'permissions' => $validated['permissions'],
+                    ]);
+                });
+        }
+
         return response()->json([
             'success' => true,
-            'message' => "Granular permissions updated for {$user->name} successfully.",
+            'message' => "Permissions updated for {$user->name} and synced with role '{$user->role}' successfully.",
             'permissions' => $user->permissions,
-            'user' => $user,
+            'user' => $user->load('roleModel'),
         ]);
     }
 

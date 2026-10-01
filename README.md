@@ -2590,6 +2590,16 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       2. Have a scheduled follow-up or callback due today/overdue (`next_action_due_at <= endOfDay()`).
     - Successfully excludes dead outcomes (`Wrong Number`, `Not Interested`, `duplicate`, `deleted`) unless an explicit follow-up is scheduled.
 
+- **197 — Bi-Directional User & Role Permission Synchronization (`UserController.php`, `RoleController.php`, `users/page.tsx`)**:
+  - **Problem Solved**:
+    - Previously, when an administrator adjusted permissions for a specific user via the Key (🔑) action icon modal ("Granular CRM Permissions: [User]"), changes were stored solely on `users.permissions` without propagating to the assigned role (`roles.permissions`).
+    - Consequently, when opening the "Role & Permissions Matrix" tab to edit that same role (e.g., "Developer"), the role modal still displayed stale checkboxes (e.g. `View All Leads` checked), creating a discrepancy between the user profile and role preset.
+  - **Full Two-Way Synchronization**:
+    - **User -> Role Sync**: In [`UserController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/UserController.php), updated `updatePermissions` so that when a user's permissions are modified in the Granular modal, the backend automatically locates the user's assigned `Role` (by `role_id` or `role` title) and synchronizes the updated permissions array into `roles.permissions`.
+    - **Cascade to Co-Role Users**: Automatically updates all other active user records assigned to that same role, ensuring full consistency CRM-wide.
+    - **Role -> User Sync**: In [`RoleController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/RoleController.php), `update` ensures any change made in "Edit Role Details" immediately updates all users assigned to that role.
+    - **Frontend State Re-fetching**: In [`users/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/users/page.tsx), `handleSavePermissions` now invokes both `loadUsers()` and `loadRolesAndMatrix()`, ensuring both popups display identical, real-time checkboxes immediately after saving.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
