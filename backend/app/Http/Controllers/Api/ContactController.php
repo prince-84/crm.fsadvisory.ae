@@ -514,11 +514,12 @@ class ContactController extends Controller
         ];
 
         $isIndividualAgent = !empty($targetOwner) && $targetOwner !== 'all' && strtolower($targetOwner) !== 'unassigned';
+        $isNewLeadsTab = ($tab === 'new' || $tab === 'uncontacted');
 
         if (!empty($sortBy) && isset($contactDirectMap[$sortBy])) {
             $col = $contactDirectMap[$sortBy];
             if ($col === 'created_at') {
-                if ($isIndividualAgent) {
+                if ($isIndividualAgent && $isNewLeadsTab) {
                     $query->orderByRaw("COALESCE(contacts.assigned_at, contacts.created_at) {$sortOrder}");
                 } else {
                     $query->orderBy("contacts.created_at", $sortOrder);
@@ -561,8 +562,8 @@ class ContactController extends Controller
                 $sortOrder
             );
         } else {
-            // Default Sort: If individual agent portal, latest assigned first; otherwise fresh new incoming created_at first
-            if ($isIndividualAgent) {
+            // Default Sort: If individual agent portal on New Leads tab, latest assigned first; otherwise fresh new incoming created_at first
+            if ($isIndividualAgent && $isNewLeadsTab) {
                 $query->orderByRaw("COALESCE(contacts.assigned_at, contacts.created_at) desc");
             } else {
                 $query->orderBy("contacts.created_at", "desc");

@@ -285,6 +285,8 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
     showCrmDialerDock(currentDialNumber);
   }
 
+  const callStartTime = Date.now();
+
   const now = new Date();
   const nowLocalIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
@@ -517,10 +519,16 @@ export async function launch3cxCallDialog(options: DialOptions): Promise<boolean
   }
 
   try {
+    const elapsedSec = Math.max(1, Math.round((Date.now() - callStartTime) / 1000));
+    const minsPart = Math.floor(elapsedSec / 60);
+    const secsPart = elapsedSec % 60;
+    const durFormatted = minsPart > 0 ? `${minsPart}m ${secsPart}s` : `${secsPart}s`;
+
     const payload: any = {
       type: 'call',
       call_outcome: formValues.outcome,
-      description: `3CX Call: ${formValues.outcome} — ${formValues.notes}`,
+      duration_seconds: elapsedSec,
+      description: `3CX Call (${durFormatted}): ${formValues.outcome} — ${formValues.notes}`,
       user_name: currentAdvisorName || 'Agent',
       next_action: formValues.isTerminal ? `Closed: ${formValues.outcome}` : `Follow-up: ${formValues.outcome}`,
       next_action_due_at: dueAt ? dueAt.toISOString() : null,

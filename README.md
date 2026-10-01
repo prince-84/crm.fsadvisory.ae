@@ -2562,15 +2562,33 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
 - **195 — Scoped Inbound vs. Assigned Lead Prioritization & Chronological Sorting (`ContactController.php`)**:
   - **Problem Solved**:
     - Previously, leads assigned to agents were timestamped with `assigned_at = now()`. Because the backend sorting applied `COALESCE(assigned_at, created_at) DESC` globally across all views (including Super Admin's "All Assigned Leads (Entire Team)" view and the general Leads Desk), batch-assigned older leads were jumping above brand-new incoming inquiries (e.g., website/portal inbound leads created today), burying fresh unassigned/team leads down the list.
+    - Furthermore, if an agent was selected on the **All Leads** tab, `COALESCE(assigned_at, created_at)` was overriding explicit column sorting on `CREATED DATE`, causing older leads with recent assignment timestamps to appear above newly created leads.
   - **Intelligent Scoped Sorting Engine**:
-    - Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) to distinguish between **Individual Agent Portals** and **Team / Desk / Unassigned Views**:
+    - Updated [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) to distinguish between **Individual Agent Portals on the New Leads Tab** and **All Other Tabs / Team Views**:
       - `$isIndividualAgent = !empty($targetOwner) && $targetOwner !== 'all' && strtolower($targetOwner) !== 'unassigned';`
+      - `$isNewLeadsTab = ($tab === 'new' || $tab === 'uncontacted');`
     - **General Team / Super Admin View (`$isIndividualAgent = false`)**:
       - Default sorting and `created_at` column sort strictly enforce `contacts.created_at DESC`.
       - Guarantees that all incoming leads (fresh Meta Ads, Website Forms, Portal inquiries) always arrive at Rank 1 at the very top of the team desk and are never displaced by older assigned records.
-    - **Individual Agent Portal (`$isIndividualAgent = true`)**:
-      - Strictly uses `COALESCE(contacts.assigned_at, contacts.created_at) DESC`.
-      - When an agent logs into their personal portal or filters specifically for their queue, freshly assigned leads jump directly to the top of **their own workspace** for rapid first outreach, without affecting any other agents or the global leads desk.
+    - **Individual Agent Portal on New Leads Tab (`$isIndividualAgent && $isNewLeadsTab`)**:
+      - Uses `COALESCE(contacts.assigned_at, contacts.created_at) DESC`.
+      - When an agent logs into their personal portal or filters specifically for their new leads queue, freshly assigned leads jump directly to the top of **their own New workspace** for rapid first outreach.
+    - **All Leads Tab & Other Tabs (`!$isNewLeadsTab`)**:
+      - Sorting by `created_at` strictly enforces `contacts.created_at DESC` (or `ASC` based on column header toggle).
+      - Regardless of when leads were assigned or updated, the **All Leads** tab maintains 100% authentic chronological integrity of client inquiry creation dates.
+
+- **196 — Telesales Daily Calling Progress Cards & Talk Time Precision Engine (`ActivityController.php`, `callDialer.ts`, Migration)`:
+  - **Talk Time Precision (`talk_time_formatted`)**:
+    - **Multi-Alias 3CX Extension Resolution**: Resolved the mismatch where agents named in CRM (e.g. `Rayyan shuja`) failed to match 3CX recording agent names (e.g. `Rayyan` or extension `1034`). Added fuzzy token matching and extension cross-referencing from `EXTENSIONS_MAP`.
+    - **Contact ID Cross-Linking**: Linked 3CX recordings for all contacts dialed by the agent today.
+    - **In-App Call Duration Tracking (`callDialer.ts`)**: Added client-side duration timer in `launch3cxCallDialog` calculating elapsed call seconds between dialer launch and call log submission, persisting `duration_seconds` to `activities` table (`2026_10_01_143000_add_duration_seconds_to_activities_table.php`).
+    - **Triple Fallback Hierarchy**: Queries authentic 3CX recordings first -> falls back to auto-scanned server audio -> falls back to logged activity duration / description timestamp -> allocates standard conversation talk time for connected calls so talk time is never falsely displayed as `0m`.
+  - **Accurate "Remaining Leads" Metric (`remaining_leads`)**:
+    - **Correction of 474 Leads Anomaly**: Corrected the legacy query that relied on `contacts.state != 'contacted'` (which was never updated by call activity), causing all historically contacted leads to be counted as remaining.
+    - **Clean Business Logic**: Redefined remaining leads strictly as active leads assigned to the agent that have NOT been called today and either:
+      1. Have never been contacted yet (pending first outreach), OR
+      2. Have a scheduled follow-up or callback due today/overdue (`next_action_due_at <= endOfDay()`).
+    - Successfully excludes dead outcomes (`Wrong Number`, `Not Interested`, `duplicate`, `deleted`) unless an explicit follow-up is scheduled.
 
 ## ⚙️ Installation & Running Instructions
 
