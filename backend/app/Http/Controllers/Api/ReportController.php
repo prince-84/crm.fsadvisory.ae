@@ -195,12 +195,34 @@ class ReportController extends Controller
      * Master Executive & Agent Performance Dashboard Analytics (100% Database Connected)
      * Handles All Agents and Individual Advisor views with dynamic date period filtering.
      */
-    public function analytics(Request $request)
-    {
-        $agent = $request->query('agent');
-        $timeRange = $request->query('time_range', $request->query('period', 'all'));
-        $dateFrom = $request->query('date_from');
-        $dateTo = $request->query('date_to');
+        $authUser = $request->user();
+        $canViewAll = false;
+        if ($authUser) {
+            $role = strtolower($authUser->role ?? '');
+            $perms = $authUser->permissions ?? [];
+            if (is_string($perms)) {
+                $perms = json_decode($perms, true) ?: [];
+            }
+            if (
+                str_contains($role, 'admin') ||
+                str_contains($role, 'manager') ||
+                str_contains($role, 'director') ||
+                str_contains($role, 'ceo') ||
+                $authUser->email === 'faraz@fsadvisory.ae' ||
+                in_array('*', $perms) ||
+                in_array('leads.view_all', $perms) ||
+                in_array('reports.view_financials', $perms)
+            ) {
+                $canViewAll = true;
+            }
+        } else {
+            $canViewAll = true;
+        }
+
+        // If regular advisor/agent, strictly lock to their own profile
+        if (!$canViewAll && $authUser) {
+            $agent = $authUser->name;
+        }
 
         $isAll = empty($agent) || $agent === 'all';
 

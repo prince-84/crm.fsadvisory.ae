@@ -5,7 +5,7 @@ import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import { fetchApi } from '@/lib/api';
 import Swal from 'sweetalert2';
-import { hasAnyPermission } from '@/lib/permissions';
+import { hasAnyPermission, getCurrentUser, isSuperUser, hasPermission } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
 import {
   FileText,
@@ -64,13 +64,32 @@ export default function ReportsPage() {
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [timeRange, setTimeRange] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month' | 'quarter' | 'ytd'>('all');
   const [agentSearch, setAgentSearch] = useState('');
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [canViewAllAdvisors, setCanViewAllAdvisors] = useState<boolean>(true);
+
+  useEffect(() => {
+    const user = getCurrentUser();
+    setCurrentUser(user);
+    const canViewAll = isSuperUser(user) ||
+      (user?.role || '').toLowerCase().includes('admin') ||
+      (user?.role || '').toLowerCase().includes('manager') ||
+      (user?.role || '').toLowerCase().includes('director') ||
+      hasPermission('leads.view_all') ||
+      hasPermission('reports.view_financials');
+    setCanViewAllAdvisors(canViewAll);
+    if (!canViewAll && user?.name) {
+      setSelectedAgent(user.name);
+    }
+  }, []);
 
   const loadReportData = async (agent = selectedAgent, range = timeRange) => {
     setLoading(true);
     try {
       const queryParams = new URLSearchParams();
-      if (agent && agent !== 'all') {
-        queryParams.set('agent', agent);
+      // If user cannot view all, force their own name
+      const effectiveAgent = !canViewAllAdvisors && currentUser?.name ? currentUser.name : agent;
+      if (effectiveAgent && effectiveAgent !== 'all') {
+        queryParams.set('agent', effectiveAgent);
       }
       if (range) {
         queryParams.set('time_range', range);
@@ -89,7 +108,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     loadReportData(selectedAgent, timeRange);
-  }, [selectedAgent, timeRange]);
+  }, [selectedAgent, timeRange, canViewAllAdvisors]);
 
   // Real Database Metrics from API
   const metrics = data?.metrics || {
@@ -269,23 +288,32 @@ export default function ReportsPage() {
             </div>
 
             <div className="flex items-center gap-2.5 flex-wrap">
-              {/* Agent Selector Dropdown */}
-              <div className="flex items-center bg-white border border-[#E8E4DC] rounded-lg px-2.5 py-1.5 shadow-2xs">
-                <Users className="w-4 h-4 text-[#C8A147] mr-2 shrink-0" />
-                <span className="text-xs font-bold text-slate-500 mr-2">Advisor:</span>
-                <select
-                  value={selectedAgent}
-                  onChange={(e) => setSelectedAgent(e.target.value)}
-                  className="bg-transparent text-xs font-bold text-[#081428] focus:outline-none cursor-pointer max-w-[190px]"
-                >
-                  <option value="all">🌟 All Advisors (Full Team)</option>
-                  {advisorsList.map((adv: any) => (
-                    <option key={adv.id} value={adv.name}>
-                      {adv.name} ({adv.assigned_leads} Leads)
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Agent Selector Dropdown (Visible only for Admin / Managers) */}
+              {canViewAllAdvisors ? (
+                <div className="flex items-center bg-white border border-[#E8E4DC] rounded-lg px-2.5 py-1.5 shadow-2xs">
+                  <Users className="w-4 h-4 text-[#C8A147] mr-2 shrink-0" />
+                  <span className="text-xs font-bold text-slate-500 mr-2">Advisor:</span>
+                  <select
+                    value={selectedAgent}
+                    onChange={(e) => setSelectedAgent(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-[#081428] focus:outline-none cursor-pointer max-w-[190px]"
+                  >
+                    <option value="all">🌟 All Advisors (Full Team)</option>
+                    {advisorsList.map((adv: any) => (
+                      <option key={adv.id} value={adv.name}>
+                        {adv.name} ({adv.assigned_leads} Leads)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                /* Regular Agent: Fixed My Workspace Badge (No other agents visible) */
+                <div className="flex items-center bg-white border border-[#E8E4DC] rounded-lg px-3 py-1.5 shadow-2xs">
+                  <UserCheck className="w-4 h-4 text-[#C8A147] mr-2 shrink-0" />
+                  <span className="text-xs font-bold text-slate-500 mr-1.5">My Performance:</span>
+                  <span className="text-xs font-bold text-[#081428]">{currentUser?.name || selectedAgent}</span>
+                </div>
+              )}
 
               {/* Time Range Filter */}
               <div className="flex items-center bg-white border border-[#E8E4DC] rounded-lg p-1 shadow-2xs text-xs font-semibold overflow-x-auto">
@@ -489,8 +517,8 @@ export default function ReportsPage() {
           {/* ================= TAB 1: AGENT WORK AUDIT & PERFORMANCE ================= */}
           {activeTab === 'agent_work' && (
             <div className="space-y-6 animate-fade-in">
-              {/* Agent Mode: ALL AGENTS LEADERBOARD & COMPARISON TABLE */}
-              {selectedAgent === 'all' ? (
+              {/* Agent Mode: ALL AGENTS LEADERBOARD (Only if permitted and 'all' selected) */}
+              {selectedAgent === 'all' && canViewAllAdvisors ? (
                 <div className="bg-white rounded-xl border border-[#E8E4DC] shadow-2xs overflow-hidden">
                   <div className="p-4 border-b border-[#E8E4DC] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
@@ -660,12 +688,14 @@ export default function ReportsPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setSelectedAgent('all')}
-                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
-                      >
-                        ← Back to All Advisors
-                      </button>
+                      {canViewAllAdvisors && (
+                        <button
+                          onClick={() => setSelectedAgent('all')}
+                          className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                        >
+                          ← Back to All Advisors
+                        </button>
+                      )}
                     </div>
                   </div>
 

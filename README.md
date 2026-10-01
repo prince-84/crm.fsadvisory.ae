@@ -2604,8 +2604,9 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **100% Real Database Metric Aggregation (Zero Mock Data)**:
     - Replaced all legacy hardcoded fallbacks in [`reports/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/reports/page.tsx) with live MySQL database aggregates via `/api/reports/analytics`.
     - Harmonized backend payload casing with dual camelCase and snake_case support for seamless data binding.
-  - **Agent Selector & Scope Filter**:
-    - Integrated an **Advisor Dropdown Filter** in the top bar allowing managers to switch between "🌟 All Advisors (Full Team)" and any individual advisor (e.g., Rayyan, Faraz Shafi, Babar Ali Khan, Hiba Aslam, etc.).
+  - **Agent Selector & Role-Based Security Isolation**:
+    - **Executive & Manager Mode**: Integrated an **Advisor Dropdown Filter** in the top bar allowing managers (Super Admin, Admin, Sales Manager, or users with `leads.view_all`) to switch between "🌟 All Advisors (Full Team)" and any individual advisor (e.g., Rayyan, Faraz Shafi, Babar Ali Khan, Hiba Aslam, etc.).
+    - **Regular Advisor Portal Protection**: When a standard sales/telesales agent logs into their portal, the advisor dropdown is **completely hidden and disabled**. The UI displays a locked `My Performance: [Agent Name]` badge, and both frontend and backend automatically enforce scoping to the authenticated user's own data, preventing agents from snooping on colleagues' reports.
     - Dynamic date range filter: *All Time*, *Today*, *This Week*, *This Month*, *This Quarter*, and *YTD*.
   - **Comprehensive Agent Work & Productivity Audit (`agent_work`)**:
     - **All Advisors View**: Full comparative leaderboard table comparing every advisor side-by-side with Rank (#1, #2, ...), Assigned Leads, Contacted vs. Remaining Leads, Calls Made, Connected Call %, Total Talk Time (e.g., "1h 24m"), Viewings / Appointments Booked, Active Deals, Closed Deals Won, Closed Revenue (AED), Pipeline Volume (AED), SLA Compliance %, and a direct single-click "Inspect Work" action button.
