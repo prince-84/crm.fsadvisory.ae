@@ -2600,6 +2600,22 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Role -> User Sync**: In [`RoleController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/RoleController.php), `update` ensures any change made in "Edit Role Details" immediately updates all users assigned to that role.
     - **Frontend State Re-fetching**: In [`users/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/users/page.tsx), `handleSavePermissions` now invokes both `loadUsers()` and `loadRolesAndMatrix()`, ensuring both popups display identical, real-time checkboxes immediately after saving.
 
+- **198 — Real Database-Connected Agent Performance Reporting & Work Audit System (`ReportController.php`, `reports/page.tsx`)**:
+  - **100% Real Database Metric Aggregation (Zero Mock Data)**:
+    - Replaced all legacy hardcoded fallbacks in [`reports/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/reports/page.tsx) with live MySQL database aggregates via `/api/reports/analytics`.
+    - Harmonized backend payload casing with dual camelCase and snake_case support for seamless data binding.
+  - **Agent Selector & Scope Filter**:
+    - Integrated an **Advisor Dropdown Filter** in the top bar allowing managers to switch between "🌟 All Advisors (Full Team)" and any individual advisor (e.g., Rayyan, Faraz Shafi, Babar Ali Khan, Hiba Aslam, etc.).
+    - Dynamic date range filter: *All Time*, *Today*, *This Week*, *This Month*, *This Quarter*, and *YTD*.
+  - **Comprehensive Agent Work & Productivity Audit (`agent_work`)**:
+    - **All Advisors View**: Full comparative leaderboard table comparing every advisor side-by-side with Rank (#1, #2, ...), Assigned Leads, Contacted vs. Remaining Leads, Calls Made, Connected Call %, Total Talk Time (e.g., "1h 24m"), Viewings / Appointments Booked, Active Deals, Closed Deals Won, Closed Revenue (AED), Pipeline Volume (AED), SLA Compliance %, and a direct single-click "Inspect Work" action button.
+    - **Individual Advisor Dossier**:
+      - **Lead Queue Coverage Progress Bar**: Visual breakdown showing contacted leads vs. remaining uncontacted leads with exact percentages.
+      - **Call Outcomes Distribution**: Direct breakdown of call results logged in CRM (Interested, Callback, Follow-up, Meeting Scheduled, No Answer, Wrong Number, Not Interested).
+      - **Live Activity Audit Trail**: Chronological audit log showing the advisor's actual recent actions with timestamps, contact name, phone, action type (Call, WhatsApp, Note), call outcome badge, call duration, and remarks entered by the advisor.
+  - **CSV Report Export**:
+    - Dynamically generates and downloads an audited CSV reflecting the currently active tab and active advisor filter.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
