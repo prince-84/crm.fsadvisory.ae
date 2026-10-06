@@ -339,6 +339,17 @@ function SettingsContent() {
     }
   };
 
+  const handleToggleAgentLeadPool = async (agentId: number) => {
+    try {
+      const res = await fetchApi(`/distribution/agent/${agentId}/toggle-lead-pool`, { method: 'POST' });
+      setDistAgents((prev) =>
+        prev.map((a) => (a.id === agentId ? { ...a, receive_lead_pool_leads: res.receive_lead_pool_leads } : a))
+      );
+    } catch (e: any) {
+      alert(e.message || 'Failed to toggle agent lead pool eligibility');
+    }
+  };
+
   const handleSaveAgentConfig = async (agentId: number, config: any) => {
     try {
       await fetchApi(`/distribution/agent/${agentId}/config`, {
@@ -2441,6 +2452,105 @@ function SettingsContent() {
                   </div>
                 </div>
 
+                {/* Advisor Distribution & Lead Pool Eligibility Matrix */}
+                <div className="bg-white border border-[#E8E4DC] rounded-xl shadow-2xs overflow-hidden">
+                  <div className="p-5 border-b border-[#E8E4DC] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-heading font-bold text-base text-[#081428] flex items-center gap-2">
+                        <Users className="w-4 h-4 text-[#C9A84C]" />
+                        <span>Sales Advisors Distribution & Lead Pool Eligibility</span>
+                      </h3>
+                      <p className="text-xs text-[#6E6E6E]">
+                        Control which agents participate in general auto-distribution, and selectively toggle who receives archived/imported Lead Pool leads.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-[#FAF8F5] text-[#081428] border border-[#E8E4DC]">
+                      {distAgents.length} Active Advisors
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-[#FAF8F5] text-[#7A7A7A] border-b border-[#E8E4DC] text-[10px] font-bold uppercase tracking-wider">
+                          <th className="py-2.5 px-4">Sales Advisor</th>
+                          <th className="py-2.5 px-4">Role</th>
+                          <th className="py-2.5 px-4 text-center">Global Auto-Assign</th>
+                          <th className="py-2.5 px-4 text-center">Lead Pool Leads</th>
+                          <th className="py-2.5 px-4 text-center">Assigned Today</th>
+                          <th className="py-2.5 px-4 text-right">Last Assignment</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#E8E4DC]">
+                        {distAgents.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-8 text-center text-slate-400">
+                              No active sales advisors found in the system.
+                            </td>
+                          </tr>
+                        ) : (
+                          distAgents.map((ag) => {
+                            const inGlobalPool = ag.in_distribution_pool ?? true;
+                            const inLeadPool = ag.receive_lead_pool_leads ?? true;
+
+                            return (
+                              <tr key={ag.id} className="hover:bg-[#FAF8F5]/60 transition-colors">
+                                <td className="py-2.5 px-4 font-bold text-[#081428]">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-7 h-7 rounded-full bg-[#081428] text-[#C9A84C] font-bold text-[10px] flex items-center justify-center border border-[#C9A84C]/30 shrink-0">
+                                      {ag.name.slice(0, 2).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <div className="font-bold text-xs text-[#081428]">{ag.name}</div>
+                                      <div className="text-[10px] text-slate-400 font-mono">{ag.email}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FAF8F5] text-slate-700 border border-[#E8E4DC]">
+                                    {ag.role || 'Advisor'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-4 text-center">
+                                  <button
+                                    onClick={() => handleToggleAgentPool(ag.id)}
+                                    className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-colors cursor-pointer shadow-2xs ${
+                                      inGlobalPool
+                                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-300'
+                                    }`}
+                                    title="Toggle inclusion in general lead distribution"
+                                  >
+                                    {inGlobalPool ? '✓ Active' : '✕ Paused'}
+                                  </button>
+                                </td>
+                                <td className="py-2.5 px-4 text-center">
+                                  <button
+                                    onClick={() => handleToggleAgentLeadPool(ag.id)}
+                                    className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-colors cursor-pointer shadow-2xs ${
+                                      inLeadPool
+                                        ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300'
+                                        : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300'
+                                    }`}
+                                    title="Toggle whether this agent receives archived/imported Lead Pool leads"
+                                  >
+                                    {inLeadPool ? '✓ Pool Allowed' : '✕ Pool Excluded'}
+                                  </button>
+                                </td>
+                                <td className="py-2.5 px-4 text-center font-mono font-bold text-[#081428]">
+                                  {ag.today_assigned_count || 0}
+                                </td>
+                                <td className="py-2.5 px-4 text-right font-mono text-[11px] text-slate-400">
+                                  {ag.last_assigned_at ? new Date(ag.last_assigned_at).toLocaleString() : '—'}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
 
                 {/* Recent Distribution Audit Logs */}
                 <div className="bg-white border border-[#E8E4DC] rounded-xl shadow-2xs overflow-hidden">

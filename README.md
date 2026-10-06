@@ -2617,6 +2617,29 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **CSV Report Export**:
     - Dynamically generates and downloads an audited CSV reflecting the currently active tab and active advisor filter.
 
+- **199 — Per-Agent Lead Pool Allocation Control & Selective Distribution Switch (`User.php`, `LeadDistributionService.php`, `LeadDistributionController.php`, `UserController.php`, `users/page.tsx`, `settings/page.tsx`, `lead-pool/page.tsx`, Migration `2026_10_06_130000_add_receive_lead_pool_leads_to_users_table.php`)**:
+  - **Feature Overview**:
+    - Introduced granular, per-advisor control over who receives archived/imported leads from the Lead Pool (`receive_lead_pool_leads`).
+    - Resolves the business requirement where certain sales advisors should only receive high-priority fresh inbound leads (e.g. portal inquiries, Meta ads, owner listings) and must be excluded from older/cold Lead Pool batch distributions and 3-day inactivity pool rotations.
+  - **Database & Architecture (`users.receive_lead_pool_leads`)**:
+    - Added boolean column `receive_lead_pool_leads` (default: `true`) to `users` table via migration `2026_10_06_130000_add_receive_lead_pool_leads_to_users_table.php`.
+    - Integrated defensive auto-healing schema checks inside `LeadDistributionController::getSettings()` to guarantee zero-downtime database upgrades.
+    - Updated [`User.php`](file:///d:/FSadvisory-crm/backend/app/Models/User.php) mass assignment `$fillable` and `$casts` with `'receive_lead_pool_leads' => 'boolean'`.
+  - **Distribution Engine Enforcement ([`LeadDistributionService.php`](file:///d:/FSadvisory-crm/backend/app/Services/LeadDistributionService.php))**:
+    - **Channel Protection in `getNextAgent()` & `getNextAgentExcluding()`**: When distributing records for `'lead_pool'` or `'lead_import'`, queries strictly filter candidates with `receive_lead_pool_leads = true` (or null fallback), ensuring opted-out advisors are completely bypassed during round-robin, load-balanced, and weighted rotations.
+    - **Inactivity SLA Auto-Rotation Scope**: Updated `processIdleAndDormantLeads()` so that if an idle lead is an imported/pool lead (`$contact->is_imported`), the SLA engine evaluates candidate advisors under `'lead_pool'` scope. This strictly prevents 3-day idle pool leads from rotating into advisors who opted out of Lead Pool leads.
+    - **Batch Runner Protection**: Updated `batchDistributeLeadPool()` and `autoAssignContact()` so that imported pool leads always enforce `lead_pool` scope and respect the opt-out switch.
+  - **API Endpoints & Controllers**:
+    - Added dedicated fast toggle endpoint: `POST /api/distribution/agent/{id}/toggle-lead-pool` in [`LeadDistributionController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/LeadDistributionController.php) and [`api.php`](file:///d:/FSadvisory-crm/backend/routes/api.php).
+    - Updated [`UserController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/UserController.php) `store` and `update` methods with validation and persistence for `receive_lead_pool_leads`.
+  - **Frontend UI & Centralized Settings Experience**:
+    - **Single Control Center in Settings ([`settings/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/settings/page.tsx))**:
+      - Embedded an executive **Sales Advisors Distribution & Lead Pool Eligibility** table directly on the Lead Distribution tab.
+      - User Management ([`users/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/users/page.tsx)) remains focused purely on team directory and credentials without distribution clutter.
+      - Displays each advisor's name, email, role, 1-click **Global Auto-Assign** toggle, 1-click **Lead Pool Leads** toggle (`✓ Pool Allowed` vs `✕ Pool Excluded`), daily assigned count, and last assignment timestamp.
+    - **Lead Pool Bulk Assign Indicator ([`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx))**:
+      - Displays `[Pool Off]` tag next to excluded advisors in the bulk assign dropdown so managers have instant visibility when manually distributing leads.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

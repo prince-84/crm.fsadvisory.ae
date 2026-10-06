@@ -48,6 +48,7 @@ interface UserItem {
   initials: string;
   is_active: boolean;
   in_distribution_pool?: boolean;
+  receive_lead_pool_leads?: boolean;
   created_at?: string;
   role_model?: any;
 }
@@ -253,6 +254,20 @@ export default function UserManagementPage() {
     }, 300);
     return () => clearTimeout(handler);
   }, [searchQuery]);
+
+  // Quick Toggle Agent Distribution Pool
+  const handleToggleUserDistPool = async (u: UserItem) => {
+    try {
+      const res = await fetchApi(`/distribution/agent/${u.id}/toggle`, { method: 'POST' });
+      setUsers((prev) =>
+        prev.map((item) =>
+          item.id === u.id ? { ...item, in_distribution_pool: res.in_distribution_pool } : item
+        )
+      );
+    } catch (e: any) {
+      alert(e.message || 'Failed to toggle distribution setting');
+    }
+  };
 
   // Open User Create Modal
   const handleOpenCreateUser = () => {
@@ -968,13 +983,21 @@ export default function UserManagementPage() {
 
                             <td className="py-3.5 px-4 text-center">
                               {inPool ? (
-                                <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200" title="Participates in Round-Robin, 3-day & 45-day rules">
+                                <button
+                                  onClick={() => handleToggleUserDistPool(u)}
+                                  className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 cursor-pointer transition-colors shadow-2xs"
+                                  title="Click to toggle Global Auto-Lead Distribution"
+                                >
                                   ✓ Auto-Assign ON
-                                </span>
+                                </button>
                               ) : (
-                                <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300" title="Reviewer/Auditor mode: Excluded from auto-assignment">
+                                <button
+                                  onClick={() => handleToggleUserDistPool(u)}
+                                  className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-300 cursor-pointer transition-colors shadow-2xs"
+                                  title="Click to toggle Global Auto-Lead Distribution"
+                                >
                                   ✕ Auto-Assign OFF
-                                </span>
+                                </button>
                               )}
                             </td>
 

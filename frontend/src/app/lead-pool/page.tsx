@@ -2176,7 +2176,7 @@ export default function LeadPoolPage() {
                       <option value="">Select Advisor / Owner...</option>
                       {activeAgents.map((ag) => (
                         <option key={ag.id} value={ag.name}>
-                          {ag.name} ({ag.role || 'Agent'})
+                          {ag.name} ({ag.role || 'Agent'}){ag.receive_lead_pool_leads === false ? ' — [Pool Off]' : ''}
                         </option>
                       ))}
                       <option value="Unassigned">Unassigned</option>

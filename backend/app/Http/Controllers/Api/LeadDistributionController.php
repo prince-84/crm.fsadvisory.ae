@@ -23,10 +23,19 @@ class LeadDistributionController extends Controller
     {
         $settings = LeadDistributionService::getSettings();
 
+        // Auto-heal table if receive_lead_pool_leads column is missing on production DB
+        if (!Schema::hasColumn('users', 'receive_lead_pool_leads')) {
+            try {
+                Schema::table('users', function (Blueprint $table) {
+                    $table->boolean('receive_lead_pool_leads')->default(true)->after('in_distribution_pool');
+                });
+            } catch (\Throwable $e) {}
+        }
+
         $agents = User::where('is_active', true)
             ->select([
                 'id', 'name', 'email', 'phone', 'role', 'department',
-                'in_distribution_pool', 'distribution_weight', 'daily_lead_cap',
+                'in_distribution_pool', 'receive_lead_pool_leads', 'distribution_weight', 'daily_lead_cap',
                 'today_assigned_count', 'last_assigned_at'
             ])
             ->orderBy('name')
@@ -144,12 +153,31 @@ class LeadDistributionController extends Controller
     }
 
     /**
+     * Toggle agent's eligibility to receive Lead Pool leads
+     */
+    public function toggleAgentLeadPool($id)
+    {
+        $user = User::findOrFail($id);
+        $current = $user->receive_lead_pool_leads ?? true;
+        $user->receive_lead_pool_leads = !$current;
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$user->name} is now " . ($user->receive_lead_pool_leads ? 'eligible to receive' : 'excluded from receiving') . ' Lead Pool leads.',
+            'receive_lead_pool_leads' => $user->receive_lead_pool_leads,
+            'user' => $user,
+        ]);
+    }
+
+    /**
      * Update agent distribution capacity and weight
      */
     public function updateAgentConfig(Request $request, $id)
     {
         $validated = $request->validate([
             'in_distribution_pool' => 'nullable|boolean',
+            'receive_lead_pool_leads' => 'nullable|boolean',
             'distribution_weight' => 'nullable|integer|min:1|max:10',
             'daily_lead_cap' => 'nullable|integer|min:1|max:500',
         ]);

@@ -47,11 +47,21 @@ class LeadDistributionService
         }
 
         // 3. Fetch all active users included in distribution pool
-        $candidates = User::where('is_active', true)
+        $candidatesQuery = User::where('is_active', true)
             ->where(function ($q) {
                 $q->whereNull('in_distribution_pool')
                   ->orWhere('in_distribution_pool', true);
-            })->get();
+            });
+
+        // Channel protection: If distributing Lead Pool or Lead Import records, exclude agents who opted out of Lead Pool leads
+        if (in_array($leadType, ['lead_pool', 'lead_import'])) {
+            $candidatesQuery->where(function ($q) {
+                $q->whereNull('receive_lead_pool_leads')
+                  ->orWhere('receive_lead_pool_leads', true);
+            });
+        }
+
+        $candidates = $candidatesQuery->get();
 
         // Reset daily counts for users if their last assigned date was before today
         foreach ($candidates as $candidate) {
@@ -229,6 +239,11 @@ class LeadDistributionService
             return null;
         }
 
+        // Ensure imported pool contacts are always processed under lead_pool scope
+        if ($contact->is_imported && $scope !== 'lead_import') {
+            $scope = 'lead_pool';
+        }
+
         $isScopeActive = ($scope === 'lead_import')
             ? (bool) ($settings->apply_to_lead_import ?? false)
             : (bool) $settings->apply_to_lead_pool;
@@ -375,13 +390,22 @@ class LeadDistributionService
         }
 
         // Fetch all active advisors excluding current owner who are included in distribution pool
-        $candidates = User::where('is_active', true)
+        $candidatesQuery = User::where('is_active', true)
             ->where('name', '!=', $excludeName)
             ->where(function ($q) {
                 $q->whereNull('in_distribution_pool')
                   ->orWhere('in_distribution_pool', true);
-            })
-            ->get();
+            });
+
+        // Channel protection: If distributing Lead Pool or Lead Import records, exclude agents who opted out of Lead Pool leads
+        if (in_array($leadType, ['lead_pool', 'lead_import'])) {
+            $candidatesQuery->where(function ($q) {
+                $q->whereNull('receive_lead_pool_leads')
+                  ->orWhere('receive_lead_pool_leads', true);
+            });
+        }
+
+        $candidates = $candidatesQuery->get();
 
         if ($candidates->isEmpty()) {
             return null;
@@ -601,8 +625,9 @@ class LeadDistributionService
                 continue;
             }
 
-            // Auto-reassign to next active advisor excluding current owner
-            $nextAgent = static::getNextAgentExcluding($currentOwner);
+            // Auto-reassign to next active advisor excluding current owner (respecting Lead Pool opt-out if contact is imported)
+            $leadScope = $contact->is_imported ? 'lead_pool' : 'inbound';
+            $nextAgent = static::getNextAgentExcluding($currentOwner, $leadScope);
             if (!$nextAgent || $nextAgent->name === $currentOwner) {
                 continue; // No other advisor available to take the lead
             }
