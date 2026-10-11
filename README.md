@@ -2640,6 +2640,21 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Lead Pool Bulk Assign Indicator ([`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx))**:
       - Displays `[Pool Off]` tag next to excluded advisors in the bulk assign dropdown so managers have instant visibility when manually distributing leads.
 
+- **200 — Leads Desk "All Leads" Tab Isolation & Lead Pool Separation (`ContactController.php`)**:
+  - **Context & Requirement**:
+    - On the primary Leads Desk (`/` and `/leads`), the top navigation features dedicated tabs: `All Leads`, `New`, `Lead Pool`, `Contacted`, `Overdue`, `Opportunity Quick View`, and `Deleted`.
+    - Previously, when `leads_desk=1` was requested on the `All Leads` tab (`tab=all`), it returned both fresh live inbound leads and all assigned imported leads originating from Lead Pool (`contacts.is_imported = true`), causing duplicate visual clutter where Lead Pool leads were mixed into the All Leads table despite having their own dedicated **Lead Pool** tab right alongside it.
+  - **Clean Separation Logic**:
+    - **Backend Query Scoping (`ContactController.php`)**:
+      - Updated the `$tab === 'all'` query handler: When accessed from the Leads Desk (`leads_desk=1`), it strictly scopes results to `contacts.is_imported = false OR contacts.is_imported IS NULL`.
+      - Excludes all raw, imported batch, and Lead Pool leads from the `All Leads` tab, ensuring `All Leads` exclusively showcases genuine live inbound inquiries (Meta Ads, Google, Website, Portals).
+      - Lead Pool leads assigned to advisors remain 100% accessible and manageable in their designated **Lead Pool** tab (`tab=lead_pool`).
+    - **Dynamic Tab Badge Counter Integrity (`tabCounts.all`)**:
+      - Updated `$tabCounts['all']` calculation: when `leads_desk=1`, it computes the count strictly matching the inbound filter (`is_imported = false OR is_imported IS NULL`), ensuring the badge counter on `All Leads` matches the exact number of records in the table and eliminating counter discrepancies.
+    - **Zero Regression on Other Modules**:
+      - The dedicated **Lead Pool Desk** (`/lead-pool`, using `imported_only=1`) and **New Leads Desk** (`/new-leads`, using `inbound_only=1`) remain completely unaffected and retain full operational integrity.
+      - Secondary filters (Search, Stage, Source, Lead Type, Date Range, Advisor filter) continue to function seamlessly across all views.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

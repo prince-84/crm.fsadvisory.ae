@@ -136,6 +136,13 @@ class ContactController extends Controller
             $query->whereHas('opportunities');
         } elseif ($tab === 'all') {
             // 'all' tab displays all leads (primary and duplicate inquiries)
+            // On Leads Desk, 'All Leads' tab excludes Lead Pool (imported) leads as they have their own dedicated Lead Pool tab
+            if ($request->boolean('leads_desk')) {
+                $query->where(function ($q) {
+                    $q->where('contacts.is_imported', false)
+                      ->orWhereNull('contacts.is_imported');
+                });
+            }
         }
 
         // Filter by Leads Desk, Inbound Only, or Imported Only
@@ -769,7 +776,12 @@ class ContactController extends Controller
         $deletedCount = $deletedQuery->count();
 
         $tabCounts = [
-            'all' => (clone $baseCountQuery)->count(),
+            'all' => $isLeadsDesk
+                ? (clone $baseCountQuery)->where(function ($q) {
+                    $q->where('is_imported', false)
+                      ->orWhereNull('is_imported');
+                })->count()
+                : (clone $baseCountQuery)->count(),
             'unassigned' => $unassignedCount,
             'new' => $newUncontactedCount,
             'lead_pool' => $leadPoolCount,
