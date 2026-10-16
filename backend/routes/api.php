@@ -79,6 +79,7 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::post('/contacts', [ContactController::class, 'store']);
     Route::post('/webhooks/leads', [ContactController::class, 'store']);
     Route::post('/contacts/bulk-assign', [ContactController::class, 'bulkAssign']);
+    Route::post('/contacts/bulk-claim', [ContactController::class, 'bulkClaim']);
     Route::post('/contacts/bulk-delete', [ContactController::class, 'bulkDelete']);
     Route::post('/contacts/bulk-restore', [ContactController::class, 'bulkRestore']);
     Route::post('/contacts/bulk-force-delete', [ContactController::class, 'bulkForceDelete']);
@@ -86,6 +87,7 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::post('/contacts/import-execute', [ImportController::class, 'execute']);
     Route::get('/contacts/{id}', [ContactController::class, 'show']);
     Route::put('/contacts/{id}', [ContactController::class, 'update']);
+    Route::post('/contacts/{id}/claim', [ContactController::class, 'claim']);
     Route::post('/contacts/{id}/reassign', [ContactController::class, 'reassign']);
     Route::post('/contacts/{id}/snooze-followup', [ContactController::class, 'snoozeFollowUp']);
     Route::delete('/contacts/{id}', [ContactController::class, 'destroy']);

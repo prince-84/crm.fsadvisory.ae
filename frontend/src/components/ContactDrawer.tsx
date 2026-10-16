@@ -5,7 +5,7 @@ import {
   X, Phone, Mail, Clock, MessageSquare, 
   PhoneCall, Edit2, Target, Link2, ExternalLink, Copy, Check,
   Building2, Home, DollarSign, User, Sparkles, Plus, RefreshCw,
-  Calendar, Layers, CheckCircle2, AlertCircle, Briefcase, FileText, UserCheck, ArrowRightLeft,
+  Calendar, Layers, CheckCircle2, AlertCircle, Briefcase, FileText, UserCheck, ArrowRightLeft, UserPlus,
   FileAudio, PhoneIncoming, PhoneOutgoing, Send, Download,
   ThumbsUp, ThumbsDown, PhoneOff, AlertTriangle, Users, Ban,
   Zap, Flame
@@ -268,6 +268,8 @@ export default function ContactDrawer({
 
   const currentContact = liveContact;
   const canReassign = hasAnyPermission(['leads.reassign', 'leads.assign']);
+  const canClaim = hasAnyPermission(['lead_pool.claim', 'lead_pool.assign', '*']);
+  const currentUser = getCurrentUser();
 
   // Identify active opportunity if one exists
   const rawOpp = currentContact.opportunities?.find((o: any) => o.stage !== 'closed_won' && o.stage !== 'closed_lost') 
@@ -455,6 +457,52 @@ export default function ContactDrawer({
       }
     } catch (err: any) {
       Swal.fire('Re-assignment Failed', err.message || 'An error occurred during re-assignment.', 'error');
+    } finally {
+      setReassigning(false);
+    }
+  };
+
+  const handleClaimLead = async () => {
+    const user = getCurrentUser();
+    const agentName = user?.name || 'yourself';
+    const result = await Swal.fire({
+      title: 'Claim This Lead?',
+      text: `Do you want to claim "${currentContact.name}" and assign it to ${agentName}?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#081428',
+      cancelButtonColor: '#6E6E6E',
+      confirmButtonText: 'Yes, Claim Lead',
+    });
+
+    if (!result.isConfirmed) return;
+
+    setReassigning(true);
+    try {
+      const res = await fetchApi(`/contacts/${currentContact.id}/claim`, {
+        method: 'POST',
+      });
+      if (res.success) {
+        Swal.fire({
+          toast: true,
+          position: 'top-end',
+          icon: 'success',
+          title: `Lead claimed by ${agentName}!`,
+          showConfirmButton: false,
+          timer: 2500,
+        });
+        if (res.contact) {
+          setLiveContact(res.contact);
+          if (onContactUpdated) onContactUpdated(res.contact);
+        } else {
+          fetchLiveContact(currentContact.id);
+          if (onContactUpdated) onContactUpdated({ ...currentContact, assigned_to: agentName });
+        }
+      } else {
+        throw new Error(res.error || res.message || 'Failed to claim lead');
+      }
+    } catch (err: any) {
+      Swal.fire('Claim Failed', err.message || 'An error occurred during claiming.', 'error');
     } finally {
       setReassigning(false);
     }
@@ -900,6 +948,18 @@ export default function ContactDrawer({
                     >
                       <ArrowRightLeft className="w-2.5 h-2.5 shrink-0" />
                       <span>{reassigning ? '...' : 'Re-assign'}</span>
+                    </button>
+                  )}
+                  {canClaim && (!currentContact.assigned_to || currentContact.assigned_to === 'Unassigned') && (
+                    <button
+                      type="button"
+                      onClick={handleClaimLead}
+                      disabled={reassigning}
+                      className="px-2 py-0.5 text-[9px] font-extrabold uppercase bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-300 rounded transition-all cursor-pointer flex items-center gap-1 shrink-0 shadow-2xs"
+                      title="Claim this unassigned lead to yourself"
+                    >
+                      <UserPlus className="w-2.5 h-2.5 shrink-0" />
+                      <span>{reassigning ? '...' : 'Claim to Me'}</span>
                     </button>
                   )}
                 </div>

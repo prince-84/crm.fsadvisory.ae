@@ -2655,6 +2655,43 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - The dedicated **Lead Pool Desk** (`/lead-pool`, using `imported_only=1`) and **New Leads Desk** (`/new-leads`, using `inbound_only=1`) remain completely unaffected and retain full operational integrity.
       - Secondary filters (Search, Stage, Source, Lead Type, Date Range, Advisor filter) continue to function seamlessly across all views.
 
+- **201 — Granular Lead Pool Self-Claiming Permission Engine (`lead_pool.claim`, `ContactController.php`, `ContactDrawer.tsx`, `lead-pool/page.tsx`, `Sidebar.tsx`)**:
+  - **Feature Overview & Business Objective**:
+    - Empowered administrators to selectively grant sales agents and telesales representatives granular authority to browse the master Lead Pool bank and **claim / assign unassigned leads directly to themselves** without granting them full manager-level re-allocation privileges over other agents' pipelines.
+  - **Granular Permission Matrix Entry (`lead_pool.claim`)**:
+    - **Dictionary Key**: `'lead_pool.claim'` ("Claim Leads (Self-Assign)") added under the `Lead Pool (Imported Bank)` module in [`RoleController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/RoleController.php) and [`RoleAndPermissionSeeder.php`](file:///d:/FSadvisory-crm/backend/database/seeders/RoleAndPermissionSeeder.php).
+    - Can be granted to any custom role (e.g. Senior Sales Advisor, Lead Hunter) or assigned directly per user via Granular Permissions modal in User Management.
+  - **Backend API Endpoints (`ContactController.php`, `routes/api.php`)**:
+    - **Full Pool Bank Visibility**: Updated `$canViewAllLeads` logic in `ContactController.php` so that on the Lead Pool bank page (`imported_only=1`), any authenticated user with `lead_pool.view` or `lead_pool.claim` can browse all imported pool leads regardless of standard agent restrictions, enabling agents to view available leads to claim.
+    - **Strict Protection on Already-Assigned Leads**: Enforced strict backend validation in `claim` and `bulkClaim` preventing agents from claiming leads that are already assigned to any advisor (`assigned_to IS NOT NULL AND assigned_to != 'Unassigned'`), returning clean 422 validation errors and skipping already-assigned records during bulk operations.
+    - Added `POST /api/contacts/{id}/claim`: Single lead claim endpoint verifying that the authenticated user possesses `lead_pool.claim`, `lead_pool.assign`, or `*`. Automatically assigns `assigned_to = $authUser->name`, `assigned_at = now()`, `state = 'assigned'`, `sla_status = 'on_track'`, and sets `lead_type = 'Warm'` for imported leads.
+    - Added `POST /api/contacts/bulk-claim`: Bulk lead claim endpoint allowing an agent to select multiple unassigned leads and claim them simultaneously.
+    - Updates associated opportunities with `current_owner_name = $authUser->name` and generates a verifiable audit log (`Activity`) documenting the claim action.
+  - **Frontend UI & Action Integrations**:
+    - **1-Click Row Action Button ([`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx))**: Added a `UserPlus` action icon button in the table Actions column, strictly rendered only for unassigned pool leads (`!ct.assigned_to || ct.assigned_to === 'Unassigned'`).
+    - **Bulk Toolbar "Claim to Me" ([`lead-pool/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/lead-pool/page.tsx))**: In the floating bulk selection toolbar, added a primary "Claim to Me" button that automatically validates and claims only unassigned leads, warning agents if already-assigned leads were selected.
+    - **Client Profile Drawer Integration ([`ContactDrawer.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/ContactDrawer.tsx))**: Added a "Claim to Me" button in drawer header strictly for unassigned contacts.
+    - **Sidebar Access Synchronization ([`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx))**: Updated `hasAccess('lead_pool.view')` so that any user with `lead_pool.claim` can access the Lead Pool navigation link.
+
+- **202 — Lead Pool Unassigned Leads Isolation & Granular Assigned Leads Visibility (`lead_pool.view_assigned`, `ContactController.php`, `lead-pool/page.tsx`, `RoleController.php`, `RoleAndPermissionSeeder.php`)**:
+  - **Business Requirement & Security Rule**:
+    - When sales agents access the Lead Pool (`/lead-pool`) to claim leads, they must **strictly see only unassigned leads**. Already-assigned leads must not clutter their view or expose other agents' assigned data.
+    - Super Admin must have full granular control in the Permission Matrix to grant permission (`lead_pool.view_assigned`) to any specific agent or role so they can also view assigned leads in the Lead Pool if desired.
+  - **New Granular Permission Matrix Entry (`lead_pool.view_assigned`)**:
+    - **Dictionary Key**: `'lead_pool.view_assigned'` ("View Assigned Pool Leads") registered under `Lead Pool (Imported Bank)` in [`RoleController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/RoleController.php) and [`RoleAndPermissionSeeder.php`](file:///d:/FSadvisory-crm/backend/database/seeders/RoleAndPermissionSeeder.php).
+    - Default granted to Super Admin and Sales Manager roles; customizable per user/role via User Management (`/users`).
+  - **Backend Filtering Enforcement (`ContactController::index`)**:
+    - Evaluates `$canViewAssignedPoolLeads = $isSuperUser || $userRole === 'Sales Manager' || in_array('lead_pool.view_assigned', $userPermissions) || in_array('lead_pool.assign', $userPermissions) || in_array('leads.view_all', $userPermissions)`.
+    - If user lacks this permission on the Lead Pool bank desk (`$isLeadPoolBank` / `imported_only=1`), both the main query and `$baseCountQuery` strictly filter:
+      `contacts.assigned_to IS NULL OR contacts.assigned_to = '' OR contacts.assigned_to = 'Unassigned'`.
+    - Assigned leads are completely hidden at the database level from regular claiming agents.
+    - If granted `lead_pool.view_assigned`, the user sees all imported pool leads (or can filter by advisor).
+  - **Frontend UX & Claiming Desk Customization (`frontend/src/app/lead-pool/page.tsx`)**:
+    - Agents without `lead_pool.view_assigned` see a customized tab labeled **Available Leads** (with unassigned count) and a badge **"⏳ Available Unassigned Leads (Pool)"**.
+    - Actions column renders the `UserPlus` (Claim) icon strictly on unassigned records.
+    - Bulk toolbar provides "Claim to Me" with safety checks that skip any already-assigned leads and display clear alerts.
+    - Retired the manual bulk assign advisor selector and "Assign Selected" button from the Lead Pool page toolbar, fully standardizing the workflow around self-claiming.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

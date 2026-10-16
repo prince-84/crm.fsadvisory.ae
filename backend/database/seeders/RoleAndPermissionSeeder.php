@@ -27,6 +27,8 @@ class RoleAndPermissionSeeder extends Seeder
 
             // 2. Lead Pool (Imported Bank)
             'lead_pool.view',
+            'lead_pool.view_assigned',
+            'lead_pool.claim',
             'lead_pool.assign',
             'lead_pool.import',
             'lead_pool.export',
@@ -96,7 +98,7 @@ class RoleAndPermissionSeeder extends Seeder
                 'description' => 'Full control over sales pipeline, agent queue routing, lead assignment, call monitoring and performance reports.',
                 'permissions' => [
                     'leads.view', 'leads.view_all', 'leads.filter_agent', 'leads.create', 'leads.edit', 'leads.delete', 'leads.assign', 'leads.reassign', 'leads.export',
-                    'lead_pool.view', 'lead_pool.assign', 'lead_pool.import', 'lead_pool.export', 'lead_pool.delete', 'lead_pool.restore',
+                    'lead_pool.view', 'lead_pool.view_assigned', 'lead_pool.claim', 'lead_pool.assign', 'lead_pool.import', 'lead_pool.export', 'lead_pool.delete', 'lead_pool.restore',
                     'owner_data.view', 'owner_data.create', 'owner_data.edit', 'owner_data.export',
                     'queue.view', 'queue.update_status', 'queue.calendar', 'queue.bulk_delete',
                     'deals.view', 'deals.create', 'deals.edit', 'deals.delete', 'deals.bulk_delete',

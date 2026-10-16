@@ -94,9 +94,9 @@ function SidebarInner() {
     if (perms.includes('*')) return true;
     if (permission === 'lead_pool.view') {
       if (perms.some((p) => p.startsWith('lead_pool.'))) {
-        return perms.includes('lead_pool.view');
+        return perms.includes('lead_pool.view') || perms.includes('lead_pool.claim');
       }
-      return perms.includes('lead_pool.view') || perms.includes('leads.view');
+      return perms.includes('lead_pool.view') || perms.includes('lead_pool.claim') || perms.includes('leads.view');
     }
     return perms.includes(permission);
   };

@@ -200,6 +200,8 @@ class ContactController extends Controller
         }
 
         $authUser = $request->user();
+        $isLeadPoolBank = $request->boolean('imported_only') || $request->get('source_type') === 'imported';
+
         $canViewAllLeads = $authUser && (
             strtolower($authUser->role ?? '') === 'super admin' ||
             strtolower($authUser->role ?? '') === 'sales manager' ||
@@ -209,13 +211,33 @@ class ContactController extends Controller
             $authUser->hasPermission('leads.view_all')
         );
 
+        // Can the user view leads that are already assigned to other advisors inside Lead Pool bank?
+        $canViewAssignedPoolLeads = $authUser && (
+            $canViewAllLeads ||
+            $authUser->hasPermission('lead_pool.view_assigned') ||
+            $authUser->hasPermission('lead_pool.assign')
+        );
+
         $targetOwner = null;
-        if (!$canViewAllLeads) {
-            // Standard agent / advisor: Strictly locked to their own assigned leads
-            $targetOwner = $authUser ? $authUser->name : 'Unassigned';
-        } elseif ($request->filled('assigned_owner') && $request->assigned_owner !== 'all') {
-            // Super Admin or Sales Manager explicitly filtering by an advisor
-            $targetOwner = $request->assigned_owner;
+        if (!$isLeadPoolBank) {
+            if (!$canViewAllLeads) {
+                // Standard agent / advisor: Strictly locked to their own assigned leads on Leads desk
+                $targetOwner = $authUser ? $authUser->name : 'Unassigned';
+            } elseif ($request->filled('assigned_owner') && $request->assigned_owner !== 'all') {
+                $targetOwner = $request->assigned_owner;
+            }
+        } else {
+            // Inside Lead Pool Bank:
+            if (!$canViewAssignedPoolLeads) {
+                // If user doesn't have permission to view assigned pool leads, strictly limit to unassigned leads
+                $query->where(function ($q) {
+                    $q->whereNull('contacts.assigned_to')
+                      ->orWhere('contacts.assigned_to', '')
+                      ->orWhere('contacts.assigned_to', 'Unassigned');
+                });
+            } elseif ($request->filled('assigned_owner') && $request->assigned_owner !== 'all') {
+                $targetOwner = $request->assigned_owner;
+            }
         }
 
         if ($targetOwner !== null) {
@@ -602,6 +624,13 @@ class ContactController extends Controller
             $baseCountQuery->where('is_imported', false);
         } elseif ($isImportedOnly) {
             $baseCountQuery->where('is_imported', true);
+            if (!$canViewAssignedPoolLeads) {
+                $baseCountQuery->where(function ($q) {
+                    $q->whereNull('assigned_to')
+                      ->orWhere('assigned_to', '')
+                      ->orWhere('assigned_to', 'Unassigned');
+                });
+            }
         }
         if ($targetOwner !== null) {
             if ($targetOwner === 'unassigned') {
@@ -1240,6 +1269,153 @@ class ContactController extends Controller
         return response()->json([
             'success' => true,
             'message' => count($ids) . " leads successfully assigned to {$owner}.",
+        ]);
+    }
+
+    public function claim(Request $request, $id)
+    {
+        $authUser = $request->user();
+        if (!$authUser) {
+            return response()->json(['error' => 'Unauthenticated.'], 401);
+        }
+
+        $canClaim = $authUser->hasPermission('*') || 
+                    $authUser->hasPermission('lead_pool.claim') || 
+                    $authUser->hasPermission('lead_pool.assign');
+
+        if (!$canClaim) {
+            return response()->json([
+                'error' => 'Unauthorized: You do not have permission to claim leads from Lead Pool.'
+            ], 403);
+        }
+
+        $contact = Contact::findOrFail($id);
+
+        // Restriction: If lead is already assigned to an agent, it cannot be claimed
+        if (!empty($contact->assigned_to) && $contact->assigned_to !== 'Unassigned') {
+            return response()->json([
+                'error' => "This lead is already assigned to {$contact->assigned_to} and cannot be claimed."
+            ], 422);
+        }
+
+        $agentName = $authUser->name;
+        $oldOwner = $contact->assigned_to ?: 'Unassigned';
+
+        $updateData = [
+            'assigned_to' => $agentName,
+            'assigned_at' => now(),
+            'state'       => 'assigned',
+            'sla_status'  => 'on_track',
+            'next_action_due_at' => null,
+        ];
+        if ($contact->is_imported) {
+            $updateData['lead_type'] = 'Warm';
+        }
+        $contact->update($updateData);
+
+        Opportunity::where('contact_id', $contact->id)->update([
+            'current_owner_name' => $agentName,
+        ]);
+
+        Activity::create([
+            'contact_id'  => $contact->id,
+            'user_name'   => $agentName,
+            'type'        => 'ownership_change',
+            'description' => "Lead claimed from Lead Pool by {$agentName}.",
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Lead successfully claimed by {$agentName}!",
+            'contact' => $contact->fresh(['opportunities.buyerQualification', 'activities']),
+        ]);
+    }
+
+    public function bulkClaim(Request $request)
+    {
+        $authUser = $request->user();
+        if (!$authUser) {
+            return response()->json(['error' => 'Unauthenticated.'], 401);
+        }
+
+        $canClaim = $authUser->hasPermission('*') || 
+                    $authUser->hasPermission('lead_pool.claim') || 
+                    $authUser->hasPermission('lead_pool.assign');
+
+        if (!$canClaim) {
+            return response()->json([
+                'error' => 'Unauthorized: You do not have permission to claim leads from Lead Pool.'
+            ], 403);
+        }
+
+        $request->validate([
+            'contact_ids' => 'required|array',
+            'contact_ids.*' => 'integer',
+        ]);
+
+        $ids = $request->input('contact_ids', []);
+        if (empty($ids)) {
+            return response()->json(['error' => 'No leads selected.'], 422);
+        }
+
+        // Restriction: Only unassigned leads can be claimed
+        $unassignedIds = Contact::whereIn('id', $ids)
+            ->where(function($q) {
+                $q->whereNull('assigned_to')
+                  ->orWhere('assigned_to', '')
+                  ->orWhere('assigned_to', 'Unassigned');
+            })->pluck('id')->toArray();
+
+        if (empty($unassignedIds)) {
+            return response()->json([
+                'error' => 'None of the selected leads can be claimed because they are already assigned to an agent.'
+            ], 422);
+        }
+
+        $skippedCount = count($ids) - count($unassignedIds);
+        $ids = $unassignedIds;
+        $agentName = $authUser->name;
+
+        Opportunity::whereIn('contact_id', $ids)->update([
+            'current_owner_name' => $agentName,
+        ]);
+
+        Contact::whereIn('id', $ids)->where('is_imported', true)->update([
+            'assigned_to' => $agentName,
+            'assigned_at' => now(),
+            'state'       => 'assigned',
+            'sla_status'  => 'on_track',
+            'next_action_due_at' => null,
+            'lead_type'   => 'Warm',
+        ]);
+
+        Contact::whereIn('id', $ids)->where(function($q) {
+            $q->where('is_imported', false)->orWhereNull('is_imported');
+        })->update([
+            'assigned_to' => $agentName,
+            'assigned_at' => now(),
+            'state'       => 'assigned',
+            'sla_status'  => 'on_track',
+            'next_action_due_at' => null,
+        ]);
+
+        foreach ($ids as $cid) {
+            Activity::create([
+                'contact_id'  => $cid,
+                'user_name'   => $agentName,
+                'type'        => 'ownership_change',
+                'description' => "Lead claimed from Lead Pool by {$agentName}.",
+            ]);
+        }
+
+        $msg = count($ids) . " leads successfully claimed by {$agentName}!";
+        if ($skippedCount > 0) {
+            $msg .= " ({$skippedCount} already-assigned leads were skipped)";
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $msg,
         ]);
     }
 

@@ -126,7 +126,9 @@ class RoleController extends Controller
                 'module' => 'Lead Pool (Imported Bank)',
                 'description' => 'Master imported archive, cold database repository, and bulk batch lead files',
                 'permissions' => [
-                    ['key' => 'lead_pool.view', 'label' => 'View Lead Pool', 'desc' => 'Access and browse all leads in imported lead pool bank'],
+                    ['key' => 'lead_pool.view', 'label' => 'View Lead Pool', 'desc' => 'Access and browse available unassigned leads in imported lead pool bank'],
+                    ['key' => 'lead_pool.view_assigned', 'label' => 'View Assigned Pool Leads', 'desc' => 'Allow viewing leads that are already assigned to other advisors in Lead Pool'],
+                    ['key' => 'lead_pool.claim', 'label' => 'Claim Leads (Self-Assign)', 'desc' => 'Allow agents to claim and assign unassigned pool leads to themselves'],
                     ['key' => 'lead_pool.assign', 'label' => 'Bulk Assign from Pool', 'desc' => 'Allocate and distribute batch leads from the pool to advisors'],
                     ['key' => 'lead_pool.import', 'label' => 'Bulk CSV / Excel Import', 'desc' => 'Upload and ingest external lead sheets into Lead Pool'],
                     ['key' => 'lead_pool.export', 'label' => 'Export Lead Pool (CSV)', 'desc' => 'Download client spreadsheets from Lead Pool'],

@@ -15,7 +15,7 @@ import Swal from 'sweetalert2';
 import { 
   Search, Download, Upload, Plus, Users, CheckCircle2, Briefcase, 
   RotateCcw, Copy, ChevronLeft, ChevronRight, RefreshCw, Trash2, Undo2, UserX,
-  ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, GripVertical, UserCheck, X,
+  ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, GripVertical, UserCheck, UserPlus, X,
   Eye, Edit3, MessageSquare, Check, Zap, Filter, PhoneCall, AlertCircle, Sparkles, ListOrdered, Phone,
   Bell, Clock, Calendar, ChevronDown, ChevronUp, Layers, Database, Flame
 } from 'lucide-react';
@@ -89,9 +89,8 @@ export default function LeadPoolPage() {
   const [contacts, setContacts] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({ total: 0, available: 0, active: 0, reactivation: 0, duplicates: 0 });
 
-  // Bulk Checkbox Selection & Assignment State
+  // Bulk Checkbox Selection & Claim State
   const [selectedContactIds, setSelectedContactIds] = useState<number[]>([]);
-  const [bulkAssignOwner, setBulkAssignOwner] = useState<string>('');
   const [bulkLoading, setBulkLoading] = useState<boolean>(false);
   const [activeAgents, setActiveAgents] = useState<any[]>([]);
   const [canViewLeads, setCanViewLeads] = useState<boolean | null>(null);
@@ -277,9 +276,9 @@ export default function LeadPoolPage() {
       const u = getCurrentUser();
       const perms: string[] = u?.permissions || [];
       if (perms.some((p) => p.startsWith('lead_pool.'))) {
-        setCanViewLeads(hasPermission('lead_pool.view'));
+        setCanViewLeads(hasPermission('lead_pool.view') || hasPermission('lead_pool.claim'));
       } else {
-        setCanViewLeads(hasPermission('lead_pool.view') || hasPermission('leads.view'));
+        setCanViewLeads(hasPermission('lead_pool.view') || hasPermission('lead_pool.claim') || hasPermission('leads.view'));
       }
     };
     checkPerms();
@@ -1228,7 +1227,20 @@ export default function LeadPoolPage() {
               </div>
             ) : (
               <div className="flex items-center justify-end gap-1.5">
-                {/* 1. 3CX Softphone Call & Log Outcome */}
+                {/* 1. Claim Lead (Self-Assign) - Only allowed for unassigned pool leads */}
+                {mounted && (!ct.assigned_to || ct.assigned_to === 'Unassigned') && (hasPermission('lead_pool.claim') || hasPermission('lead_pool.assign')) && (
+                  <button
+                    type="button"
+                    onClick={() => handleClaimContact(ct.id, ct.name)}
+                    disabled={claimingId === ct.id}
+                    className="p-1.5 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 rounded border border-blue-200 transition-colors cursor-pointer"
+                    title="Claim this unassigned lead to yourself"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                {/* 2. 3CX Softphone Call & Log Outcome */}
                 <button
                   type="button"
                   onClick={() => handleQuickCall(ct)}
@@ -1430,34 +1442,107 @@ export default function LeadPoolPage() {
     }
   };
 
-  const handleExecuteBulkAssign = async () => {
-    if (!bulkAssignOwner) {
-      Swal.fire('Select Owner', 'Please select an Advisor / Owner from the dropdown.', 'warning');
+  const [claimingId, setClaimingId] = useState<number | null>(null);
+
+  const handleClaimContact = async (contactId: number, contactName: string) => {
+    const userName = currentUser?.name || 'yourself';
+    const result = await Swal.fire({
+      title: 'Claim This Lead?',
+      text: `Do you want to claim "${contactName}" and assign it to ${userName}?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#081428',
+      cancelButtonColor: '#6E6E6E',
+      confirmButtonText: 'Yes, Claim Lead',
+    });
+
+    if (!result.isConfirmed) return;
+
+    setClaimingId(contactId);
+    try {
+      const res = await fetchApi(`/contacts/${contactId}/claim`, {
+        method: 'POST',
+      });
+
+      if (res.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Lead Claimed!',
+          text: res.message || `Lead successfully assigned to ${userName}.`,
+          timer: 2000,
+          showConfirmButton: false,
+        });
+        loadData(currentPage);
+      } else {
+        throw new Error(res.error || res.message || 'Failed to claim lead');
+      }
+    } catch (err: any) {
+      Swal.fire('Error', err.message || 'Failed to claim lead.', 'error');
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  const handleExecuteBulkClaim = async () => {
+    if (selectedContactIds.length === 0) return;
+    const userName = currentUser?.name || 'yourself';
+
+    const unassignedSelected = contacts.filter(
+      (c) => selectedContactIds.includes(c.id) && (!c.assigned_to || c.assigned_to === 'Unassigned')
+    );
+
+    if (unassignedSelected.length === 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Already Assigned',
+        text: 'None of the selected leads can be claimed because they are already assigned to agents.',
+        confirmButtonColor: '#081428',
+      });
       return;
     }
 
+    const unassignedCount = unassignedSelected.length;
+    const skippedCount = selectedContactIds.length - unassignedCount;
+    const confirmPrompt = skippedCount > 0
+      ? `You selected ${selectedContactIds.length} leads, but ${skippedCount} are already assigned to other agents. Do you want to claim the remaining ${unassignedCount} unassigned leads to ${userName}?`
+      : `Are you sure you want to claim ${unassignedCount} unassigned leads and assign them to ${userName}?`;
+
+    const result = await Swal.fire({
+      title: `Claim ${unassignedCount} Unassigned Leads?`,
+      text: confirmPrompt,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#081428',
+      cancelButtonColor: '#6E6E6E',
+      confirmButtonText: 'Yes, Claim to Me',
+    });
+
+    if (!result.isConfirmed) return;
+
     setBulkLoading(true);
     try {
-      const res = await fetchApi('/contacts/bulk-assign', {
+      const res = await fetchApi('/contacts/bulk-claim', {
         method: 'POST',
         body: JSON.stringify({
           contact_ids: selectedContactIds,
-          assigned_owner: bulkAssignOwner,
         }),
       });
 
-      Swal.fire({
-        icon: 'success',
-        title: 'Bulk Assignment Complete!',
-        text: res.message || `${selectedContactIds.length} leads assigned to ${bulkAssignOwner}.`,
-        confirmButtonColor: '#081428',
-      });
-
-      setSelectedContactIds([]);
-      setBulkAssignOwner('');
-      loadData(currentPage);
+      if (res.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Leads Claimed!',
+          text: res.message || `${selectedContactIds.length} leads assigned to ${userName}.`,
+          timer: 2500,
+          showConfirmButton: false,
+        });
+        setSelectedContactIds([]);
+        loadData(currentPage);
+      } else {
+        throw new Error(res.error || res.message || 'Failed to claim leads');
+      }
     } catch (err: any) {
-      Swal.fire('Error', err.message || 'Bulk assignment failed.', 'error');
+      Swal.fire('Error', err.message || 'Failed to claim selected leads.', 'error');
     } finally {
       setBulkLoading(false);
     }
@@ -1855,7 +1940,11 @@ export default function LeadPoolPage() {
               ) : mounted ? (
                 <div className="flex items-center gap-1.5 bg-[#FAF8F4] border border-[#E8E2D9] rounded-md px-2.5 py-1.5 text-xs text-[#081428] font-bold shadow-2xs">
                   <UserCheck className="w-3.5 h-3.5 text-[#C8A147] shrink-0" />
-                  <span>👥 All Leads Pool (Bank)</span>
+                  <span>
+                    {(hasPermission('lead_pool.view_assigned') || hasPermission('lead_pool.assign')) 
+                      ? '👥 All Leads Pool (Bank)' 
+                      : '⏳ Available Unassigned Leads (Pool)'}
+                  </span>
                 </div>
               ) : null
             }
@@ -1866,7 +1955,13 @@ export default function LeadPoolPage() {
             {/* Left: Optimized 5 Tabs */}
             <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto">
               {[
-                { id: 'all', label: 'All Leads Pool', count: tabCounts.all },
+                { 
+                  id: 'all', 
+                  label: (isSuperUser(currentUser) || hasPermission('lead_pool.view_assigned') || hasPermission('lead_pool.assign') || hasPermission('leads.view_all')) 
+                    ? 'All Leads Pool' 
+                    : 'Available Leads', 
+                  count: tabCounts.all 
+                },
                 { id: 'deleted', label: 'Deleted', count: tabCounts.deleted },
               ].map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -2168,37 +2263,29 @@ export default function LeadPoolPage() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <select
-                      value={bulkAssignOwner}
-                      onChange={(e) => setBulkAssignOwner(e.target.value)}
-                      className="bg-[#122444] border border-[#1f3864] text-white text-xs font-semibold rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#C8A147]"
-                    >
-                      <option value="">Select Advisor / Owner...</option>
-                      {activeAgents.map((ag) => (
-                        <option key={ag.id} value={ag.name}>
-                          {ag.name} ({ag.role || 'Agent'}){ag.receive_lead_pool_leads === false ? ' — [Pool Off]' : ''}
-                        </option>
-                      ))}
-                      <option value="Unassigned">Unassigned</option>
-                    </select>
+                    {/* Claim to Me Button for Agents with lead_pool.claim */}
+                    {mounted && (hasPermission('lead_pool.claim') || hasPermission('lead_pool.assign') || isSuperUser(currentUser)) && (
+                      <button
+                        onClick={handleExecuteBulkClaim}
+                        disabled={bulkLoading}
+                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                        title="Claim all selected leads to yourself"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>{bulkLoading ? 'Claiming...' : 'Claim to Me'}</span>
+                      </button>
+                    )}
 
-                    <button
-                      onClick={handleExecuteBulkAssign}
-                      disabled={!bulkAssignOwner || bulkLoading}
-                      className="px-3.5 py-1.5 bg-[#C8A147] hover:bg-[#b48e35] text-[#081428] font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <UserCheck className="w-3.5 h-3.5" />
-                      <span>{bulkLoading ? 'Assigning...' : 'Assign Selected'}</span>
-                    </button>
-
-                    <button
-                      onClick={handleExecuteBulkDelete}
-                      disabled={bulkLoading}
-                      className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Trash</span>
-                    </button>
+                    {mounted && hasPermission('leads.delete') && (
+                      <button
+                        onClick={handleExecuteBulkDelete}
+                        disabled={bulkLoading}
+                        className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Trash</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => setSelectedContactIds([])}
