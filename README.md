@@ -2749,6 +2749,7 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       3. **Contacted**: Displays unique leads phoned today (e.g. `119 today`, with connected count badge).
       4. **Talk Time**: Displays authentic voice conversation time (e.g. `3m`).
       5. **Remaining**: Displays remaining uncontacted leads ($\text{Total Leads} - \text{Contacted} = \text{Remaining}$, e.g. `1,313 leads`), providing seamless mathematical logic across the workspace.
+    - Retired the redundant **Contacted** filter tab from the Leads Desk (`/`) top navigation bar to streamline view filtering, keeping the workspace focused on `All Leads`, `New`, `Lead Pool`, `Overdue`, `Opportunity Quick View`, and `Deleted`.
 
 ## ⚙️ Installation & Running Instructions
 

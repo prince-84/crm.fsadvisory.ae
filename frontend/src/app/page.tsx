@@ -2024,7 +2024,6 @@ export default function LeadPoolPage() {
                 { id: 'all', label: 'All Leads', count: tabCounts.all },
                 { id: 'new', label: 'New', count: tabCounts.new },
                 { id: 'lead_pool', label: 'Lead Pool', count: tabCounts.lead_pool },
-                { id: 'contacted', label: 'Contacted', count: tabCounts.contacted },
                 { id: 'overdue', label: 'Overdue', count: tabCounts.overdue },
                 { id: 'opportunities', label: 'Opportunity Quick View', count: tabCounts.opportunities || 0 },
                 { id: 'deleted', label: 'Deleted', count: tabCounts.deleted },
