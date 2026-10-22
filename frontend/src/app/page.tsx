@@ -2107,44 +2107,55 @@ export default function LeadPoolPage() {
 
             {/* Sleek Calling Progress Ribbon (Compact & Clutter-Free) */}
             <div className="bg-white border border-[#E8E4DC] rounded-lg px-3.5 py-2 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
-              {/* Left: 4 Micro KPI Metrics */}
-              <div className="flex items-center gap-3 sm:gap-5 flex-wrap divide-x divide-slate-100">
-                {/* 1. Calls Made */}
+              {/* Left: 5 Calculated KPI Metrics */}
+              <div className="flex items-center gap-3 sm:gap-4 flex-wrap divide-x divide-slate-100">
+                {/* 1. Total Leads */}
                 <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-md bg-slate-100 text-slate-700 flex items-center justify-center font-bold shrink-0">
+                    <Users className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Total Leads</span>
+                    <div className="font-extrabold text-[#081428] text-xs">
+                      {callingStats.total_assigned || tabCounts.all || 0}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Calls Made */}
+                <div className="flex items-center gap-2 pl-3 sm:pl-4">
                   <div className="w-6 h-6 rounded-md bg-blue-50 text-blue-700 flex items-center justify-center font-bold shrink-0">
                     <PhoneCall className="w-3.5 h-3.5" />
                   </div>
                   <div>
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Calls Made</span>
-                    <div className="font-extrabold text-[#081428] text-xs flex items-center gap-1">
-                      <span>{callingStats.calls_made} <span className="font-normal text-[10px] text-slate-400">today</span></span>
-                      {callingStats.leads_called ? (
-                        <span className="text-[10px] text-blue-600 font-bold bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
-                          {callingStats.leads_called} leads
+                    <div className="font-extrabold text-[#081428] text-xs">
+                      {callingStats.calls_made} <span className="font-normal text-[10px] text-slate-400">today</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Contacted */}
+                <div className="flex items-center gap-2 pl-3 sm:pl-4">
+                  <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold shrink-0">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Contacted</span>
+                    <div className="font-extrabold text-[#081428] text-xs flex items-center gap-1.5">
+                      <span>{callingStats.leads_called || callingStats.connected_calls || 0}</span>
+                      <span className="font-normal text-[10px] text-slate-400">today</span>
+                      {callingStats.connected_calls > 0 ? (
+                        <span className="font-bold text-[9px] text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                          {callingStats.connected_calls} connected
                         </span>
                       ) : null}
                     </div>
                   </div>
                 </div>
 
-                {/* 2. Connected */}
-                <div className="flex items-center gap-2 pl-3 sm:pl-5">
-                  <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold shrink-0">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Connected</span>
-                    <div className="font-extrabold text-[#081428] text-xs flex items-center gap-1.5">
-                      <span>{callingStats.connected_calls}</span>
-                      <span className="font-bold text-[9px] text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                        {callingStats.connection_rate}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Talk Time */}
-                <div className="flex items-center gap-2 pl-3 sm:pl-5">
+                {/* 4. Talk Time */}
+                <div className="flex items-center gap-2 pl-3 sm:pl-4">
                   <div className="w-6 h-6 rounded-md bg-amber-50 text-[#C8A147] flex items-center justify-center font-bold shrink-0">
                     <Clock className="w-3.5 h-3.5" />
                   </div>
@@ -2156,8 +2167,8 @@ export default function LeadPoolPage() {
                   </div>
                 </div>
 
-                {/* 4. Remaining to Call */}
-                <div className="flex items-center gap-2 pl-3 sm:pl-5">
+                {/* 5. Remaining */}
+                <div className="flex items-center gap-2 pl-3 sm:pl-4">
                   <div className="w-6 h-6 rounded-md bg-purple-50 text-purple-700 flex items-center justify-center font-bold shrink-0">
                     <ListOrdered className="w-3.5 h-3.5" />
                   </div>
@@ -2165,9 +2176,6 @@ export default function LeadPoolPage() {
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Remaining</span>
                     <div className="font-extrabold text-[#081428] text-xs">
                       {callingStats.remaining_leads} <span className="font-normal text-[10px] text-slate-400">leads</span>
-                      {callingStats.total_assigned ? (
-                        <span className="text-[10px] text-slate-400 font-normal ml-1">/ {callingStats.total_assigned}</span>
-                      ) : null}
                     </div>
                   </div>
                 </div>

@@ -2742,10 +2742,13 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Tab Badge Date Filter Synchronization**:
     - Previously, `$baseCountQuery` in `ContactController@index` omitted the `date_from` / `date_to` calendar filter. When filtering by "Today", while the table displayed the 111 active/contacted leads, the top tab badges continued displaying the all-time assigned total (`1,505`).
     - Synchronized `$baseCountQuery` with the active date filter so tab badges (`All Leads (111)`) dynamically match the exact count of records shown in the table.
-  - **Today's Progress Cards Metric Alignment**:
-    - Enhanced `ActivityController@callingSummary` to return `leads_called` (count of unique contacts phoned today) and `total_assigned` leads alongside `calls_made` (total call attempts).
-    - Calculated `remaining_leads` with mathematical consistency: $\text{Total Assigned} - \text{Leads Called Today}$ ($1,505 - 111 = 1,394$).
-    - Updated Leads Desk Progress Ribbon (`page.tsx`) to display `Calls Made: 122 today (111 leads)` and `Remaining: 1,394 leads / 1,505`, giving managers and advisors 100% transparent parity between top metrics, tab counters, and table rows.
+  - **Today's Progress Cards Metric Alignment (5 Distinct Calculated Cards)**:
+    - Structured the Leads Desk progress ribbon (`page.tsx`) into 5 clean, mathematically linked cards:
+      1. **Total Leads**: Displays total assigned leads (e.g. `1,432`).
+      2. **Calls Made**: Displays total call attempts dialed today (e.g. `122 today`, clean without nested lead badges).
+      3. **Contacted**: Displays unique leads phoned today (e.g. `119 today`, with connected count badge).
+      4. **Talk Time**: Displays authentic voice conversation time (e.g. `3m`).
+      5. **Remaining**: Displays remaining uncontacted leads ($\text{Total Leads} - \text{Contacted} = \text{Remaining}$, e.g. `1,313 leads`), providing seamless mathematical logic across the workspace.
 
 ## ⚙️ Installation & Running Instructions
 
