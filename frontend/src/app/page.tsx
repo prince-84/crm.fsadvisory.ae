@@ -316,11 +316,51 @@ export default function LeadPoolPage() {
   });
   const [loadingCallingStats, setLoadingCallingStats] = useState(false);
 
+  // Secondary Filters & Search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedLeadType, setSelectedLeadType] = useState<string>('all');
+  const [selectedStage, setSelectedStage] = useState<string>('all');
+  const [selectedCallOutcome, setSelectedCallOutcome] = useState<string>('all');
+  const [opportunityModalContact, setOpportunityModalContact] = useState<any | null>(null);
+  const [isOpportunityModalOpen, setIsOpportunityModalOpen] = useState<boolean>(false);
+  
+  // Date Range Calendar State (filters created_at in database)
+  const [dateRange, setDateRange] = useState<DateRangeValue>({
+    from: '',
+    to: '',
+    preset: 'all',
+  });
+
+  // Dynamic label for current date filter
+  const filterDateLabel = useMemo(() => {
+    if (dateRange.preset === 'today') return 'Today';
+    if (dateRange.preset === 'yesterday') return 'Yesterday';
+    if (dateRange.preset === 'last7') return 'Last 7 Days';
+    if (dateRange.preset === 'last30') return 'Last 30 Days';
+    if (dateRange.preset === 'this_month') return 'This Month';
+    if (dateRange.preset === 'last_month') return 'Last Month';
+    if (dateRange.from && dateRange.to) {
+      if (dateRange.from === dateRange.to) return dateRange.from;
+      return `${dateRange.from} to ${dateRange.to}`;
+    }
+    if (dateRange.from) return `From ${dateRange.from}`;
+    if (dateRange.to) return `Up to ${dateRange.to}`;
+    return 'All Time';
+  }, [dateRange]);
+
   const fetchCallingStats = useCallback(async () => {
     setLoadingCallingStats(true);
     try {
       const ownerParam = selectedOwner && selectedOwner !== 'auto' ? selectedOwner : '';
-      const queryStr = ownerParam ? `?user_name=${encodeURIComponent(ownerParam)}` : '';
+      const params = new URLSearchParams();
+      if (ownerParam) params.append('user_name', ownerParam);
+      if (dateRange.from) params.append('date_from', dateRange.from);
+      if (dateRange.to) params.append('date_to', dateRange.to);
+      if (dateRange.preset) params.append('preset', dateRange.preset);
+      if (selectedLeadType && selectedLeadType !== 'all') params.append('lead_type', selectedLeadType);
+      if (selectedCallOutcome && selectedCallOutcome !== 'all') params.append('call_outcome', selectedCallOutcome);
+
+      const queryStr = params.toString() ? `?${params.toString()}` : '';
       const res = await fetchApi(`/activities/calling-summary${queryStr}`);
       if (res && res.success) {
         setCallingStats({
@@ -339,7 +379,7 @@ export default function LeadPoolPage() {
     } finally {
       setLoadingCallingStats(false);
     }
-  }, [selectedOwner]);
+  }, [selectedOwner, dateRange, selectedLeadType, selectedCallOutcome]);
 
   useEffect(() => {
     fetchCallingStats();
@@ -372,21 +412,6 @@ export default function LeadPoolPage() {
   // Sorting State connected to database (default: newest Created Date first)
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
-  // Secondary Filters & Search
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLeadType, setSelectedLeadType] = useState<string>('all');
-  const [selectedStage, setSelectedStage] = useState<string>('all');
-  const [selectedCallOutcome, setSelectedCallOutcome] = useState<string>('all');
-  const [opportunityModalContact, setOpportunityModalContact] = useState<any | null>(null);
-  const [isOpportunityModalOpen, setIsOpportunityModalOpen] = useState<boolean>(false);
-  
-  // Date Range Calendar State (filters created_at in database)
-  const [dateRange, setDateRange] = useState<DateRangeValue>({
-    from: '',
-    to: '',
-    preset: 'all',
-  });
 
   // Advanced Filters State & Modal (includes Lifecycle State & Availability)
   const [advancedFilters, setAdvancedFilters] = useState<AdvancedFiltersState>(INITIAL_ADVANCED_FILTERS);
@@ -2129,7 +2154,11 @@ export default function LeadPoolPage() {
                   <div>
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Calls Made</span>
                     <div className="font-extrabold text-[#081428] text-xs">
-                      {callingStats.calls_made} <span className="font-normal text-[10px] text-slate-400">today</span>
+                      {callingStats.calls_made} {filterDateLabel !== 'All Time' ? (
+                        <span className="font-normal text-[10px] text-slate-400">{filterDateLabel.toLowerCase()}</span>
+                      ) : (
+                        <span className="font-normal text-[10px] text-slate-400">total</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2143,7 +2172,11 @@ export default function LeadPoolPage() {
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Contacted</span>
                     <div className="font-extrabold text-[#081428] text-xs flex items-center gap-1.5">
                       <span>{callingStats.leads_called || callingStats.connected_calls || 0}</span>
-                      <span className="font-normal text-[10px] text-slate-400">today</span>
+                      {filterDateLabel !== 'All Time' ? (
+                        <span className="font-normal text-[10px] text-slate-400">{filterDateLabel.toLowerCase()}</span>
+                      ) : (
+                        <span className="font-normal text-[10px] text-slate-400">total</span>
+                      )}
                       {callingStats.connected_calls > 0 ? (
                         <span className="font-bold text-[9px] text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
                           {callingStats.connected_calls} connected
@@ -2183,7 +2216,9 @@ export default function LeadPoolPage() {
               {/* Right: Scope Tag & Quick Refresh */}
               <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="font-bold text-[#081428]">Today's Progress</span>
+                <span className="font-bold text-[#081428]">
+                  {filterDateLabel !== 'All Time' ? `${filterDateLabel} Overview` : 'Performance Overview'}
+                </span>
                 <span className="text-[10px] font-mono text-slate-400">
                   ({selectedOwner === 'all' ? 'Team' : selectedOwner === currentUser?.name ? 'My Calls' : selectedOwner})
                 </span>

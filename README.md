@@ -2751,6 +2751,16 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       5. **Remaining**: Displays remaining uncontacted leads ($\text{Total Leads} - \text{Contacted} = \text{Remaining}$, e.g. `1,313 leads`), providing seamless mathematical logic across the workspace.
     - Retired the redundant **Contacted** filter tab from the Leads Desk (`/`) top navigation bar to streamline view filtering, keeping the workspace focused on `All Leads`, `New`, `Lead Pool`, `Overdue`, `Opportunity Quick View`, and `Deleted`.
 
+- **208 — Dynamic Filter-Aware Calling Summary KPI Ribbon & Timeframe Adaptability (`ActivityController.php`, `page.tsx`)**:
+  - **Dynamic Multi-Filter Calling Summary (`GET /api/activities/calling-summary`)**:
+    - Previously, `ActivityController::callingSummary` hardcoded `$today = Carbon::today()`, causing the calling summary ribbon cards to remain permanently frozen on today's call counts even when users selected date filters (e.g. `Last 30 Days`, `This Month`, `Last 7 Days`, `Yesterday`, or custom calendar intervals).
+    - Upgraded `callingSummary` to dynamically parse and evaluate `date_from`, `date_to`, `preset`, `user_name`, `lead_type`, and `call_outcome`.
+    - Date filtering cleanly binds across calls (`activities`), 3CX recordings (`call_recordings`), and cohort leads (`contacts`), delivering authentic metrics matching any active filter timeframe.
+  - **Dynamic Ribbon Header & Card Subtext Integration (`page.tsx`)**:
+    - Replaced the hardcoded `"Today's Progress"` title in the ribbon header with a dynamic overview label: `{filterDateLabel !== 'All Time' ? `${filterDateLabel} Overview` : 'Performance Overview'}` (e.g., `Last 30 Days Overview`, `Today Overview`, `This Month Overview`).
+    - Replaced hardcoded `"today"` subtext in Card 2 (*Calls Made*) and Card 3 (*Contacted*) with the active filter timeframe (e.g. `last 30 days`, `today`, `this month`, or `total` for all time).
+    - Wired `fetchCallingStats` to pass `date_from`, `date_to`, `preset`, `lead_type`, and `call_outcome` query parameters, and included them in the `useCallback` dependency array for instantaneous reactive updates whenever any filter is applied or changed.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
