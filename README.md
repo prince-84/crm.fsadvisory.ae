@@ -2689,8 +2689,39 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Frontend UX & Claiming Desk Customization (`frontend/src/app/lead-pool/page.tsx`)**:
     - Agents without `lead_pool.view_assigned` see a customized tab labeled **Available Leads** (with unassigned count) and a badge **"⏳ Available Unassigned Leads (Pool)"**.
     - Actions column renders the `UserPlus` (Claim) icon strictly on unassigned records.
-    - Bulk toolbar provides "Claim to Me" with safety checks that skip any already-assigned leads and display clear alerts.
     - Retired the manual bulk assign advisor selector and "Assign Selected" button from the Lead Pool page toolbar, fully standardizing the workflow around self-claiming.
+
+- **203 — Call Outcome & Call Status Filtering Precision Fix (`ContactController.php`, `Contact.php`)**:
+  - **Issue Resolved**:
+    - Previously, selecting a call outcome filter (such as **"Interested"**) on the Leads desk returned leads whose historical activities contained "Interested", even if their latest call status had progressed to **"Follow-up"**, creating confusing mixed results in the table where rows showed `FOLLOW-UP` badges under an `Interested` filter.
+  - **Root Cause & Technical Fix**:
+    - Replaced loose historical `whereHas('activities', ...)` queries with correlated subqueries targeting the contact's single **LATEST** call activity (`orderByDesc('activities.id')->limit(1)`).
+    - Every Call Outcome filter option (**Interested**, **Follow-up**, **Callback**, **No Answer**, **Not Interested**, **Wrong Number**, **Real Estate Agent**) now strictly evaluates against the lead's current, most recent call outcome.
+    - Synchronized `sortBy === 'call_status'` subquery to match identical correlated latest-call resolution.
+    - Updated `Contact::getLatestCallOutcomeAttribute()` accessor to compare candidate call activities across both direct contact activities and opportunity activities by `id` descending, ensuring 100% parity between query filtering, table badges, and sorting.
+
+- **204 — SLA Inactivity Auto-Rotation Engine: Follow-up & Callback Exemption and Timeline Precision (`LeadDistributionService.php`)**:
+  - **Follow-up & Callback Exemption**:
+    - Expanded `$isEngagedOutcome` to include `follow-up`, `follow up`, and `callback` alongside `interested`, `meeting`, and `viewing`.
+    - Active prospects undergoing qualification calls, callbacks, or follow-ups are now formally protected from 3-day inactivity auto-rotation, preventing the system from stripping engaged leads away from working agents.
+  - **Inactivity Days Timeline Calculation**:
+    - Fixed timeline activity description calculation where `$daysWithAgent` (total days since lead assignment) was erroneously logged as the inactivity period (e.g. logging "due to 5 days of advisor inactivity" despite a 3-day threshold in CRM Settings).
+    - Synchronized the message to reference the exact configured threshold (`due to {$reassignDays} days of advisor inactivity`) and accurate idle period since the last call (`{$inactiveDaysInt} days without contact`), eliminating user confusion.
+
+- **205 — Reports & Analytics Audit & Precision Fix (`ReportController.php`, `CallRecordingController.php`)**:
+  - **Advisor Contacted Leads vs Calls Made Reconciliation**:
+    - Discovered root cause of distorted agent performance stats where advisors (e.g. Mako Deka) with only 26 calls showed 701 "Contacted Leads" out of 848 assigned leads. The previous query checked `whereIn('contact_id', $assignedIds)` across historical call logs without filtering by the advisor's identity, erroneously crediting past calls by previous agents or dialers to the currently assigned agent.
+    - Implemented strict advisor attribution: `contacted_leads` for an advisor now exclusively counts assigned leads that *this specific advisor* personally contacted (`whereIn('user_name', $aliases)` or matching 3CX PBX recordings).
+    - Guaranteed mathematical consistency: `contacted_leads` can never exceed `calls_made`, and `uncontacted_leads` (Remaining) accurately reflects all assigned leads awaiting outreach.
+  - **3CX PBX & Activity Call De-duplication**:
+    - Eliminated double-counting caused by adding `$activityCallsCount + $dbRecordingsCount` when 3CX call ingestion created both an `Activity` and a `CallRecording` record.
+    - Synchronized calls made to count activities plus unlinked CDRs (`whereNull('contact_id')`), preventing duplicates.
+    - Updated `CallRecordingController::ingestRecording` to store `duration_seconds` directly on the generated `Activity` record.
+  - **Advisor Name & Alias Normalization (`getAdvisorNameAliases`)**:
+    - Introduced intelligent name and nickname resolution for advisors with spelling variations between CRM activity logs, 3CX PBX extensions, and user accounts (e.g. `Mako` <-> `Mako Deka`, `Hiba Aslam` <-> `Hiba alam`, `Rayyan` <-> `Rayyan shuja`, `Shafi Uddin` <-> `Shafiuddin`, `Faraz Shafi` <-> `Faraz`).
+  - **Dynamic Time Range Filtering across Leaderboard**:
+    - Resolved a bug where picking "Today", "This Week", or "This Month" did not filter individual leaderboard rows in `/reports/analytics`.
+    - Applied `$startDate` and `$endDate` timestamps universally across activities, recordings, opportunities, and appointments.
 
 ## ⚙️ Installation & Running Instructions
 

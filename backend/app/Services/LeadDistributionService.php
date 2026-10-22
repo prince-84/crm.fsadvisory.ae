@@ -505,7 +505,10 @@ class LeadDistributionService
 
             $isEngagedOutcome = (str_contains($outcome, 'interested') && !str_contains($outcome, 'not interested'))
                 || str_contains($outcome, 'meeting')
-                || str_contains($outcome, 'viewing');
+                || str_contains($outcome, 'viewing')
+                || str_contains($outcome, 'follow-up')
+                || str_contains($outcome, 'follow up')
+                || str_contains($outcome, 'callback');
 
             $scheduledDue = $contact->next_action_due_at 
                 ? Carbon::parse($contact->next_action_due_at) 
@@ -633,6 +636,8 @@ class LeadDistributionService
             }
 
             $daysWithAgentInt = (int) round($daysWithAgent);
+            $inactiveDaysInt = $lastActionTime ? (int) round($lastActionTime->diffInDays($now)) : $daysWithAgentInt;
+            $inactiveDaysInt = max($reassignDays, $inactiveDaysInt);
 
             // Update contact ownership
             $reassignUpdate = [
@@ -657,7 +662,7 @@ class LeadDistributionService
                 'opportunity_id' => $opp?->id,
                 'user_name'      => 'System SLA Engine',
                 'type'           => 'ownership_change',
-                'description'    => "Lead auto-reassigned from {$currentOwner} to {$nextAgent->name} due to {$daysWithAgentInt} days of advisor inactivity.",
+                'description'    => "Lead auto-reassigned from {$currentOwner} to {$nextAgent->name} due to {$reassignDays} days of advisor inactivity ({$inactiveDaysInt} days without contact).",
             ]);
 
             // Record in Distribution Log

@@ -9,6 +9,7 @@ use App\Models\BuyerQualification;
 use App\Models\Activity;
 use App\Services\LeadDistributionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class ContactController extends Controller
@@ -291,60 +292,80 @@ class ContactController extends Controller
             }
         }
 
-        // Call Outcome filter
+        // Call Outcome filter (Strictly matches the lead's single LATEST call activity outcome)
         if ($request->filled('call_outcome') && $request->call_outcome !== 'all') {
-            if ($request->call_outcome === 'deal') {
+            $selectedOutcome = $request->call_outcome;
+
+            if ($selectedOutcome === 'deal') {
                 $query->has('opportunities');
-            } elseif ($request->call_outcome === 'lead_pool') {
+            } elseif ($selectedOutcome === 'lead_pool') {
                 $query->where('contacts.is_imported', true)
                       ->whereDoesntHave('activities', function($actQ) {
-                          $actQ->where('type', 'call');
+                          $actQ->where('type', 'call')->orWhereNotNull('call_outcome');
                       })->whereDoesntHave('opportunities.activities', function($actQ) {
-                          $actQ->where('type', 'call');
+                          $actQ->where('type', 'call')->orWhereNotNull('call_outcome');
                       });
-            } elseif ($request->call_outcome === 'uncontacted') {
+            } elseif ($selectedOutcome === 'uncontacted') {
                 $query->whereDoesntHave('activities', function($actQ) {
-                    $actQ->where('type', 'call');
+                    $actQ->where('type', 'call')->orWhereNotNull('call_outcome');
                 })->whereDoesntHave('opportunities.activities', function($actQ) {
-                    $actQ->where('type', 'call');
-                });
-            } elseif ($request->call_outcome === 'Not Interested') {
-                $query->where(function($q) {
-                    $q->whereHas('activities', function($actQ) {
-                        $actQ->where('type', 'call')->where('call_outcome', 'like', '%Not Interested%');
-                    })->orWhereHas('opportunities.activities', function($actQ) {
-                        $actQ->where('type', 'call')->where('call_outcome', 'like', '%Not Interested%');
-                    });
-                });
-            } elseif ($request->call_outcome === 'Interested') {
-                $query->where(function($q) {
-                    $q->whereHas('activities', function($actQ) {
-                        $actQ->where('type', 'call')
-                             ->where(function($sub) {
-                                 $sub->where('call_outcome', 'like', '%Interested%')
-                                     ->orWhere('call_outcome', 'like', '%Viewing%')
-                                     ->orWhere('call_outcome', 'like', '%Meeting%');
-                             })
-                             ->where('call_outcome', 'not like', '%Not Interested%');
-                    })->orWhereHas('opportunities.activities', function($actQ) {
-                        $actQ->where('type', 'call')
-                             ->where(function($sub) {
-                                 $sub->where('call_outcome', 'like', '%Interested%')
-                                     ->orWhere('call_outcome', 'like', '%Viewing%')
-                                     ->orWhere('call_outcome', 'like', '%Meeting%');
-                             })
-                             ->where('call_outcome', 'not like', '%Not Interested%');
-                    });
+                    $actQ->where('type', 'call')->orWhereNotNull('call_outcome');
                 });
             } else {
-                $outcome = $request->call_outcome;
-                $query->where(function($q) use ($outcome) {
-                    $q->whereHas('activities', function($actQ) use ($outcome) {
-                        $actQ->where('type', 'call')->where('call_outcome', 'like', "%{$outcome}%");
-                    })->orWhereHas('opportunities.activities', function($actQ) use ($outcome) {
-                        $actQ->where('type', 'call')->where('call_outcome', 'like', "%{$outcome}%");
+                // Correlated subquery to resolve the single latest call outcome for this contact
+                $latestCallSub = Activity::select('call_outcome')
+                    ->where(function($q) {
+                        $q->whereColumn('activities.contact_id', 'contacts.id')
+                          ->orWhereExists(function($oppQ) {
+                              $oppQ->select(DB::raw(1))
+                                   ->from('opportunities')
+                                   ->whereColumn('opportunities.id', 'activities.opportunity_id')
+                                   ->whereColumn('opportunities.contact_id', 'contacts.id');
+                          });
+                    })
+                    ->where(function($q) {
+                        $q->where('activities.type', 'call')
+                          ->orWhereNotNull('activities.call_outcome');
+                    })
+                    ->orderByDesc('activities.id')
+                    ->limit(1);
+
+                if ($selectedOutcome === 'Not Interested') {
+                    $query->where($latestCallSub, 'like', '%Not Interested%');
+                } elseif ($selectedOutcome === 'Interested') {
+                    $query->where(function($q) use ($latestCallSub) {
+                        $q->where(function($sub) use ($latestCallSub) {
+                            $sub->where($latestCallSub, 'like', '%Interested%')
+                                ->orWhere($latestCallSub, 'like', '%Viewing%')
+                                ->orWhere($latestCallSub, 'like', '%Meeting%');
+                        })->where($latestCallSub, 'not like', '%Not Interested%');
                     });
-                });
+                } elseif ($selectedOutcome === 'Follow-up') {
+                    $query->where(function($q) use ($latestCallSub) {
+                        $q->where($latestCallSub, 'like', '%Follow-up%')
+                          ->orWhere($latestCallSub, 'like', '%Follow up%');
+                    });
+                } elseif ($selectedOutcome === 'Callback') {
+                    $query->where($latestCallSub, 'like', '%Callback%');
+                } elseif ($selectedOutcome === 'No Answer') {
+                    $query->where(function($q) use ($latestCallSub) {
+                        $q->where($latestCallSub, 'like', '%No Answer%')
+                          ->orWhere($latestCallSub, 'like', '%Voicemail%');
+                    });
+                } elseif ($selectedOutcome === 'Wrong Number') {
+                    $query->where(function($q) use ($latestCallSub) {
+                        $q->where($latestCallSub, 'like', '%Wrong Number%')
+                          ->orWhere($latestCallSub, 'like', '%Invalid%');
+                    });
+                } elseif ($selectedOutcome === 'Real Estate Agent') {
+                    $query->where(function($q) use ($latestCallSub) {
+                        $q->where($latestCallSub, 'like', '%Real Estate%')
+                          ->orWhere($latestCallSub, 'like', '%Agent%')
+                          ->orWhere($latestCallSub, 'like', '%Broker%');
+                    });
+                } else {
+                    $query->where($latestCallSub, 'like', "%{$selectedOutcome}%");
+                }
             }
         }
 
@@ -565,9 +586,20 @@ class ContactController extends Controller
         } elseif ($sortBy === 'call_status') {
             $query->orderBy(
                 Activity::select('call_outcome')
-                    ->whereColumn('activities.contact_id', 'contacts.id')
-                    ->where('type', 'call')
-                    ->latest('id')
+                    ->where(function($q) {
+                        $q->whereColumn('activities.contact_id', 'contacts.id')
+                          ->orWhereExists(function($oppQ) {
+                              $oppQ->select(DB::raw(1))
+                                   ->from('opportunities')
+                                   ->whereColumn('opportunities.id', 'activities.opportunity_id')
+                                   ->whereColumn('opportunities.contact_id', 'contacts.id');
+                          });
+                    })
+                    ->where(function($q) {
+                        $q->where('activities.type', 'call')
+                          ->orWhereNotNull('activities.call_outcome');
+                    })
+                    ->orderByDesc('activities.id')
                     ->limit(1),
                 $sortOrder
             );

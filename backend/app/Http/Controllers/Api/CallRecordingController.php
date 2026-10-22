@@ -505,6 +505,7 @@ class CallRecordingController extends Controller
                 'user_name' => $agentInfo['name'],
                 'type' => 'call',
                 'call_outcome' => $outcome,
+                'duration_seconds' => $duration,
                 'description' => "3CX Recorded Call ({$recording->formatted_duration}): {$notes}",
             ]);
             $contact->update(['last_activity_at' => now()]);

@@ -42,6 +42,178 @@ class ReportController extends Controller
     }
 
     /**
+     * Resolves known advisor name aliases and nicknames in database.
+     */
+    public function getAdvisorNameAliases($user)
+    {
+        $name = is_string($user) ? $user : ($user->name ?? '');
+        $trimmed = trim($name);
+        $aliases = [$trimmed];
+
+        if (strcasecmp($trimmed, 'Faraz Shafi') === 0 || strcasecmp($trimmed, 'Faraz') === 0) {
+            $aliases[] = 'Faraz Shafi';
+            $aliases[] = 'Faraz';
+        } elseif (strcasecmp($trimmed, 'Mako') === 0 || stripos($trimmed, 'Mako') !== false) {
+            $aliases[] = 'Mako';
+            $aliases[] = 'Mako Deka';
+        } elseif (strcasecmp($trimmed, 'Hiba Aslam') === 0 || stripos($trimmed, 'Hiba') !== false) {
+            $aliases[] = 'Hiba Aslam';
+            $aliases[] = 'Hiba alam';
+            $aliases[] = 'Hiba';
+        } elseif (strcasecmp($trimmed, 'Rayyan') === 0 || stripos($trimmed, 'Rayyan') !== false) {
+            $aliases[] = 'Rayyan';
+            $aliases[] = 'Rayyan shuja';
+        } elseif (stripos($trimmed, 'Shafi') !== false && stripos($trimmed, 'Faraz') === false) {
+            $aliases[] = 'Shafi Uddin';
+            $aliases[] = 'Shafiuddin';
+        } elseif (strcasecmp($trimmed, 'Babar Ali Khan') === 0 || stripos($trimmed, 'Babar') !== false) {
+            $aliases[] = 'Babar Ali Khan';
+            $aliases[] = 'Babar';
+        } elseif (stripos($trimmed, 'Basit') !== false) {
+            $aliases[] = 'Mohammed Basit Tahir';
+            $aliases[] = 'Basit Tahir';
+            $aliases[] = 'Basit';
+        }
+
+        return array_values(array_unique(array_filter($aliases)));
+    }
+
+    /**
+     * Accurately calculates all audit and productivity metrics for a single advisor.
+     */
+    public function calculateAdvisorRow($u, $startDate = null, $endDate = null)
+    {
+        $aliases = $this->getAdvisorNameAliases($u);
+
+        $assignedContactsQuery = Contact::whereIn('assigned_to', $aliases);
+        $oppQuery = Opportunity::whereIn('current_owner_name', $aliases);
+        $apptsQuery = Appointment::where(function ($q) use ($aliases) {
+            foreach ($aliases as $a) {
+                $q->orWhere('agent_name', 'like', "%{$a}%");
+            }
+        });
+
+        $activityCallsQuery = Activity::whereIn('user_name', $aliases)->where('type', 'call');
+        $unlinkedRecordingsQuery = CallRecording::whereNull('contact_id')->where(function ($q) use ($aliases) {
+            foreach ($aliases as $a) {
+                $q->orWhere('agent_name', 'like', "%{$a}%");
+            }
+        });
+
+        if ($startDate && $endDate) {
+            $activityCallsQuery->whereBetween('created_at', [$startDate, $endDate]);
+            $unlinkedRecordingsQuery->whereBetween('created_at', [$startDate, $endDate]);
+            $oppQuery->whereBetween('created_at', [$startDate, $endDate]);
+            $apptsQuery->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        $assignedContactsCount = $assignedContactsQuery->count();
+        $assignedIds = (clone $assignedContactsQuery)->pluck('id');
+
+        // Contacted Leads: strictly counts leads assigned to this advisor that THIS advisor personally contacted
+        $actContactedQuery = Activity::whereIn('contact_id', $assignedIds)
+            ->whereIn('user_name', $aliases)
+            ->where('type', 'call');
+        $recContactedQuery = CallRecording::whereIn('contact_id', $assignedIds)
+            ->where(function ($q) use ($aliases) {
+                foreach ($aliases as $a) {
+                    $q->orWhere('agent_name', 'like', "%{$a}%");
+                }
+            });
+
+        if ($startDate && $endDate) {
+            $actContactedQuery->whereBetween('created_at', [$startDate, $endDate]);
+            $recContactedQuery->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        $actContactedIds = $actContactedQuery->pluck('contact_id')->toArray();
+        $recContactedIds = $recContactedQuery->pluck('contact_id')->toArray();
+        $contactedIds = array_unique(array_merge($actContactedIds, $recContactedIds));
+        $contactedCount = count($contactedIds);
+        $uncontactedCount = max(0, $assignedContactsCount - $contactedCount);
+
+        // Calls Made (de-duplicated across activities & unlinked 3CX CDRs)
+        $activityCallsCount = $activityCallsQuery->count();
+        $unlinkedRecsCount = $unlinkedRecordingsQuery->count();
+        $callsCount = $activityCallsCount + $unlinkedRecsCount;
+
+        // Connected Calls
+        $connectedOutcomes = ['Interested', 'Interested - Schedule Viewing', 'Callback', 'Follow-up', 'Meeting Scheduled', 'Answered', 'Connected', 'Contacted'];
+        $connectedActivities = (clone $activityCallsQuery)
+            ->where(function ($q) use ($connectedOutcomes) {
+                $q->whereIn('call_outcome', $connectedOutcomes)
+                  ->orWhere('duration_seconds', '>', 0);
+            })->count();
+        $connectedRecordings = (clone $unlinkedRecordingsQuery)
+            ->where(function ($q) {
+                $q->where('call_status', 'answered')
+                  ->orWhere('duration_seconds', '>', 0);
+            })->count();
+        $connectedCallsCount = $connectedActivities + $connectedRecordings;
+        $connectedRate = $callsCount > 0 ? round(($connectedCallsCount / $callsCount) * 100, 1) : 0.0;
+
+        // Talk Time Seconds
+        $recordingsTalkSecs = (int) CallRecording::where(function ($q) use ($aliases) {
+            foreach ($aliases as $a) {
+                $q->orWhere('agent_name', 'like', "%{$a}%");
+            }
+        })->when($startDate && $endDate, fn($q) => $q->whereBetween('created_at', [$startDate, $endDate]))
+          ->sum('duration_seconds');
+
+        $manualActivityTalkSecs = (int) (clone $activityCallsQuery)
+            ->where('description', 'not like', '%3CX Recorded Call%')
+            ->where('duration_seconds', '>', 0)
+            ->sum('duration_seconds');
+
+        $totalTalkSecs = $recordingsTalkSecs + $manualActivityTalkSecs;
+
+        // Opportunities & Financials
+        $oppCount = (clone $oppQuery)->count();
+        $closedWonCount = (clone $oppQuery)->whereIn('stage', ['closed', 'closed_won'])->count();
+        $closedWonAed = (float) (clone $oppQuery)->whereIn('stage', ['closed', 'closed_won'])->sum('budget_max');
+        $pipelineAed = (float) (clone $oppQuery)->whereNotIn('stage', ['closed_lost'])->sum('budget_max');
+
+        // Appointments
+        $apptsCount = (clone $apptsQuery)->count();
+
+        // SLA Compliance
+        $overdueCount = (clone $oppQuery)->where('sla_status', 'overdue')->count();
+        $slaCompliance = $oppCount > 0 
+            ? round((($oppCount - $overdueCount) / $oppCount) * 100, 1) 
+            : 100.0;
+
+        $conversionRate = $assignedContactsCount > 0 
+            ? round(($oppCount / $assignedContactsCount) * 100, 1) 
+            : 0.0;
+
+        return [
+            'id' => $u->id,
+            'name' => $u->name,
+            'email' => $u->email,
+            'role' => $u->role,
+            'department' => $u->department ?? 'Sales',
+            'initials' => strtoupper(substr($u->name, 0, 2)),
+            'is_active' => $u->is_active,
+            'assigned_leads' => $assignedContactsCount,
+            'contacted_leads' => $contactedCount,
+            'uncontacted_leads' => $uncontactedCount,
+            'calls_made' => $callsCount,
+            'connected_calls' => $connectedCallsCount,
+            'connected_rate' => $connectedRate,
+            'total_talk_time_seconds' => $totalTalkSecs,
+            'talk_time_formatted' => $this->formatDuration($totalTalkSecs),
+            'appointments' => $apptsCount,
+            'opportunities_count' => $oppCount,
+            'closed_won_count' => $closedWonCount,
+            'closed_won_aed' => $closedWonAed,
+            'pipeline_aed' => $pipelineAed,
+            'sla_compliance' => $slaCompliance,
+            'conversion_rate' => $conversionRate,
+            'tier' => $closedWonAed > 0 ? 'Closed Producer' : ($oppCount > 0 ? 'Active Advisor' : 'Onboarding'),
+        ];
+    }
+
+    /**
      * Comprehensive Team Performance & Leaderboard (100% Database Connected)
      */
     public function teamPerformance(Request $request)
@@ -58,101 +230,7 @@ class ReportController extends Controller
         $leaderboard = [];
 
         foreach ($users as $u) {
-            $assignedContactsQuery = Contact::where('assigned_to', $u->name);
-            $oppQuery = Opportunity::where('current_owner_name', $u->name);
-            $apptsQuery = Appointment::where('agent_name', $u->name);
-            $activityCallsQuery = Activity::where('user_name', $u->name)->where('type', 'call');
-            $dbRecordingsQuery = CallRecording::where(function ($q) use ($u) {
-                $q->where('agent_name', 'like', "%{$u->name}%")
-                  ->orWhere('agent_extension', $u->id);
-            });
-
-            if ($startDate && $endDate) {
-                $activityCallsQuery->whereBetween('created_at', [$startDate, $endDate]);
-                $dbRecordingsQuery->whereBetween('created_at', [$startDate, $endDate]);
-                $oppQuery->whereBetween('created_at', [$startDate, $endDate]);
-                $apptsQuery->whereBetween('created_at', [$startDate, $endDate]);
-            }
-
-            $assignedContactsCount = $assignedContactsQuery->count();
-            $assignedIds = (clone $assignedContactsQuery)->pluck('id');
-
-            // Contacted vs Uncontacted Leads
-            $contactedCount = Activity::whereIn('contact_id', $assignedIds)
-                ->where('type', 'call')
-                ->distinct('contact_id')
-                ->count('contact_id');
-            $uncontactedCount = max(0, $assignedContactsCount - $contactedCount);
-
-            // Calls and Talk Time
-            $activityCallsCount = $activityCallsQuery->count();
-            $dbRecordingsCount = $dbRecordingsQuery->count();
-            $callsCount = $activityCallsCount + $dbRecordingsCount;
-
-            // Connected Calls
-            $connectedOutcomes = ['Interested', 'Interested - Schedule Viewing', 'Callback', 'Follow-up', 'Meeting Scheduled', 'Answered', 'Connected', 'Contacted'];
-            $connectedActivities = (clone $activityCallsQuery)
-                ->where(function ($q) use ($connectedOutcomes) {
-                    $q->whereIn('call_outcome', $connectedOutcomes)
-                      ->orWhere('duration_seconds', '>', 0);
-                })->count();
-            $connectedRecordings = (clone $dbRecordingsQuery)
-                ->where(function ($q) {
-                    $q->where('call_status', 'answered')
-                      ->orWhere('duration_seconds', '>', 0);
-                })->count();
-            $connectedCallsCount = $connectedActivities + $connectedRecordings;
-            $connectedRate = $callsCount > 0 ? round(($connectedCallsCount / $callsCount) * 100, 1) : 0.0;
-
-            // Talk Time Seconds
-            $activityTalkSecs = (int) (clone $activityCallsQuery)->sum('duration_seconds');
-            $recordingTalkSecs = (int) (clone $dbRecordingsQuery)->sum('duration_seconds');
-            $totalTalkSecs = $activityTalkSecs + $recordingTalkSecs;
-
-            // Opportunities
-            $oppCount = (clone $oppQuery)->count();
-            $closedWonCount = (clone $oppQuery)->whereIn('stage', ['closed', 'closed_won'])->count();
-            $closedWonAed = (float) (clone $oppQuery)->whereIn('stage', ['closed', 'closed_won'])->sum('budget_max');
-            $pipelineAed = (float) (clone $oppQuery)->whereNotIn('stage', ['closed_lost'])->sum('budget_max');
-
-            // Appointments
-            $apptsCount = (clone $apptsQuery)->count();
-
-            // SLA Compliance
-            $overdueCount = (clone $oppQuery)->where('sla_status', 'overdue')->count();
-            $slaCompliance = $oppCount > 0 
-                ? round((($oppCount - $overdueCount) / $oppCount) * 100, 1) 
-                : 100.0;
-
-            $conversionRate = $assignedContactsCount > 0 
-                ? round(($oppCount / $assignedContactsCount) * 100, 1) 
-                : 0.0;
-
-            $leaderboard[] = [
-                'id' => $u->id,
-                'name' => $u->name,
-                'email' => $u->email,
-                'role' => $u->role,
-                'department' => $u->department ?? 'Sales',
-                'initials' => strtoupper(substr($u->name, 0, 2)),
-                'is_active' => $u->is_active,
-                'assigned_leads' => $assignedContactsCount,
-                'contacted_leads' => $contactedCount,
-                'uncontacted_leads' => $uncontactedCount,
-                'calls_made' => $callsCount,
-                'connected_calls' => $connectedCallsCount,
-                'connected_rate' => $connectedRate,
-                'total_talk_time_seconds' => $totalTalkSecs,
-                'talk_time_formatted' => $this->formatDuration($totalTalkSecs),
-                'appointments' => $apptsCount,
-                'opportunities_count' => $oppCount,
-                'closed_won_count' => $closedWonCount,
-                'closed_won_aed' => $closedWonAed,
-                'pipeline_aed' => $pipelineAed,
-                'sla_compliance' => $slaCompliance,
-                'conversion_rate' => $conversionRate,
-                'tier' => $closedWonAed > 0 ? 'Closed Producer' : ($oppCount > 0 ? 'Active Advisor' : 'Onboarding'),
-            ];
+            $leaderboard[] = $this->calculateAdvisorRow($u, $startDate, $endDate);
         }
 
         // Sort descending by Closed Won Volume, then Opportunities, then Calls
@@ -237,10 +315,13 @@ class ReportController extends Controller
         // 2. Fetch all active advisors for top dropdown
         $allActiveUsers = User::where('is_active', true)->orderBy('name', 'asc')->get();
         $advisorsList = $allActiveUsers->map(function ($u) {
-            $cCount = Contact::where('assigned_to', $u->name)->count();
-            $oCount = Opportunity::where('current_owner_name', $u->name)->count();
-            $calls = Activity::where('user_name', $u->name)->where('type', 'call')->count()
-                   + CallRecording::where('agent_name', 'like', "%{$u->name}%")->count();
+            $aliases = $this->getAdvisorNameAliases($u->name);
+            $cCount = Contact::whereIn('assigned_to', $aliases)->count();
+            $oCount = Opportunity::whereIn('current_owner_name', $aliases)->count();
+            $calls = Activity::whereIn('user_name', $aliases)->where('type', 'call')->count()
+                   + CallRecording::whereNull('contact_id')->where(function($q) use ($aliases) {
+                       foreach ($aliases as $a) $q->orWhere('agent_name', 'like', "%{$a}%");
+                   })->count();
 
             return [
                 'id' => $u->id,
@@ -262,13 +343,17 @@ class ReportController extends Controller
         $activitiesQuery = Activity::query();
         $callRecordingsQuery = CallRecording::query();
 
+        $selectedAliases = !$isAll ? $this->getAdvisorNameAliases($agent) : [];
+
         if (!$isAll) {
-            $contactsQuery->where('assigned_to', $agent);
-            $oppsQuery->where('current_owner_name', $agent);
-            $apptsQuery->where('agent_name', $agent);
-            $activitiesQuery->where('user_name', $agent);
-            $callRecordingsQuery->where(function ($q) use ($agent) {
-                $q->where('agent_name', 'like', "%{$agent}%");
+            $contactsQuery->whereIn('assigned_to', $selectedAliases);
+            $oppsQuery->whereIn('current_owner_name', $selectedAliases);
+            $apptsQuery->where(function ($q) use ($selectedAliases) {
+                foreach ($selectedAliases as $a) $q->orWhere('agent_name', 'like', "%{$a}%");
+            });
+            $activitiesQuery->whereIn('user_name', $selectedAliases);
+            $callRecordingsQuery->where(function ($q) use ($selectedAliases) {
+                foreach ($selectedAliases as $a) $q->orWhere('agent_name', 'like', "%{$a}%");
             });
         }
 
@@ -286,21 +371,39 @@ class ReportController extends Controller
         $assignedIds = (clone $contactsQuery)->pluck('id');
 
         // Contacted vs Uncontacted (Remaining) Leads
-        $contactedLeadsCount = Activity::whereIn('contact_id', $assignedIds)
-            ->where('type', 'call')
-            ->distinct('contact_id')
-            ->count('contact_id');
+        if ($isAll) {
+            $contactedLeadsQuery = Activity::where('type', 'call');
+            if ($startDate && $endDate) {
+                $contactedLeadsQuery->whereBetween('created_at', [$startDate, $endDate]);
+            }
+            $contactedLeadsCount = $contactedLeadsQuery->distinct('contact_id')->count('contact_id');
+        } else {
+            $actContactedQuery = Activity::whereIn('contact_id', $assignedIds)
+                ->whereIn('user_name', $selectedAliases)
+                ->where('type', 'call');
+            $recContactedQuery = CallRecording::whereIn('contact_id', $assignedIds)
+                ->where(function ($q) use ($selectedAliases) {
+                    foreach ($selectedAliases as $a) $q->orWhere('agent_name', 'like', "%{$a}%");
+                });
+            if ($startDate && $endDate) {
+                $actContactedQuery->whereBetween('created_at', [$startDate, $endDate]);
+                $recContactedQuery->whereBetween('created_at', [$startDate, $endDate]);
+            }
+            $cIds1 = $actContactedQuery->pluck('contact_id')->toArray();
+            $cIds2 = $recContactedQuery->pluck('contact_id')->toArray();
+            $contactedLeadsCount = count(array_unique(array_merge($cIds1, $cIds2)));
+        }
+
         $uncontactedLeadsCount = max(0, $filteredContactsCount - $contactedLeadsCount);
         $contactedRate = $filteredContactsCount > 0 ? round(($contactedLeadsCount / $filteredContactsCount) * 100, 1) : 0.0;
-
-        // Fresh / Uncontacted leads awaiting outreach
         $newLeadsCount = $uncontactedLeadsCount;
 
-        // 5. Real Telephony & Calling Activity Stats
+        // 5. Real Telephony & Calling Activity Stats (strictly de-duplicated)
         $callActivitiesQuery = (clone $activitiesQuery)->where('type', 'call');
         $activityCallsCount = (clone $callActivitiesQuery)->count();
-        $dbCallsCount = (clone $callRecordingsQuery)->count();
-        $totalCallsLogged = $activityCallsCount + $dbCallsCount;
+        $unlinkedRecordingsQuery = (clone $callRecordingsQuery)->whereNull('contact_id');
+        $unlinkedCallsCount = (clone $unlinkedRecordingsQuery)->count();
+        $totalCallsLogged = $activityCallsCount + $unlinkedCallsCount;
 
         // Connected Calls & Talk Time
         $connectedOutcomes = ['Interested', 'Interested - Schedule Viewing', 'Callback', 'Follow-up', 'Meeting Scheduled', 'Answered', 'Connected', 'Contacted'];
@@ -309,7 +412,7 @@ class ReportController extends Controller
                 $q->whereIn('call_outcome', $connectedOutcomes)
                   ->orWhere('duration_seconds', '>', 0);
             })->count();
-        $connectedRecordings = (clone $callRecordingsQuery)
+        $connectedRecordings = (clone $unlinkedRecordingsQuery)
             ->where(function ($q) {
                 $q->where('call_status', 'answered')
                   ->orWhere('duration_seconds', '>', 0);
@@ -317,8 +420,12 @@ class ReportController extends Controller
         $connectedCalls = $connectedActivities + $connectedRecordings;
         $connectedRate = $totalCallsLogged > 0 ? round(($connectedCalls / $totalCallsLogged) * 100, 1) : 0.0;
 
-        $totalTalkSeconds = (int) (clone $callActivitiesQuery)->sum('duration_seconds')
-                          + (int) (clone $callRecordingsQuery)->sum('duration_seconds');
+        $recordingsTalkSeconds = (int) (clone $callRecordingsQuery)->sum('duration_seconds');
+        $manualActivityTalkSecs = (int) (clone $callActivitiesQuery)
+            ->where('description', 'not like', '%3CX Recorded Call%')
+            ->where('duration_seconds', '>', 0)
+            ->sum('duration_seconds');
+        $totalTalkSeconds = $recordingsTalkSeconds + $manualActivityTalkSecs;
         $avgTalkSeconds = $connectedCalls > 0 ? round($totalTalkSeconds / $connectedCalls) : 0;
 
         // Call Outcomes Distribution Breakdown
@@ -522,67 +629,7 @@ class ReportController extends Controller
         // 11. Full Team Comparison Leaderboard directly from DB
         $leaderboard = [];
         foreach ($allActiveUsers as $u) {
-            $uContacts = Contact::where('assigned_to', $u->name);
-            $uAssignedCount = $uContacts->count();
-            $uAssignedIds = (clone $uContacts)->pluck('id');
-
-            $uContactedCount = Activity::whereIn('contact_id', $uAssignedIds)
-                ->where('type', 'call')
-                ->distinct('contact_id')
-                ->count('contact_id');
-            $uUncontactedCount = max(0, $uAssignedCount - $uContactedCount);
-
-            $uActCalls = Activity::where('user_name', $u->name)->where('type', 'call')->count();
-            $uRecCalls = CallRecording::where('agent_name', 'like', "%{$u->name}%")->count();
-            $uCallsCount = $uActCalls + $uRecCalls;
-
-            $uConnectedAct = Activity::where('user_name', $u->name)->where('type', 'call')
-                ->where(function ($q) use ($connectedOutcomes) {
-                    $q->whereIn('call_outcome', $connectedOutcomes)->orWhere('duration_seconds', '>', 0);
-                })->count();
-            $uConnectedRec = CallRecording::where('agent_name', 'like', "%{$u->name}%")
-                ->where(function ($q) {
-                    $q->where('call_status', 'answered')->orWhere('duration_seconds', '>', 0);
-                })->count();
-            $uConnectedCalls = $uConnectedAct + $uConnectedRec;
-
-            $uTalkSecs = (int) Activity::where('user_name', $u->name)->where('type', 'call')->sum('duration_seconds')
-                       + (int) CallRecording::where('agent_name', 'like', "%{$u->name}%")->sum('duration_seconds');
-
-            $uOpps = Opportunity::where('current_owner_name', $u->name)->count();
-            $uAppts = Appointment::where('agent_name', $u->name)->count();
-            $uClosedWon = Opportunity::where('current_owner_name', $u->name)->whereIn('stage', ['closed', 'closed_won'])->count();
-            $uClosedWonAed = (float) Opportunity::where('current_owner_name', $u->name)->whereIn('stage', ['closed', 'closed_won'])->sum('budget_max');
-            $uPipelineAed = (float) Opportunity::where('current_owner_name', $u->name)->whereNotIn('stage', ['closed_lost'])->sum('budget_max');
-
-            $uOverdue = Opportunity::where('current_owner_name', $u->name)->where('sla_status', 'overdue')->count();
-            $uSla = $uOpps > 0 ? round((($uOpps - $uOverdue) / $uOpps) * 100, 1) : 100.0;
-            $uConv = $uAssignedCount > 0 ? round(($uOpps / $uAssignedCount) * 100, 1) : 0.0;
-
-            $leaderboard[] = [
-                'id' => $u->id,
-                'name' => $u->name,
-                'email' => $u->email,
-                'role' => $u->role,
-                'department' => $u->department ?? 'Sales',
-                'initials' => strtoupper(substr($u->name, 0, 2)),
-                'assigned_leads' => $uAssignedCount,
-                'contacted_leads' => $uContactedCount,
-                'uncontacted_leads' => $uUncontactedCount,
-                'calls_made' => $uCallsCount,
-                'connected_calls' => $uConnectedCalls,
-                'connected_rate' => $uCallsCount > 0 ? round(($uConnectedCalls / $uCallsCount) * 100, 1) : 0,
-                'total_talk_time_seconds' => $uTalkSecs,
-                'talk_time_formatted' => $this->formatDuration($uTalkSecs),
-                'appointments' => $uAppts,
-                'opportunities_count' => $uOpps,
-                'closed_won_count' => $uClosedWon,
-                'closed_won_aed' => $uClosedWonAed,
-                'pipeline_aed' => $uPipelineAed,
-                'sla_compliance' => $uSla,
-                'conversion_rate' => $uConv,
-                'tier' => $uClosedWonAed > 0 ? 'Closed Producer' : ($uOpps > 0 ? 'Active Advisor' : 'Onboarding'),
-            ];
+            $leaderboard[] = $this->calculateAdvisorRow($u, $startDate, $endDate);
         }
 
         usort($leaderboard, function ($a, $b) {
@@ -603,39 +650,17 @@ class ReportController extends Controller
         $selectedAgentProfile = null;
         if (!$isAll) {
             foreach ($leaderboard as $row) {
-                if ($row['name'] === $agent) {
+                if (in_array($row['name'], $selectedAliases)) {
                     $selectedAgentProfile = $row;
                     break;
                 }
             }
             if (!$selectedAgentProfile) {
-                $uObj = User::where('name', $agent)->first();
+                $uObj = User::where(function ($q) use ($selectedAliases) {
+                    $q->whereIn('name', $selectedAliases);
+                })->first();
                 if ($uObj) {
-                    $selectedAgentProfile = [
-                        'id' => $uObj->id,
-                        'name' => $uObj->name,
-                        'email' => $uObj->email,
-                        'role' => $uObj->role,
-                        'department' => $uObj->department ?? 'Sales',
-                        'initials' => strtoupper(substr($uObj->name, 0, 2)),
-                        'assigned_leads' => $filteredContactsCount,
-                        'contacted_leads' => $contactedLeadsCount,
-                        'uncontacted_leads' => $uncontactedLeadsCount,
-                        'calls_made' => $totalCallsLogged,
-                        'connected_calls' => $connectedCalls,
-                        'connected_rate' => $connectedRate,
-                        'total_talk_time_seconds' => $totalTalkSeconds,
-                        'talk_time_formatted' => $this->formatDuration($totalTalkSeconds),
-                        'appointments' => $totalAppointments,
-                        'opportunities_count' => $totalOpportunities,
-                        'closed_won_count' => $closedDeals,
-                        'closed_won_aed' => $totalClosedWonAed,
-                        'pipeline_aed' => $totalPipelineAed,
-                        'sla_compliance' => $slaComplianceRate,
-                        'conversion_rate' => $conversionRate,
-                        'tier' => 'Active Advisor',
-                        'rank' => '-',
-                    ];
+                    $selectedAgentProfile = $this->calculateAdvisorRow($uObj, $startDate, $endDate);
                 }
             }
         }

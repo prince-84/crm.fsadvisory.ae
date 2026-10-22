@@ -29,22 +29,33 @@ class Contact extends Model
 
     public function getLatestCallOutcomeAttribute()
     {
-        if ($this->relationLoaded('activities')) {
+        $candidates = collect();
+
+        if ($this->relationLoaded('activities') && $this->activities) {
             $call = $this->activities->first(function ($act) {
                 return $act->type === 'call' || !empty($act->call_outcome);
             });
-            if ($call && !empty($call->call_outcome)) return $call->call_outcome;
+            if ($call && !empty($call->call_outcome)) {
+                $candidates->push($call);
+            }
         }
 
-        if ($this->relationLoaded('opportunities')) {
+        if ($this->relationLoaded('opportunities') && $this->opportunities) {
             foreach ($this->opportunities as $opp) {
-                if ($opp->relationLoaded('activities')) {
+                if ($opp->relationLoaded('activities') && $opp->activities) {
                     $call = $opp->activities->first(function ($act) {
                         return $act->type === 'call' || !empty($act->call_outcome);
                     });
-                    if ($call && !empty($call->call_outcome)) return $call->call_outcome;
+                    if ($call && !empty($call->call_outcome)) {
+                        $candidates->push($call);
+                    }
                 }
             }
+        }
+
+        if ($candidates->isNotEmpty()) {
+            $latest = $candidates->sortByDesc(fn($act) => $act->id ?? 0)->first();
+            return $latest->call_outcome ?? null;
         }
 
         return null;
