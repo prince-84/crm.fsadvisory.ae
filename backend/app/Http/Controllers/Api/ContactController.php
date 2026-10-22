@@ -137,12 +137,17 @@ class ContactController extends Controller
             $query->whereHas('opportunities');
         } elseif ($tab === 'all') {
             // 'all' tab displays all leads (primary and duplicate inquiries)
-            // On Leads Desk, 'All Leads' tab excludes Lead Pool (imported) leads as they have their own dedicated Lead Pool tab
+            // On Leads Desk, 'All Leads' tab excludes unassigned Lead Pool leads (they have their own dedicated Lead Pool tab)
+            // But when filtering by Date (e.g. Today) or by a specific Advisor, include all assigned leads worked on so activity is visible
             if ($request->boolean('leads_desk')) {
-                $query->where(function ($q) {
-                    $q->where('contacts.is_imported', false)
-                      ->orWhereNull('contacts.is_imported');
-                });
+                $hasDateFilter = $request->filled('date_from') || $request->filled('date_to');
+                $hasAdvisorFilter = $request->filled('assigned_owner') && $request->assigned_owner !== 'all';
+                if (!$hasDateFilter && !$hasAdvisorFilter) {
+                    $query->where(function ($q) {
+                        $q->where('contacts.is_imported', false)
+                          ->orWhereNull('contacts.is_imported');
+                    });
+                }
             }
         }
 
@@ -188,12 +193,36 @@ class ContactController extends Controller
             }
         }
 
-        // Date Range Calendar filter on contacts.created_at
-        if ($request->filled('date_from')) {
-            $query->whereDate('contacts.created_at', '>=', $request->date_from);
-        }
-        if ($request->filled('date_to')) {
-            $query->whereDate('contacts.created_at', '<=', $request->date_to);
+        // Date Range Calendar filter: matches contacts created in range OR with activity / touchpoint in range
+        if ($request->filled('date_from') || $request->filled('date_to')) {
+            $dateFrom = $request->date_from;
+            $dateTo = $request->date_to ?: $dateFrom;
+
+            $query->where(function ($dateSubQuery) use ($dateFrom, $dateTo) {
+                // 1. Contact was created in range
+                $dateSubQuery->where(function ($cq) use ($dateFrom, $dateTo) {
+                    if ($dateFrom) $cq->whereDate('contacts.created_at', '>=', $dateFrom);
+                    if ($dateTo) $cq->whereDate('contacts.created_at', '<=', $dateTo);
+                });
+
+                // 2. OR Contact had last_activity_at in range
+                $dateSubQuery->orWhere(function ($lq) use ($dateFrom, $dateTo) {
+                    if ($dateFrom) $lq->whereDate('contacts.last_activity_at', '>=', $dateFrom);
+                    if ($dateTo) $lq->whereDate('contacts.last_activity_at', '<=', $dateTo);
+                });
+
+                // 3. OR Contact had call/note/stage activity logged in range
+                $dateSubQuery->orWhereHas('activities', function ($actQ) use ($dateFrom, $dateTo) {
+                    if ($dateFrom) $actQ->whereDate('created_at', '>=', $dateFrom);
+                    if ($dateTo) $actQ->whereDate('created_at', '<=', $dateTo);
+                });
+
+                // 4. OR Associated Opportunity had activity logged in range
+                $dateSubQuery->orWhereHas('opportunities.activities', function ($actQ) use ($dateFrom, $dateTo) {
+                    if ($dateFrom) $actQ->whereDate('created_at', '>=', $dateFrom);
+                    if ($dateTo) $actQ->whereDate('created_at', '<=', $dateTo);
+                });
+            });
         }
 
         if ($request->has('source') && !empty($request->source) && $request->source !== 'all') {
@@ -690,6 +719,38 @@ class ContactController extends Controller
             }
         }
 
+        // Apply Date Range Calendar filter to baseCountQuery so tab badges match active date filter
+        if ($request->filled('date_from') || $request->filled('date_to')) {
+            $dateFrom = $request->date_from;
+            $dateTo = $request->date_to ?: $dateFrom;
+
+            $baseCountQuery->where(function ($dateSubQuery) use ($dateFrom, $dateTo) {
+                // 1. Contact was created in range
+                $dateSubQuery->where(function ($cq) use ($dateFrom, $dateTo) {
+                    if ($dateFrom) $cq->whereDate('contacts.created_at', '>=', $dateFrom);
+                    if ($dateTo) $cq->whereDate('contacts.created_at', '<=', $dateTo);
+                });
+
+                // 2. OR Contact had last_activity_at in range
+                $dateSubQuery->orWhere(function ($lq) use ($dateFrom, $dateTo) {
+                    if ($dateFrom) $lq->whereDate('contacts.last_activity_at', '>=', $dateFrom);
+                    if ($dateTo) $lq->whereDate('contacts.last_activity_at', '<=', $dateTo);
+                });
+
+                // 3. OR Contact had call/note/stage activity logged in range
+                $dateSubQuery->orWhereHas('activities', function ($actQ) use ($dateFrom, $dateTo) {
+                    if ($dateFrom) $actQ->whereDate('created_at', '>=', $dateFrom);
+                    if ($dateTo) $actQ->whereDate('created_at', '<=', $dateTo);
+                });
+
+                // 4. OR Associated Opportunity had activity logged in range
+                $dateSubQuery->orWhereHas('opportunities.activities', function ($actQ) use ($dateFrom, $dateTo) {
+                    if ($dateFrom) $actQ->whereDate('created_at', '>=', $dateFrom);
+                    if ($dateTo) $actQ->whereDate('created_at', '<=', $dateTo);
+                });
+            });
+        }
+
         $unassignedCount = (clone $baseCountQuery)->where(function($q) {
             $q->where(function($sub) {
                 $sub->whereNull('assigned_to')
@@ -836,8 +897,11 @@ class ContactController extends Controller
         }
         $deletedCount = $deletedQuery->count();
 
+        $hasDateFilter = $request->filled('date_from') || $request->filled('date_to');
+        $hasAdvisorFilter = $request->filled('assigned_owner') && $request->assigned_owner !== 'all';
+
         $tabCounts = [
-            'all' => $isLeadsDesk
+            'all' => ($isLeadsDesk && !$hasDateFilter && !$hasAdvisorFilter)
                 ? (clone $baseCountQuery)->where(function ($q) {
                     $q->where('is_imported', false)
                       ->orWhereNull('is_imported');

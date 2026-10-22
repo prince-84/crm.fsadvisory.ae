@@ -306,6 +306,8 @@ export default function LeadPoolPage() {
   // Compact Daily Calling Summary Tracker State (Today's Progress)
   const [callingStats, setCallingStats] = useState({
     calls_made: 0,
+    leads_called: 0,
+    total_assigned: 0,
     connected_calls: 0,
     connection_rate: 0,
     total_minutes: 0,
@@ -323,6 +325,8 @@ export default function LeadPoolPage() {
       if (res && res.success) {
         setCallingStats({
           calls_made: res.calls_made || 0,
+          leads_called: res.leads_called || 0,
+          total_assigned: res.total_assigned || 0,
           connected_calls: res.connected_calls || 0,
           connection_rate: res.connection_rate || 0,
           total_minutes: res.total_minutes || 0,
@@ -2112,8 +2116,13 @@ export default function LeadPoolPage() {
                   </div>
                   <div>
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Calls Made</span>
-                    <div className="font-extrabold text-[#081428] text-xs">
-                      {callingStats.calls_made} <span className="font-normal text-[10px] text-slate-400">today</span>
+                    <div className="font-extrabold text-[#081428] text-xs flex items-center gap-1">
+                      <span>{callingStats.calls_made} <span className="font-normal text-[10px] text-slate-400">today</span></span>
+                      {callingStats.leads_called ? (
+                        <span className="text-[10px] text-blue-600 font-bold bg-blue-50 px-1 py-0.2 rounded border border-blue-200">
+                          {callingStats.leads_called} leads
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -2156,6 +2165,9 @@ export default function LeadPoolPage() {
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Remaining</span>
                     <div className="font-extrabold text-[#081428] text-xs">
                       {callingStats.remaining_leads} <span className="font-normal text-[10px] text-slate-400">leads</span>
+                      {callingStats.total_assigned ? (
+                        <span className="text-[10px] text-slate-400 font-normal ml-1">/ {callingStats.total_assigned}</span>
+                      ) : null}
                     </div>
                   </div>
                 </div>

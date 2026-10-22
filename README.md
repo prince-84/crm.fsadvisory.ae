@@ -2723,6 +2723,30 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Resolved a bug where picking "Today", "This Week", or "This Month" did not filter individual leaderboard rows in `/reports/analytics`.
     - Applied `$startDate` and `$endDate` timestamps universally across activities, recordings, opportunities, and appointments.
 
+- **206 — Smart Activity-Aware Date Range Filtering & Call Outreach Visibility (`ContactController.php`)**:
+  - **Context & Issue**:
+    - When managers or agents filtered leads by date (e.g. clicking `Today` or picking a calendar range) on the Leads Desk (`/`), the query strictly filtered by `contacts.created_at`.
+    - When advisors (e.g. Telesales Agent Hiba alam) worked through assigned batch leads from the Lead Pool (imported on earlier dates) and made 100+ outreach calls in a day, applying the "Today" date filter yielded `"No contacts found in ALL view"` because none of those contacts were *created* on that day.
+  - **Smart Date Range Filter Enhancement**:
+    - Upgraded `ContactController@index` date filtering (`date_from` / `date_to`) from a rigid creation-date-only check to a multi-criteria touchpoint evaluator.
+    - A contact now matches the date range filter if:
+      1. Contact was created within the range (`contacts.created_at`), OR
+      2. Contact's last activity timestamp occurred within the range (`contacts.last_activity_at`), OR
+      3. Contact has logged activities (calls, notes, WhatsApp logs) within the range (`activities.created_at`), OR
+      4. Associated opportunity has logged activities within the range (`opportunities.activities.created_at`).
+  - **Leads Desk Tabs & Pool Leads Alignment**:
+    - Leads Desk (`/`) preserves clean segregation between inbound live portal leads (`All Leads` tab, `is_imported = 0`) and unassigned cold pool leads (`Lead Pool` tab, `is_imported = 1`).
+    - Resolved the table discrepancy where applying the `Today` date filter or selecting an advisor showed `Calls Made: 122 today` in the top bar but only 5 inbound leads in the table: updated `tab === 'all'` and `$tabCounts['all']` so that when a Date Range filter or an individual Advisor is selected, all assigned leads worked on and called during that timeframe are fully included in the table. Unassigned cold archive leads remain exclusively inside the Lead Pool tab.
+
+- **207 — Tab Badge Count Synchronization & Today's Progress Cards Metric Alignment (`ContactController.php`, `ActivityController.php`, `page.tsx`)**:
+  - **Tab Badge Date Filter Synchronization**:
+    - Previously, `$baseCountQuery` in `ContactController@index` omitted the `date_from` / `date_to` calendar filter. When filtering by "Today", while the table displayed the 111 active/contacted leads, the top tab badges continued displaying the all-time assigned total (`1,505`).
+    - Synchronized `$baseCountQuery` with the active date filter so tab badges (`All Leads (111)`) dynamically match the exact count of records shown in the table.
+  - **Today's Progress Cards Metric Alignment**:
+    - Enhanced `ActivityController@callingSummary` to return `leads_called` (count of unique contacts phoned today) and `total_assigned` leads alongside `calls_made` (total call attempts).
+    - Calculated `remaining_leads` with mathematical consistency: $\text{Total Assigned} - \text{Leads Called Today}$ ($1,505 - 111 = 1,394$).
+    - Updated Leads Desk Progress Ribbon (`page.tsx`) to display `Calls Made: 122 today (111 leads)` and `Remaining: 1,394 leads / 1,505`, giving managers and advisors 100% transparent parity between top metrics, tab counters, and table rows.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

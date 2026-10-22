@@ -346,41 +346,34 @@ class ActivityController extends Controller
         $mins = $totalMinutes % 60;
         $talkTimeFormatted = $hours > 0 ? "{$hours}h {$mins}m" : "{$mins}m";
 
-        // Remaining Leads: Active assigned leads needing outreach that have NOT been called today
-        // (Uncontacted leads awaiting first outreach + Scheduled follow-ups due today or overdue)
-        $remainingQuery = Contact::where('state', '!=', 'duplicate')
+        $uniqueLeadsCalled = (clone $callsQuery)->pluck('contact_id')->filter()->unique()->count();
+
+        // Total Assigned Leads for this advisor / team
+        $totalAssignedQuery = Contact::where('state', '!=', 'duplicate')
             ->where(function($q) {
                 $q->whereNull('state')
                   ->orWhereNotIn('state', ['deleted', 'archived']);
             });
 
         if ($user && $user !== 'all' && $user !== 'unassigned') {
-            $remainingQuery->where('assigned_to', $user);
+            $totalAssignedQuery->where('assigned_to', $user);
+        } else {
+            $totalAssignedQuery->whereNotNull('assigned_to')
+                ->where('assigned_to', '!=', '')
+                ->where('assigned_to', '!=', 'Unassigned');
         }
+        $totalAssignedCount = $totalAssignedQuery->count();
 
-        // Must not have been called today
-        $remainingQuery->whereDoesntHave('activities', function ($q) use ($today) {
-            $q->where('type', 'call')->whereDate('created_at', $today);
-        });
-
-        // Must be either:
-        // 1. Never contacted yet (Uncontacted leads in queue)
-        // 2. Scheduled follow-up due today or overdue
-        $remainingCount = (clone $remainingQuery)->where(function ($q) {
-            $q->whereDoesntHave('activities', function ($actQ) {
-                $actQ->where('type', 'call');
-            })
-            ->orWhere(function ($subQ) {
-                $subQ->whereNotNull('next_action_due_at')
-                     ->where('next_action_due_at', '<=', Carbon::now()->endOfDay());
-            });
-        })->count();
+        // Remaining uncalled leads = Total assigned leads minus leads already called today
+        $remainingCount = max(0, $totalAssignedCount - $uniqueLeadsCalled);
 
         $connectionRate = $totalCalls > 0 ? (int) round(($connectedCalls / $totalCalls) * 100) : 0;
 
         return response()->json([
             'success' => true,
             'calls_made' => $totalCalls,
+            'leads_called' => $uniqueLeadsCalled,
+            'total_assigned' => $totalAssignedCount,
             'connected_calls' => $connectedCalls,
             'connection_rate' => $connectionRate,
             'total_minutes' => $totalMinutes,
