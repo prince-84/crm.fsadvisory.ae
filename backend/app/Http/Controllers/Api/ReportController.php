@@ -233,15 +233,21 @@ class ReportController extends Controller
             $leaderboard[] = $this->calculateAdvisorRow($u, $startDate, $endDate);
         }
 
-        // Sort descending by Closed Won Volume, then Opportunities, then Calls
+        // Sort descending by Closed Won AED, then Pipeline AED, then Opportunities, then Calls, then Assigned Leads
         usort($leaderboard, function ($a, $b) {
             if ($b['closed_won_aed'] !== $a['closed_won_aed']) {
                 return $b['closed_won_aed'] <=> $a['closed_won_aed'];
             }
+            if ($b['pipeline_aed'] !== $a['pipeline_aed']) {
+                return $b['pipeline_aed'] <=> $a['pipeline_aed'];
+            }
             if ($b['opportunities_count'] !== $a['opportunities_count']) {
                 return $b['opportunities_count'] <=> $a['opportunities_count'];
             }
-            return $b['calls_made'] <=> $a['calls_made'];
+            if ($b['calls_made'] !== $a['calls_made']) {
+                return $b['calls_made'] <=> $a['calls_made'];
+            }
+            return $b['assigned_leads'] <=> $a['assigned_leads'];
         });
 
         foreach ($leaderboard as $idx => &$item) {
@@ -365,68 +371,114 @@ class ReportController extends Controller
             $apptsQuery->whereBetween('created_at', [$startDate, $endDate]);
         }
 
-        // 4. Real Database Lead Metrics
-        $totalContactsInDb = Contact::count();
-        $filteredContactsCount = (clone $contactsQuery)->count();
-        $assignedIds = (clone $contactsQuery)->pluck('id');
-
-        // Contacted vs Uncontacted (Remaining) Leads
-        if ($isAll) {
-            $contactedLeadsQuery = Activity::where('type', 'call');
-            if ($startDate && $endDate) {
-                $contactedLeadsQuery->whereBetween('created_at', [$startDate, $endDate]);
-            }
-            $contactedLeadsCount = $contactedLeadsQuery->distinct('contact_id')->count('contact_id');
-        } else {
-            $actContactedQuery = Activity::whereIn('contact_id', $assignedIds)
-                ->whereIn('user_name', $selectedAliases)
-                ->where('type', 'call');
-            $recContactedQuery = CallRecording::whereIn('contact_id', $assignedIds)
-                ->where(function ($q) use ($selectedAliases) {
-                    foreach ($selectedAliases as $a) $q->orWhere('agent_name', 'like', "%{$a}%");
-                });
-            if ($startDate && $endDate) {
-                $actContactedQuery->whereBetween('created_at', [$startDate, $endDate]);
-                $recContactedQuery->whereBetween('created_at', [$startDate, $endDate]);
-            }
-            $cIds1 = $actContactedQuery->pluck('contact_id')->toArray();
-            $cIds2 = $recContactedQuery->pluck('contact_id')->toArray();
-            $contactedLeadsCount = count(array_unique(array_merge($cIds1, $cIds2)));
+        // 4. Calculate Full Team Leaderboard directly from active users
+        $leaderboard = [];
+        foreach ($allActiveUsers as $u) {
+            $leaderboard[] = $this->calculateAdvisorRow($u, $startDate, $endDate);
         }
 
-        $uncontactedLeadsCount = max(0, $filteredContactsCount - $contactedLeadsCount);
-        $contactedRate = $filteredContactsCount > 0 ? round(($contactedLeadsCount / $filteredContactsCount) * 100, 1) : 0.0;
-        $newLeadsCount = $uncontactedLeadsCount;
+        // Sort descending by Closed Won AED, then Pipeline AED, then Opportunities, then Calls, then Assigned Leads
+        usort($leaderboard, function ($a, $b) {
+            if ($b['closed_won_aed'] !== $a['closed_won_aed']) {
+                return $b['closed_won_aed'] <=> $a['closed_won_aed'];
+            }
+            if ($b['pipeline_aed'] !== $a['pipeline_aed']) {
+                return $b['pipeline_aed'] <=> $a['pipeline_aed'];
+            }
+            if ($b['opportunities_count'] !== $a['opportunities_count']) {
+                return $b['opportunities_count'] <=> $a['opportunities_count'];
+            }
+            if ($b['calls_made'] !== $a['calls_made']) {
+                return $b['calls_made'] <=> $a['calls_made'];
+            }
+            return $b['assigned_leads'] <=> $a['assigned_leads'];
+        });
 
-        // 5. Real Telephony & Calling Activity Stats (strictly de-duplicated)
+        foreach ($leaderboard as $idx => &$item) {
+            $item['rank'] = $idx + 1;
+        }
+        unset($item);
+
+        // 5. Selected Agent Dossier / Profile
+        $selectedAgentProfile = null;
+        if (!$isAll) {
+            foreach ($leaderboard as $row) {
+                if (in_array($row['name'], $selectedAliases)) {
+                    $selectedAgentProfile = $row;
+                    break;
+                }
+            }
+            if (!$selectedAgentProfile) {
+                $uObj = User::where(function ($q) use ($selectedAliases) {
+                    $q->whereIn('name', $selectedAliases);
+                })->first();
+                if ($uObj) {
+                    $selectedAgentProfile = $this->calculateAdvisorRow($uObj, $startDate, $endDate);
+                }
+            }
+        }
+
+        // 6. Harmonized Executive KPI Cards (100% Consistent with Leaderboard Table)
+        $totalContactsInDb = Contact::count();
+
+        if ($isAll) {
+            $filteredContactsCount = array_sum(array_column($leaderboard, 'assigned_leads'));
+            $contactedLeadsCount = array_sum(array_column($leaderboard, 'contacted_leads'));
+            $uncontactedLeadsCount = array_sum(array_column($leaderboard, 'uncontacted_leads'));
+            $contactedRate = $filteredContactsCount > 0 ? round(($contactedLeadsCount / $filteredContactsCount) * 100, 1) : 0.0;
+            $newLeadsCount = $uncontactedLeadsCount;
+
+            $totalCallsLogged = array_sum(array_column($leaderboard, 'calls_made'));
+            $connectedCalls = array_sum(array_column($leaderboard, 'connected_calls'));
+            $connectedRate = $totalCallsLogged > 0 ? round(($connectedCalls / $totalCallsLogged) * 100, 1) : 0.0;
+
+            $totalTalkSeconds = array_sum(array_column($leaderboard, 'total_talk_time_seconds'));
+            $avgTalkSeconds = $connectedCalls > 0 ? round($totalTalkSeconds / $connectedCalls) : 0;
+
+            $totalAppointments = array_sum(array_column($leaderboard, 'appointments'));
+            $totalOpportunities = array_sum(array_column($leaderboard, 'opportunities_count'));
+            $closedDeals = array_sum(array_column($leaderboard, 'closed_won_count'));
+
+            $totalPipelineAed = (float) array_sum(array_column($leaderboard, 'pipeline_aed'));
+            $totalClosedWonAed = (float) array_sum(array_column($leaderboard, 'closed_won_aed'));
+            $avgDealSizeAed = $closedDeals > 0 ? round($totalClosedWonAed / $closedDeals) : 0;
+
+            $overdueCount = (clone $oppsQuery)->where('sla_status', 'overdue')->count();
+            $slaComplianceRate = $totalOpportunities > 0
+                ? round((($totalOpportunities - $overdueCount) / $totalOpportunities) * 100, 1)
+                : 100.0;
+
+            $conversionRate = $filteredContactsCount > 0 
+                ? round(($totalOpportunities / $filteredContactsCount) * 100, 1) 
+                : 0.0;
+        } else {
+            $filteredContactsCount = $selectedAgentProfile['assigned_leads'] ?? 0;
+            $contactedLeadsCount = $selectedAgentProfile['contacted_leads'] ?? 0;
+            $uncontactedLeadsCount = $selectedAgentProfile['uncontacted_leads'] ?? 0;
+            $contactedRate = $filteredContactsCount > 0 ? round(($contactedLeadsCount / $filteredContactsCount) * 100, 1) : 0.0;
+            $newLeadsCount = $uncontactedLeadsCount;
+
+            $totalCallsLogged = $selectedAgentProfile['calls_made'] ?? 0;
+            $connectedCalls = $selectedAgentProfile['connected_calls'] ?? 0;
+            $connectedRate = $selectedAgentProfile['connected_rate'] ?? 0.0;
+
+            $totalTalkSeconds = $selectedAgentProfile['total_talk_time_seconds'] ?? 0;
+            $avgTalkSeconds = $connectedCalls > 0 ? round($totalTalkSeconds / $connectedCalls) : 0;
+
+            $totalAppointments = $selectedAgentProfile['appointments'] ?? 0;
+            $totalOpportunities = $selectedAgentProfile['opportunities_count'] ?? 0;
+            $closedDeals = $selectedAgentProfile['closed_won_count'] ?? 0;
+
+            $totalPipelineAed = (float) ($selectedAgentProfile['pipeline_aed'] ?? 0);
+            $totalClosedWonAed = (float) ($selectedAgentProfile['closed_won_aed'] ?? 0);
+            $avgDealSizeAed = $closedDeals > 0 ? round($totalClosedWonAed / $closedDeals) : 0;
+
+            $slaComplianceRate = $selectedAgentProfile['sla_compliance'] ?? 100.0;
+            $conversionRate = $selectedAgentProfile['conversion_rate'] ?? 0.0;
+        }
+
+        // Call Activities Query for Outcomes Breakdown
         $callActivitiesQuery = (clone $activitiesQuery)->where('type', 'call');
-        $activityCallsCount = (clone $callActivitiesQuery)->count();
-        $unlinkedRecordingsQuery = (clone $callRecordingsQuery)->whereNull('contact_id');
-        $unlinkedCallsCount = (clone $unlinkedRecordingsQuery)->count();
-        $totalCallsLogged = $activityCallsCount + $unlinkedCallsCount;
-
-        // Connected Calls & Talk Time
-        $connectedOutcomes = ['Interested', 'Interested - Schedule Viewing', 'Callback', 'Follow-up', 'Meeting Scheduled', 'Answered', 'Connected', 'Contacted'];
-        $connectedActivities = (clone $callActivitiesQuery)
-            ->where(function ($q) use ($connectedOutcomes) {
-                $q->whereIn('call_outcome', $connectedOutcomes)
-                  ->orWhere('duration_seconds', '>', 0);
-            })->count();
-        $connectedRecordings = (clone $unlinkedRecordingsQuery)
-            ->where(function ($q) {
-                $q->where('call_status', 'answered')
-                  ->orWhere('duration_seconds', '>', 0);
-            })->count();
-        $connectedCalls = $connectedActivities + $connectedRecordings;
-        $connectedRate = $totalCallsLogged > 0 ? round(($connectedCalls / $totalCallsLogged) * 100, 1) : 0.0;
-
-        $recordingsTalkSeconds = (int) (clone $callRecordingsQuery)->sum('duration_seconds');
-        $manualActivityTalkSecs = (int) (clone $callActivitiesQuery)
-            ->where('description', 'not like', '%3CX Recorded Call%')
-            ->where('duration_seconds', '>', 0)
-            ->sum('duration_seconds');
-        $totalTalkSeconds = $recordingsTalkSeconds + $manualActivityTalkSecs;
-        $avgTalkSeconds = $connectedCalls > 0 ? round($totalTalkSeconds / $connectedCalls) : 0;
 
         // Call Outcomes Distribution Breakdown
         $allCallOutcomes = (clone $callActivitiesQuery)
@@ -452,8 +504,7 @@ class ReportController extends Controller
         }
         usort($formattedCallOutcomes, fn($a, $b) => $b['count'] <=> $a['count']);
 
-        // 6. Appointments Breakdown
-        $totalAppointments = (clone $apptsQuery)->count();
+        // Appointments Breakdown
         $scheduledAppointments = (clone $apptsQuery)->where('status', 'scheduled')->count();
         $completedAppointments = (clone $apptsQuery)->where('status', 'completed')->count();
         $cancelledAppointments = (clone $apptsQuery)->where('status', 'cancelled')->count();
@@ -464,26 +515,9 @@ class ReportController extends Controller
             ->limit(8)
             ->get(['id', 'title', 'category', 'appointment_date', 'start_time', 'client_name', 'client_phone', 'agent_name', 'location', 'status', 'priority']);
 
-        // 7. Opportunities & Financials
-        $totalOpportunities = (clone $oppsQuery)->count();
+        // Opportunities Stages
         $qualifiedOpportunities = (clone $oppsQuery)->whereIn('stage', ['qualified', 'qualification'])->count();
         $activeOpportunities = (clone $oppsQuery)->whereNotIn('stage', ['closed', 'closed_won', 'closed_lost'])->count();
-        $closedDeals = (clone $oppsQuery)->whereIn('stage', ['closed', 'closed_won'])->count();
-
-        $totalPipelineAed = (float) (clone $oppsQuery)->whereNotIn('stage', ['closed_lost'])->sum('budget_max');
-        $totalClosedWonAed = (float) (clone $oppsQuery)->whereIn('stage', ['closed', 'closed_won'])->sum('budget_max');
-        $avgDealSizeAed = $closedDeals > 0 ? round($totalClosedWonAed / $closedDeals) : 0;
-
-        // SLA Compliance
-        $overdueCount = (clone $oppsQuery)->where('sla_status', 'overdue')->count();
-        $slaComplianceRate = $totalOpportunities > 0
-            ? round((($totalOpportunities - $overdueCount) / $totalOpportunities) * 100, 1)
-            : 100.0;
-
-        // Conversion Rate
-        $conversionRate = $filteredContactsCount > 0 
-            ? round(($totalOpportunities / $filteredContactsCount) * 100, 1) 
-            : 0.0;
 
         // 8. Real Stage Breakdown directly from DB
         $stageBreakdown = [
@@ -626,46 +660,7 @@ class ReportController extends Controller
                 ];
             });
 
-        // 11. Full Team Comparison Leaderboard directly from DB
-        $leaderboard = [];
-        foreach ($allActiveUsers as $u) {
-            $leaderboard[] = $this->calculateAdvisorRow($u, $startDate, $endDate);
-        }
-
-        usort($leaderboard, function ($a, $b) {
-            if ($b['closed_won_aed'] !== $a['closed_won_aed']) {
-                return $b['closed_won_aed'] <=> $a['closed_won_aed'];
-            }
-            if ($b['opportunities_count'] !== $a['opportunities_count']) {
-                return $b['opportunities_count'] <=> $a['opportunities_count'];
-            }
-            return $b['calls_made'] <=> $a['calls_made'];
-        });
-
-        foreach ($leaderboard as $idx => &$item) {
-            $item['rank'] = $idx + 1;
-        }
-
-        // 12. Selected Agent Dossier / Profile
-        $selectedAgentProfile = null;
-        if (!$isAll) {
-            foreach ($leaderboard as $row) {
-                if (in_array($row['name'], $selectedAliases)) {
-                    $selectedAgentProfile = $row;
-                    break;
-                }
-            }
-            if (!$selectedAgentProfile) {
-                $uObj = User::where(function ($q) use ($selectedAliases) {
-                    $q->whereIn('name', $selectedAliases);
-                })->first();
-                if ($uObj) {
-                    $selectedAgentProfile = $this->calculateAdvisorRow($uObj, $startDate, $endDate);
-                }
-            }
-        }
-
-        // 13. Property Units from DB
+        // 11. Property Units from DB
         $totalListedUnits = OwnerRecord::count();
         $availableUnits = OwnerRecord::where('status', 'available')->count();
         $rentedUnits = OwnerRecord::where('status', 'rented')->count();

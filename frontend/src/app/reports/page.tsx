@@ -376,10 +376,10 @@ export default function ReportsPage() {
                 </div>
                 <div className="flex items-center justify-between text-[11px] font-semibold mt-1">
                   <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    {metrics.contacted_leads} Contacted ({metrics.contacted_rate}%)
+                    {Number(metrics.contacted_leads || 0).toLocaleString()} Contacted ({metrics.contacted_rate}%)
                   </span>
                   <span className="text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    {metrics.uncontacted_leads} Remaining
+                    {Number(metrics.uncontacted_leads || 0).toLocaleString()} Remaining
                   </span>
                 </div>
               </div>
@@ -395,11 +395,11 @@ export default function ReportsPage() {
               </div>
               <div className="mt-2">
                 <div className="font-heading font-bold text-2xl text-[#081428]">
-                  {metrics.total_calls.toLocaleString()} Calls
+                  {Number(metrics.total_calls || 0).toLocaleString()} Calls
                 </div>
                 <div className="flex items-center justify-between text-[11px] font-semibold mt-1">
                   <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    {metrics.connected_calls} Connected ({metrics.connected_rate}%)
+                    {Number(metrics.connected_calls || 0).toLocaleString()} Connected ({metrics.connected_rate}%)
                   </span>
                   <span className="text-slate-700 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 flex items-center gap-1">
                     <Clock className="w-3 h-3 text-[#C8A147]" />
@@ -596,24 +596,24 @@ export default function ReportsPage() {
                                   {adv.role}
                                 </span>
                               </td>
-                              <td className="py-3 px-3 text-center font-bold text-[#081428]">
-                                {adv.assigned_leads}
+                              <td className="py-3 px-3 text-center font-bold text-[#081428] align-middle">
+                                {Number(adv.assigned_leads || 0).toLocaleString()}
                               </td>
-                              <td className="py-3 px-3 text-center">
+                              <td className="py-3 px-3 text-center align-middle">
                                 <div className="inline-flex items-center gap-1 text-[11px] font-semibold">
                                   <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                    {adv.contacted_leads}
+                                    {Number(adv.contacted_leads || 0).toLocaleString()}
                                   </span>
                                   <span className="text-slate-400">/</span>
                                   <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                    {adv.uncontacted_leads}
+                                    {Number(adv.uncontacted_leads || 0).toLocaleString()}
                                   </span>
                                 </div>
                               </td>
-                              <td className="py-3 px-3 text-center font-bold text-slate-800">
-                                {adv.calls_made}
+                              <td className="py-3 px-3 text-center font-bold text-slate-800 align-middle">
+                                {Number(adv.calls_made || 0).toLocaleString()}
                               </td>
-                              <td className="py-3 px-3 text-center">
+                              <td className="py-3 px-3 text-center align-middle">
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                                   adv.connected_rate >= 50
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -622,24 +622,24 @@ export default function ReportsPage() {
                                   {adv.connected_rate}%
                                 </span>
                               </td>
-                              <td className="py-3 px-3 text-center font-semibold text-slate-700 whitespace-nowrap">
+                              <td className="py-3 px-3 text-center font-semibold text-slate-700 whitespace-nowrap align-middle">
                                 {adv.talk_time_formatted}
                               </td>
-                              <td className="py-3 px-3 text-center font-semibold text-[#081428]">
+                              <td className="py-3 px-3 text-center font-semibold text-[#081428] align-middle">
                                 {adv.appointments}
                               </td>
-                              <td className="py-3 px-3 text-center">
+                              <td className="py-3 px-3 text-center align-middle">
                                 <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
                                   {adv.closed_won_count}
                                 </span>
                               </td>
-                              <td className="py-3 px-4 text-right font-bold text-emerald-700 whitespace-nowrap">
-                                AED {adv.closed_won_aed.toLocaleString()}
+                              <td className="py-3 px-4 text-right font-bold text-emerald-700 whitespace-nowrap align-middle">
+                                AED {Number(adv.closed_won_aed || 0).toLocaleString()}
                               </td>
-                              <td className="py-3 px-4 text-right font-semibold text-blue-700 whitespace-nowrap">
-                                AED {adv.pipeline_aed.toLocaleString()}
+                              <td className="py-3 px-4 text-right font-semibold text-blue-700 whitespace-nowrap align-middle">
+                                AED {Number(adv.pipeline_aed || 0).toLocaleString()}
                               </td>
-                              <td className="py-3 px-3 text-center">
+                              <td className="py-3 px-3 text-center align-middle">
                                 <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] border ${
                                   adv.sla_compliance >= 90
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -648,7 +648,7 @@ export default function ReportsPage() {
                                   {adv.sla_compliance}%
                                 </span>
                               </td>
-                              <td className="py-3 px-3 text-center">
+                              <td className="py-3 px-3 text-center align-middle">
                                 <button
                                   onClick={() => setSelectedAgent(adv.name)}
                                   className="px-2.5 py-1 bg-[#081428] hover:bg-[#081428]/80 text-[#C8A147] rounded text-[11px] font-semibold transition-all cursor-pointer shadow-2xs whitespace-nowrap"
@@ -660,6 +660,62 @@ export default function ReportsPage() {
                           ))
                         )}
                       </tbody>
+                      {agentLeaderboard.length > 0 && (
+                        <tfoot className="bg-[#F4EFE6]/80 border-t-2 border-[#C8A147]/50 font-bold text-[#081428]">
+                          <tr>
+                            <td className="py-3 px-3 text-center text-[#C8A147]">Σ</td>
+                            <td className="py-3 px-4">
+                              <span className="font-bold text-[#081428]">Team Total ({agentLeaderboard.length} Advisors)</span>
+                            </td>
+                            <td className="py-3 px-3 text-slate-500 font-semibold text-[11px]">Summary</td>
+                            <td className="py-3 px-3 text-center font-bold text-[#081428]">
+                              {Number(metrics.total_leads || 0).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <div className="inline-flex items-center gap-1 text-[11px] font-bold">
+                                <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-300">
+                                  {Number(metrics.contacted_leads || 0).toLocaleString()}
+                                </span>
+                                <span className="text-slate-400">/</span>
+                                <span className="text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-300">
+                                  {Number(metrics.uncontacted_leads || 0).toLocaleString()}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 text-center font-bold text-[#081428]">
+                              {Number(metrics.total_calls || 0).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                                {metrics.connected_rate}%
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center font-bold text-[#081428] whitespace-nowrap">
+                              {metrics.talk_time_formatted}
+                            </td>
+                            <td className="py-3 px-3 text-center font-bold text-[#081428]">
+                              {metrics.total_appointments}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                                {metrics.closed_deals}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-emerald-800 whitespace-nowrap">
+                              AED {Number(metrics.total_closed_won_aed || 0).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-4 text-right font-bold text-blue-800 whitespace-nowrap">
+                              AED {Number(metrics.total_pipeline_aed || 0).toLocaleString()}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                {metrics.sla_compliance_rate}%
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center text-slate-400">—</td>
+                          </tr>
+                        </tfoot>
+                      )}
                     </table>
                   </div>
                 </div>

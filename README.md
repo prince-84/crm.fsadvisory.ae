@@ -2759,6 +2759,19 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Advisor Scoping Integrity (`GET /api/activities/calling-summary`)**:
     - `fetchCallingStats` exclusively responds to changes in the active advisor / team selector (`selectedOwner`), ensuring that switching between agents (e.g. Hiba alam, Rayyan, Team) immediately loads that specific advisor's today's calling performance without being affected by table filters.
 
+- **209 — Reports & Analytics Page KPI Cards & Leaderboard Total Data Harmonization (`ReportController.php`, `reports/page.tsx`)**:
+  - **100% Mathematical Consistency Between Cards & Leaderboard**:
+    - **Problem Solved**: Previously, the top 4 executive KPI cards ran unconstrained global database queries (e.g. counting every historical call activity ever logged, returning 6,627 contacted leads / 96% contacted rate / 273 remaining), which conflicted directly with the Leaderboard table rows where agents' contacted leads totaled 3,651 and remaining leads totaled 3,015.
+    - **Harmonized Aggregation**: Updated [`ReportController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ReportController.php) (`analytics` and `teamPerformance` methods) to calculate the full active advisor leaderboard first, and then dynamically derive all top executive KPI metrics directly from the exact mathematical sum of the active advisor rows when `All Advisors` is selected, or from the selected agent's profile when a specific advisor is chosen.
+    - **Card 1 (Assigned Leads & Outreach)**: Total assigned leads (sum of active advisors: 6,666 leads), Contacted leads (3,651 contacted, 54.8%), and Remaining leads (3,015 remaining). Matches the table sums precisely under all time ranges (`All Time`, `Today`, `This Week`, `This Month`, `This Quarter`, `YTD`).
+    - **Card 2 (Telephony & Call Output)**: Total calls made (8,334 calls), Connected calls (6,613 connected, 79.3%), and authentic total talk time (e.g. 92h 29m).
+    - **Card 3 (Closed Revenue & Pipeline)**: Closed won volume (AED 0 won deals) and active sales pipeline volume (AED 11,780,000), matching the sum of each advisor's active deals.
+    - **Card 4 (SLA Compliance & Meetings)**: Real-time on-time SLA compliance rate, viewings booked, and deal conversion rate.
+  - **Leaderboard UX & Presentation Polish (`reports/page.tsx`)**:
+    - **Sticky Team Total Footer (`tfoot`)**: Added a high-visibility summary footer row at the base of the Advisor Leaderboard table displaying total assigned leads, contacted/remaining counts, calls made, connected rate, talk time, viewings, deals won, pipeline AED, and SLA %, allowing instant visual reconciliation with the top executive cards.
+    - **Number Formatting**: Formatted all numeric counts across both KPI cards and the Leaderboard with `toLocaleString()` for professional comma separation.
+    - **Sorting Optimization**: Enhanced leaderboard sorting to prioritize Closed Won AED, then Active Pipeline AED, then Opportunities count, Calls made, and Assigned Leads.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
