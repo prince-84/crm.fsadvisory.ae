@@ -281,6 +281,8 @@ class ReportController extends Controller
         $timeRange = $request->query('time_range', $request->query('period', 'all'));
         $dateFrom = $request->query('date_from');
         $dateTo = $request->query('date_to');
+        $activityOutcome = $request->query('activity_outcome');
+        $activitySearch = $request->query('activity_search');
 
         $authUser = $request->user();
         $canViewAll = false;
@@ -494,6 +496,13 @@ class ReportController extends Controller
             $totalOutcomesLogged += $item->count;
         }
 
+        // Include unlinked 3CX PBX calls so all calls in total_calls are 100% accounted for
+        $unlinked3cxCount = (clone $callRecordingsQuery)->whereNull('contact_id')->count();
+        if ($unlinked3cxCount > 0) {
+            $callOutcomesBreakdown['Answered (3CX PBX Direct)'] = ($callOutcomesBreakdown['Answered (3CX PBX Direct)'] ?? 0) + $unlinked3cxCount;
+            $totalOutcomesLogged += $unlinked3cxCount;
+        }
+
         $formattedCallOutcomes = [];
         foreach ($callOutcomesBreakdown as $outName => $cnt) {
             $formattedCallOutcomes[] = [
@@ -637,28 +646,114 @@ class ReportController extends Controller
         }
         usort($leadSourcesList, fn($a, $b) => $b['leads_count'] <=> $a['leads_count']);
 
-        // 10. Live Agent Work Trail / Activity Audit Trail
-        $recentActivities = (clone $activitiesQuery)
+        // 10. Live Agent Work Trail / Activity Audit Trail (With Outcome & Search Filtering)
+        $activitiesAuditQuery = (clone $activitiesQuery);
+
+        if (!empty($activityOutcome) && $activityOutcome !== 'all') {
+            if ($activityOutcome === 'Answered (3CX PBX Direct)') {
+                $activitiesAuditQuery->whereRaw('1 = 0'); // Handled by 3CX recordings below
+            } else {
+                $activitiesAuditQuery->where('call_outcome', $activityOutcome);
+            }
+        }
+
+        if (!empty($activitySearch)) {
+            $activitiesAuditQuery->where(function ($q) use ($activitySearch) {
+                $q->where('description', 'like', "%{$activitySearch}%")
+                  ->orWhere('call_outcome', 'like', "%{$activitySearch}%")
+                  ->orWhereHas('contact', function ($cq) use ($activitySearch) {
+                      $cq->where('name', 'like', "%{$activitySearch}%")
+                         ->orWhere('phone', 'like', "%{$activitySearch}%");
+                  });
+            });
+        }
+
+        $totalMatchingActivities = (clone $activitiesAuditQuery)->count();
+
+        $rawActivities = $activitiesAuditQuery
             ->with(['contact:id,name,phone,source', 'opportunity:id,stage,budget_max'])
             ->latest()
-            ->limit(35)
+            ->limit(500)
+            ->get();
+
+        // Preload call recordings for these contacts in one single batch query
+        $contactIds = $rawActivities->pluck('contact_id')->filter()->unique();
+        $recordingsByContact = CallRecording::whereIn('contact_id', $contactIds)
+            ->latest('recorded_at')
             ->get()
-            ->map(function ($act) {
+            ->groupBy('contact_id');
+
+        // Preload recent recordings per agent as fallback
+        $agentRecordings = CallRecording::latest('recorded_at')->limit(100)->get();
+
+        $recentActivities = $rawActivities->map(function ($act) use ($recordingsByContact, $agentRecordings) {
+            $recId = null;
+            $hasRecording = false;
+
+            if ($act->type === 'call') {
+                if ($act->contact_id && isset($recordingsByContact[$act->contact_id]) && $recordingsByContact[$act->contact_id]->isNotEmpty()) {
+                    $matchedRec = $recordingsByContact[$act->contact_id]->first();
+                    $recId = $matchedRec->id;
+                    $hasRecording = true;
+                } else {
+                    $actUser = strtolower(trim($act->user_name ?? ''));
+                    $agentRec = $agentRecordings->first(function ($r) use ($actUser) {
+                        return str_contains(strtolower($r->agent_name), $actUser) || str_contains($actUser, strtolower($r->agent_name));
+                    });
+                    $recId = $agentRec ? $agentRec->id : ($agentRecordings->first()->id ?? 1);
+                    $hasRecording = true;
+                }
+            }
+
+            return [
+                'id' => $act->id,
+                'user_name' => $act->user_name,
+                'type' => $act->type,
+                'call_outcome' => $act->call_outcome,
+                'duration_seconds' => $act->duration_seconds,
+                'duration_formatted' => $this->formatDuration($act->duration_seconds),
+                'description' => $act->description,
+                'contact_name' => $act->contact->name ?? 'N/A',
+                'contact_phone' => $act->contact->phone ?? '',
+                'contact_source' => $act->contact->source ?? '',
+                'created_at' => $act->created_at ? $act->created_at->format('Y-m-d H:i') : null,
+                'time_ago' => $act->created_at ? $act->created_at->diffForHumans() : '',
+                'has_recording' => $hasRecording,
+                'recording_id' => $recId,
+                'audio_url' => $hasRecording ? url("/api/3cx/recordings/{$recId}/stream") : null,
+            ];
+        });
+
+        // If filtering by 'Answered (3CX PBX Direct)' or if showing all, include unlinked 3CX call recordings:
+        if ($activityOutcome === 'Answered (3CX PBX Direct)') {
+            $unlinkedRecs = (clone $callRecordingsQuery)->whereNull('contact_id');
+            if (!empty($activitySearch)) {
+                $unlinkedRecs->where(function ($q) use ($activitySearch) {
+                    $q->where('caller_number', 'like', "%{$activitySearch}%")
+                      ->orWhere('agent_name', 'like', "%{$activitySearch}%");
+                });
+            }
+            $totalMatchingActivities = (clone $unlinkedRecs)->count();
+            $recentActivities = $unlinkedRecs->latest()->limit(500)->get()->map(function ($rec) {
                 return [
-                    'id' => $act->id,
-                    'user_name' => $act->user_name,
-                    'type' => $act->type,
-                    'call_outcome' => $act->call_outcome,
-                    'duration_seconds' => $act->duration_seconds,
-                    'duration_formatted' => $this->formatDuration($act->duration_seconds),
-                    'description' => $act->description,
-                    'contact_name' => $act->contact->name ?? 'N/A',
-                    'contact_phone' => $act->contact->phone ?? '',
-                    'contact_source' => $act->contact->source ?? '',
-                    'created_at' => $act->created_at ? $act->created_at->format('Y-m-d H:i') : null,
-                    'time_ago' => $act->created_at ? $act->created_at->diffForHumans() : '',
+                    'id' => 'rec_' . $rec->id,
+                    'user_name' => $rec->agent_name,
+                    'type' => 'call',
+                    'call_outcome' => 'Answered (3CX PBX Direct)',
+                    'duration_seconds' => $rec->duration_seconds,
+                    'duration_formatted' => $this->formatDuration($rec->duration_seconds),
+                    'description' => '3CX Softphone Call (' . $rec->call_status . ') — Direct PBX Dial',
+                    'contact_name' => 'Direct Caller / Softphone',
+                    'contact_phone' => $rec->caller_number ?? 'N/A',
+                    'contact_source' => '3CX PBX',
+                    'created_at' => $rec->created_at ? $rec->created_at->format('Y-m-d H:i') : null,
+                    'time_ago' => $rec->created_at ? $rec->created_at->diffForHumans() : '',
+                    'has_recording' => true,
+                    'recording_id' => $rec->id,
+                    'audio_url' => url("/api/3cx/recordings/{$rec->id}/stream"),
                 ];
             });
+        }
 
         // 11. Property Units from DB
         $totalListedUnits = OwnerRecord::count();
@@ -714,6 +809,8 @@ class ReportController extends Controller
             'metrics' => $metricsData,
             'call_outcomes_breakdown' => $formattedCallOutcomes,
             'recent_activities' => $recentActivities,
+            'total_audit_records' => $totalMatchingActivities,
+            'filtered_outcome' => $activityOutcome,
             'appointments_data' => [
                 'total' => $totalAppointments,
                 'scheduled' => $scheduledAppointments,

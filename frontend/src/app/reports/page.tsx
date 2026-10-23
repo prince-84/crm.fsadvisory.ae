@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, API_BASE_URL } from '@/lib/api';
 import Swal from 'sweetalert2';
 import { hasAnyPermission, getCurrentUser, isSuperUser, hasPermission } from '@/lib/permissions';
 import AccessDenied from '@/components/AccessDenied';
@@ -39,7 +39,11 @@ import {
   HelpCircle,
   PhoneForwarded,
   MessageSquare,
-  CalendarCheck
+  CalendarCheck,
+  Play,
+  Pause,
+  Volume2,
+  X
 } from 'lucide-react';
 
 export default function ReportsPage() {
@@ -63,9 +67,46 @@ export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<'agent_work' | 'overview' | 'sources' | 'properties' | 'telephony'>('agent_work');
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [timeRange, setTimeRange] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month' | 'quarter' | 'ytd'>('all');
+  const [selectedOutcome, setSelectedOutcome] = useState<string>('all');
+  const [activitySearch, setActivitySearch] = useState<string>('');
+  const [activityPage, setActivityPage] = useState<number>(1);
+  const activitiesPerPage = 25;
   const [agentSearch, setAgentSearch] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [canViewAllAdvisors, setCanViewAllAdvisors] = useState<boolean>(true);
+
+  // Audio Playback State for Call Audit Trail
+  const [currentlyPlayingCall, setCurrentlyPlayingCall] = useState<any | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
+  const audioPlayerRef = React.useRef<HTMLAudioElement | null>(null);
+
+  const togglePlayCall = (act: any) => {
+    if (!act.has_recording && !act.recording_id && act.type !== 'call') return;
+
+    if (currentlyPlayingCall?.id === act.id) {
+      if (isPlayingAudio) {
+        audioPlayerRef.current?.pause();
+        setIsPlayingAudio(false);
+      } else {
+        audioPlayerRef.current?.play().then(() => setIsPlayingAudio(true)).catch(() => {});
+      }
+      return;
+    }
+
+    const streamUrl = act.audio_url || `${API_BASE_URL}/3cx/recordings/${act.recording_id || act.id}/stream`;
+    setCurrentlyPlayingCall(act);
+    setIsPlayingAudio(true);
+
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.src = streamUrl;
+      audioPlayerRef.current.play().then(() => {
+        setIsPlayingAudio(true);
+      }).catch((err) => {
+        console.warn("Audio play prevented or error:", err);
+        setIsPlayingAudio(false);
+      });
+    }
+  };
 
   useEffect(() => {
     const user = getCurrentUser();
@@ -82,7 +123,12 @@ export default function ReportsPage() {
     }
   }, []);
 
-  const loadReportData = async (agent = selectedAgent, range = timeRange) => {
+  const loadReportData = async (
+    agent = selectedAgent,
+    range = timeRange,
+    outcome = selectedOutcome,
+    search = activitySearch
+  ) => {
     setLoading(true);
     try {
       const queryParams = new URLSearchParams();
@@ -93,6 +139,12 @@ export default function ReportsPage() {
       }
       if (range) {
         queryParams.set('time_range', range);
+      }
+      if (outcome && outcome !== 'all') {
+        queryParams.set('activity_outcome', outcome);
+      }
+      if (search && search.trim()) {
+        queryParams.set('activity_search', search.trim());
       }
       const qs = queryParams.toString() ? `?${queryParams.toString()}` : '';
       const res = await fetchApi(`/reports/analytics${qs}`);
@@ -107,8 +159,8 @@ export default function ReportsPage() {
   };
 
   useEffect(() => {
-    loadReportData(selectedAgent, timeRange);
-  }, [selectedAgent, timeRange, canViewAllAdvisors]);
+    loadReportData(selectedAgent, timeRange, selectedOutcome, activitySearch);
+  }, [selectedAgent, timeRange, selectedOutcome, canViewAllAdvisors]);
 
   // Real Database Metrics from API
   const metrics = data?.metrics || {
@@ -829,29 +881,46 @@ export default function ReportsPage() {
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {callOutcomes.map((item: any, idx: number) => {
-                          const isPositive = ['Interested', 'Interested - Schedule Viewing', 'Callback', 'Follow-up', 'Meeting Scheduled'].includes(item.outcome);
+                          const isPositive = ['Interested', 'Interested - Schedule Viewing', 'Callback', 'Follow-up', 'Meeting Scheduled', 'Answered (3CX PBX Direct)'].includes(item.outcome);
                           const isNeutral = ['No Answer', 'No Answer / Left Voicemail', 'Busy'].includes(item.outcome);
+                          const isSelected = selectedOutcome === item.outcome;
                           return (
-                            <div
+                            <button
                               key={idx}
-                              className={`p-3 rounded-lg border text-center transition-all ${
-                                isPositive
-                                  ? 'bg-emerald-50/50 border-emerald-200'
+                              type="button"
+                              onClick={() => {
+                                const next = isSelected ? 'all' : item.outcome;
+                                setSelectedOutcome(next);
+                                setActivityPage(1);
+                                loadReportData(selectedAgent, timeRange, next, activitySearch);
+                              }}
+                              className={`p-3 rounded-lg border text-center transition-all cursor-pointer relative group text-left w-full ${
+                                isSelected
+                                  ? 'bg-amber-50 border-[#C8A147] ring-2 ring-[#C8A147]/50 shadow-sm'
+                                  : isPositive
+                                  ? 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50'
                                   : isNeutral
-                                  ? 'bg-slate-50 border-slate-200'
-                                  : 'bg-amber-50/50 border-amber-200'
+                                  ? 'bg-slate-50 border-slate-200 hover:border-slate-400 hover:bg-slate-100'
+                                  : 'bg-amber-50/50 border-amber-200 hover:border-amber-400 hover:bg-amber-50'
                               }`}
+                              title={`Click to view all ${item.count} "${item.outcome}" calls in the table below`}
                             >
-                              <div className="text-[11px] font-semibold text-slate-600 truncate" title={item.outcome}>
-                                {item.outcome}
+                              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+                                <span className="truncate">{item.outcome}</span>
+                                {isSelected && (
+                                  <span className="w-2 h-2 rounded-full bg-[#C8A147] shrink-0" />
+                                )}
                               </div>
                               <div className="font-heading font-bold text-xl text-[#081428] mt-1">
-                                {item.count}
+                                {Number(item.count || 0).toLocaleString()}
                               </div>
-                              <div className="text-[10px] font-bold text-slate-500 mt-0.5">
-                                {item.percentage}%
+                              <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 mt-0.5">
+                                <span>{item.percentage}%</span>
+                                <span className={`text-[9px] ${isSelected ? 'text-[#C8A147] font-extrabold' : 'text-slate-400 group-hover:text-slate-700'}`}>
+                                  {isSelected ? '✓ Active' : 'Filter ↓'}
+                                </span>
                               </div>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>
@@ -860,19 +929,77 @@ export default function ReportsPage() {
 
                   {/* Live Activity & Work Audit Trail */}
                   <div className="bg-white rounded-xl border border-[#E8E4DC] shadow-2xs overflow-hidden">
-                    <div className="p-4 border-b border-[#E8E4DC] flex items-center justify-between">
+                    <div className="p-4 border-b border-[#E8E4DC] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
-                        <h4 className="font-heading font-bold text-sm text-[#081428] flex items-center gap-2">
+                        <h4 className="font-heading font-bold text-sm text-[#081428] flex items-center gap-2 flex-wrap">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>Live Work Audit Trail: Recent Actions by {selectedAgent}</span>
+                          <span>
+                            Live Work Audit Trail: {selectedOutcome !== 'all' ? `All '${selectedOutcome}' Records` : 'All Action Logs'} by {selectedAgent}
+                          </span>
+                          {selectedOutcome !== 'all' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold border border-amber-300">
+                              <span>Filtering: {selectedOutcome}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedOutcome('all');
+                                  setActivityPage(1);
+                                  loadReportData(selectedAgent, timeRange, 'all', activitySearch);
+                                }}
+                                className="hover:text-red-700 ml-1 font-bold cursor-pointer"
+                                title="Clear outcome filter"
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          )}
                         </h4>
                         <p className="text-[11px] text-slate-500">
-                          Chronological audit log of actual calls, remarks, WhatsApp messages, and status updates submitted.
+                          {selectedOutcome !== 'all'
+                            ? `Displaying all ${recentActivities.length} individual '${selectedOutcome}' phone call logs with real contact names, phones, durations, and discussion notes.`
+                            : 'Chronological audit log of actual calls, remarks, WhatsApp messages, and status updates submitted.'}
                         </p>
                       </div>
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                        {recentActivities.length} Recent Actions
-                      </span>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Search Input within Audit Trail */}
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            placeholder="Search client, phone, note..."
+                            value={activitySearch}
+                            onChange={(e) => {
+                              setActivitySearch(e.target.value);
+                              setActivityPage(1);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                loadReportData(selectedAgent, timeRange, selectedOutcome, activitySearch);
+                              }
+                            }}
+                            className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-[#E8E4DC] rounded-lg focus:outline-none focus:border-[#C8A147] w-56"
+                          />
+                        </div>
+
+                        {selectedOutcome !== 'all' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedOutcome('all');
+                              setActivityPage(1);
+                              loadReportData(selectedAgent, timeRange, 'all', activitySearch);
+                            }}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                          >
+                            Show All Outcomes
+                          </button>
+                        )}
+
+                        <span className="text-xs font-bold px-2.5 py-1 rounded bg-[#081428] text-[#C8A147]">
+                          {recentActivities.length} Records
+                        </span>
+                      </div>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -884,68 +1011,143 @@ export default function ReportsPage() {
                             <th className="py-2.5 px-3">Outcome</th>
                             <th className="py-2.5 px-4">Client Name & Phone</th>
                             <th className="py-2.5 px-3 text-center">Duration</th>
+                            <th className="py-2.5 px-3 text-center">Recording</th>
                             <th className="py-2.5 px-5">Agent Remarks / Call Notes</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#E8E4DC]">
                           {recentActivities.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="py-8 text-center text-slate-400">
-                                No recent activity logged by this advisor in the database.
+                              <td colSpan={7} className="py-8 text-center text-slate-400">
+                                {selectedOutcome !== 'all'
+                                  ? `No '${selectedOutcome}' activity records found for ${selectedAgent} in the selected time period.`
+                                  : 'No recent activity logged by this advisor in the database.'}
                               </td>
                             </tr>
                           ) : (
-                            recentActivities.map((act: any) => (
-                              <tr key={act.id} className="hover:bg-[#FAF8F5] transition-colors">
-                                <td className="py-3 px-4 whitespace-nowrap">
-                                  <div className="font-bold text-[#081428]">{act.created_at}</div>
-                                  <div className="text-[10px] text-slate-400">{act.time_ago}</div>
-                                </td>
-                                <td className="py-3 px-3 whitespace-nowrap">
-                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold text-[10px] border ${
-                                    act.type === 'call'
-                                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                      : act.type === 'whatsapp'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                      : 'bg-slate-100 text-slate-700 border-slate-200'
-                                  }`}>
-                                    {act.type === 'call' ? <PhoneCall className="w-3 h-3" /> : <MessageSquare className="w-3 h-3" />}
-                                    <span className="capitalize">{act.type}</span>
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3 whitespace-nowrap">
-                                  {act.call_outcome ? (
-                                    <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] border ${
-                                      ['Interested', 'Interested - Schedule Viewing', 'Callback', 'Follow-up'].includes(act.call_outcome)
+                            recentActivities
+                              .slice((activityPage - 1) * activitiesPerPage, activityPage * activitiesPerPage)
+                              .map((act: any) => (
+                                <tr key={act.id} className="hover:bg-[#FAF8F5] transition-colors">
+                                  <td className="py-3 px-4 whitespace-nowrap align-top">
+                                    <div className="font-bold text-[#081428]">{act.created_at}</div>
+                                    <div className="text-[10px] text-slate-400">{act.time_ago}</div>
+                                  </td>
+                                  <td className="py-3 px-3 whitespace-nowrap align-top">
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold text-[10px] border ${
+                                      act.type === 'call'
+                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                        : act.type === 'whatsapp'
                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                        : ['No Answer', 'Busy'].includes(act.call_outcome)
-                                        ? 'bg-slate-100 text-slate-600 border-slate-200'
-                                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                                        : 'bg-slate-100 text-slate-700 border-slate-200'
                                     }`}>
-                                      {act.call_outcome}
+                                      {act.type === 'call' ? <PhoneCall className="w-3 h-3" /> : <MessageSquare className="w-3 h-3" />}
+                                      <span className="capitalize">{act.type}</span>
                                     </span>
-                                  ) : (
-                                    <span className="text-slate-400 text-[11px]">—</span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-4">
-                                  <div className="font-bold text-[#081428]">{act.contact_name}</div>
-                                  <div className="text-[11px] text-slate-500 font-mono">{act.contact_phone}</div>
-                                </td>
-                                <td className="py-3 px-3 text-center font-mono text-slate-600 whitespace-nowrap">
-                                  {act.duration_formatted}
-                                </td>
-                                <td className="py-3 px-5 text-slate-700 max-w-md">
-                                  <div className="text-xs leading-relaxed font-normal">
-                                    {act.description || '—'}
-                                  </div>
-                                </td>
-                              </tr>
-                            ))
+                                  </td>
+                                  <td className="py-3 px-3 whitespace-nowrap align-top">
+                                    {act.call_outcome ? (
+                                      <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] border ${
+                                        ['Interested', 'Interested - Schedule Viewing', 'Callback', 'Follow-up'].includes(act.call_outcome)
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                          : ['No Answer', 'Busy'].includes(act.call_outcome)
+                                          ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                          : act.call_outcome === 'Wrong Number'
+                                          ? 'bg-red-50 text-red-700 border-red-200 font-extrabold'
+                                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                                      }`}>
+                                        {act.call_outcome}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 text-[11px]">—</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 align-top">
+                                    <div className="font-bold text-[#081428]">{act.contact_name}</div>
+                                    <div className="text-[11px] text-slate-500 font-mono">{act.contact_phone}</div>
+                                    {act.contact_source && (
+                                      <div className="text-[10px] text-slate-400 mt-0.5">{act.contact_source}</div>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-3 text-center font-mono text-slate-600 whitespace-nowrap align-top">
+                                    {act.duration_formatted}
+                                  </td>
+                                  <td className="py-3 px-3 text-center whitespace-nowrap align-middle">
+                                    {act.type === 'call' && (act.has_recording || act.recording_id) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => togglePlayCall(act)}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                                          currentlyPlayingCall?.id === act.id && isPlayingAudio
+                                            ? 'bg-emerald-600 text-white ring-2 ring-emerald-300'
+                                            : 'bg-white hover:bg-amber-50 text-slate-800 border border-[#E8E4DC] hover:border-[#C8A147]'
+                                        }`}
+                                        title={currentlyPlayingCall?.id === act.id && isPlayingAudio ? "Pause Recording" : "Listen to Call Recording"}
+                                      >
+                                        {currentlyPlayingCall?.id === act.id && isPlayingAudio ? (
+                                          <>
+                                            <Pause className="w-3 h-3 fill-white" />
+                                            <span className="text-[11px]">Playing</span>
+                                            <span className="flex items-center gap-0.5 ml-0.5">
+                                              <span className="w-1 h-2.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                              <span className="w-1 h-3.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                              <span className="w-1 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Play className="w-3 h-3 text-[#C8A147] fill-[#C8A147]" />
+                                            <span className="text-[11px] text-slate-700">Listen Call</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    ) : (
+                                      <span className="text-slate-300 text-xs">—</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-5 text-slate-700 max-w-md align-top">
+                                    <div className="text-xs leading-relaxed font-normal bg-slate-50/70 p-2 rounded border border-slate-100">
+                                      {act.description || '—'}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
                           )}
                         </tbody>
                       </table>
                     </div>
+
+                    {/* Pagination Controls */}
+                    {recentActivities.length > activitiesPerPage && (
+                      <div className="p-3 border-t border-[#E8E4DC] flex items-center justify-between text-xs text-slate-600 bg-[#FAF8F5]">
+                        <div>
+                          Showing <span className="font-bold text-[#081428]">{(activityPage - 1) * activitiesPerPage + 1}</span> to{' '}
+                          <span className="font-bold text-[#081428]">{Math.min(activityPage * activitiesPerPage, recentActivities.length)}</span> of{' '}
+                          <span className="font-bold text-[#081428]">{recentActivities.length}</span> records
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={activityPage === 1}
+                            onClick={() => setActivityPage((p) => Math.max(1, p - 1))}
+                            className="px-2.5 py-1 rounded border border-[#E8E4DC] bg-white text-slate-700 disabled:opacity-40 hover:border-[#C8A147] cursor-pointer font-semibold shadow-2xs"
+                          >
+                            ← Previous
+                          </button>
+                          <span className="font-bold px-2 text-[#081428]">
+                            Page {activityPage} of {Math.ceil(recentActivities.length / activitiesPerPage)}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={activityPage >= Math.ceil(recentActivities.length / activitiesPerPage)}
+                            onClick={() => setActivityPage((p) => Math.min(Math.ceil(recentActivities.length / activitiesPerPage), p + 1))}
+                            className="px-2.5 py-1 rounded border border-[#E8E4DC] bg-white text-slate-700 disabled:opacity-40 hover:border-[#C8A147] cursor-pointer font-semibold shadow-2xs"
+                          >
+                            Next →
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1148,6 +1350,60 @@ export default function ReportsPage() {
             </div>
           )}
         </main>
+
+        {/* Global Floating Audio Player Dock for Live Work Audit Trail */}
+        {currentlyPlayingCall && (
+          <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-3xl bg-[#081428]/95 backdrop-blur-md border border-[#C8A147]/50 rounded-2xl shadow-2xl p-3 text-white flex items-center justify-between gap-4 animate-in fade-in slide-in-from-bottom duration-300">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-[#C8A147]/20 border border-[#C8A147]/40 flex items-center justify-center shrink-0">
+                <Volume2 className="w-5 h-5 text-[#C8A147] animate-pulse" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-white truncate">
+                    {currentlyPlayingCall.contact_name}
+                  </span>
+                  <span className="text-[10px] text-slate-300 font-mono">
+                    {currentlyPlayingCall.contact_phone}
+                  </span>
+                  {currentlyPlayingCall.call_outcome && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase bg-amber-400/20 text-[#C8A147] border border-[#C8A147]/30">
+                      {currentlyPlayingCall.call_outcome}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-400 truncate">
+                  Advisor: <strong className="text-white">{currentlyPlayingCall.user_name}</strong> • {currentlyPlayingCall.created_at} ({currentlyPlayingCall.duration_formatted})
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <audio
+                ref={audioPlayerRef}
+                controls
+                autoPlay
+                src={currentlyPlayingCall.audio_url || `${API_BASE_URL}/3cx/recordings/${currentlyPlayingCall.recording_id || currentlyPlayingCall.id}/stream`}
+                onPlay={() => setIsPlayingAudio(true)}
+                onPause={() => setIsPlayingAudio(false)}
+                onEnded={() => setIsPlayingAudio(false)}
+                className="h-8 max-w-[260px] sm:max-w-[320px] rounded-lg"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  audioPlayerRef.current?.pause();
+                  setIsPlayingAudio(false);
+                  setCurrentlyPlayingCall(null);
+                }}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                title="Close Audio Player"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

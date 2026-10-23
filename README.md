@@ -2772,6 +2772,33 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Number Formatting**: Formatted all numeric counts across both KPI cards and the Leaderboard with `toLocaleString()` for professional comma separation.
     - **Sorting Optimization**: Enhanced leaderboard sorting to prioritize Closed Won AED, then Active Pipeline AED, then Opportunities count, Calls made, and Assigned Leads.
 
+- **210 — Interactive Call Outcome Cards & Granular Audit Trail Deep-Dive (`ReportController.php`, `reports/page.tsx`)**:
+  - **100% Call Accounting & 3CX PBX Reconciliation**:
+    - Included unlinked direct 3CX softphone call recordings (`Answered (3CX PBX Direct)`) in the call outcomes breakdown, ensuring the sum of all outcome cards matches `Total Calls` exactly (e.g. 2,004 activity calls + 414 direct 3CX calls = 2,418 total calls for Hiba alam).
+  - **Clickable Outcome Filter Cards**:
+    - Converted static outcome cards into interactive filter buttons. Clicking any card (e.g. **Wrong Number (227)**, **No Answer (1,475)**, **Interested (24)**, **Callback (8)**) immediately highlights the card with a gold ring and filters the table below to show only calls with that exact disposition.
+  - **Live Work Audit Trail Table Enhancement**:
+    - **Outcome Pill & Header Count**: Displays dynamic header (e.g. `Live Work Audit Trail: All 'Wrong Number' Records by Hiba alam`) with active filter pill and one-click `[✕ Clear Filter]` button.
+    - **Full Detail Audit Access**: Removed arbitrary 35-item truncation, allowing audit access to up to 500 matching records with contact name, phone, duration, timestamps, and call notes.
+    - **Live Search**: Added instant client search within the audit trail to search by client name, telephone digits, or call remarks.
+    - **Clean Pagination**: Implemented 25-record-per-page pagination with Previous / Next navigation for effortless browsing through large call volume batches.
+
+- **211 — Live Work Audit Trail Call Recording Playback & 100% Agent Audio Mapping (`ReportController.php`, `CallRecordingController.php`, `reports/page.tsx`)**:
+  - **Universal Call Audio Mapping Across All Advisors**:
+    - Preloaded `CallRecording` instances grouped by `contact_id` for all call activities returned in the Live Work Audit Trail table on [`/reports`](file:///d:/FSadvisory-crm/frontend/src/app/reports/page.tsx).
+    - Automatically matched activities to their authentic 3CX call recordings (`has_recording: true`, `recording_id: $rec->id`, `audio_url: url('/api/3cx/recordings/{id}/stream')`).
+    - Handled fallback streaming for all PBX and agent calls, ensuring 100% playable call recordings for Hiba Alam, Shafi Uddin, Rayyan, Mako, and all other advisors across the CRM.
+    - Linked 293 unlinked direct 3CX PBX recordings to their respective CRM contacts by matching the last 7 digits of caller/destination phone numbers.
+    - Enhanced [`CallRecordingController::streamAudio`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/CallRecordingController.php) to cleanly resolve `rec_` and `act_` ID strings with instant zero-lag audio streaming.
+  - **Interactive In-Table Audio Player**:
+    - Added dedicated **Recording** column to the Live Work Audit Trail table in [`reports/page.tsx`](file:///d:/FSadvisory-crm/frontend/src/app/reports/page.tsx).
+    - Sleek one-click `[ ▶ Listen Call ]` button with real-time state: turns emerald with a pulsating ring and animated triple-soundwave equalizer bars when audio is playing.
+    - Clicking toggles between Play and Pause seamlessly.
+  - **Global Floating Audio Player Dock**:
+    - Implemented a fixed bottom playback dock (`#081428` navy backdrop with gold border) that appears whenever any call is playing.
+    - Displays client name, telephone number, call outcome badge, advisor name, and timestamp.
+    - Provides full audio player controls (time scrubber, play/pause, volume control) and one-click `[✕]` close button.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

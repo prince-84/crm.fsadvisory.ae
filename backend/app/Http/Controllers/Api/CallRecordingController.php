@@ -705,7 +705,18 @@ class CallRecordingController extends Controller
      */
     public function streamAudio($id)
     {
-        $recording = CallRecording::find($id);
+        $cleanId = $id;
+        if (is_string($id) && str_starts_with($id, 'rec_')) {
+            $cleanId = substr($id, 4);
+        }
+        $recording = is_numeric($cleanId) ? CallRecording::find((int)$cleanId) : null;
+        if (!$recording && is_string($id) && str_starts_with($id, 'act_')) {
+            $actId = (int) substr($id, 4);
+            $act = \App\Models\Activity::find($actId);
+            if ($act && $act->contact_id) {
+                $recording = CallRecording::where('contact_id', $act->contact_id)->latest('recorded_at')->first();
+            }
+        }
 
         $filePath = null;
 
