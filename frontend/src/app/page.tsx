@@ -351,16 +351,8 @@ export default function LeadPoolPage() {
   const fetchCallingStats = useCallback(async () => {
     setLoadingCallingStats(true);
     try {
-      const ownerParam = selectedOwner && selectedOwner !== 'auto' ? selectedOwner : '';
-      const params = new URLSearchParams();
-      if (ownerParam) params.append('user_name', ownerParam);
-      if (dateRange.from) params.append('date_from', dateRange.from);
-      if (dateRange.to) params.append('date_to', dateRange.to);
-      if (dateRange.preset) params.append('preset', dateRange.preset);
-      if (selectedLeadType && selectedLeadType !== 'all') params.append('lead_type', selectedLeadType);
-      if (selectedCallOutcome && selectedCallOutcome !== 'all') params.append('call_outcome', selectedCallOutcome);
-
-      const queryStr = params.toString() ? `?${params.toString()}` : '';
+      const ownerParam = selectedOwner && selectedOwner !== 'auto' && selectedOwner !== 'all' ? selectedOwner : '';
+      const queryStr = ownerParam ? `?user_name=${encodeURIComponent(ownerParam)}` : '';
       const res = await fetchApi(`/activities/calling-summary${queryStr}`);
       if (res && res.success) {
         setCallingStats({
@@ -379,7 +371,7 @@ export default function LeadPoolPage() {
     } finally {
       setLoadingCallingStats(false);
     }
-  }, [selectedOwner, dateRange, selectedLeadType, selectedCallOutcome]);
+  }, [selectedOwner]);
 
   useEffect(() => {
     fetchCallingStats();
@@ -2154,11 +2146,7 @@ export default function LeadPoolPage() {
                   <div>
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Calls Made</span>
                     <div className="font-extrabold text-[#081428] text-xs">
-                      {callingStats.calls_made} {filterDateLabel !== 'All Time' ? (
-                        <span className="font-normal text-[10px] text-slate-400">{filterDateLabel.toLowerCase()}</span>
-                      ) : (
-                        <span className="font-normal text-[10px] text-slate-400">total</span>
-                      )}
+                      {callingStats.calls_made} <span className="font-normal text-[10px] text-slate-400">today</span>
                     </div>
                   </div>
                 </div>
@@ -2172,11 +2160,7 @@ export default function LeadPoolPage() {
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block leading-tight">Contacted</span>
                     <div className="font-extrabold text-[#081428] text-xs flex items-center gap-1.5">
                       <span>{callingStats.leads_called || callingStats.connected_calls || 0}</span>
-                      {filterDateLabel !== 'All Time' ? (
-                        <span className="font-normal text-[10px] text-slate-400">{filterDateLabel.toLowerCase()}</span>
-                      ) : (
-                        <span className="font-normal text-[10px] text-slate-400">total</span>
-                      )}
+                      <span className="font-normal text-[10px] text-slate-400">today</span>
                       {callingStats.connected_calls > 0 ? (
                         <span className="font-bold text-[9px] text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
                           {callingStats.connected_calls} connected
@@ -2216,9 +2200,7 @@ export default function LeadPoolPage() {
               {/* Right: Scope Tag & Quick Refresh */}
               <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="font-bold text-[#081428]">
-                  {filterDateLabel !== 'All Time' ? `${filterDateLabel} Overview` : 'Performance Overview'}
-                </span>
+                <span className="font-bold text-[#081428]">Today's Performance</span>
                 <span className="text-[10px] font-mono text-slate-400">
                   ({selectedOwner === 'all' ? 'Team' : selectedOwner === currentUser?.name ? 'My Calls' : selectedOwner})
                 </span>

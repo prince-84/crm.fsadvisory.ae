@@ -230,53 +230,25 @@ class ActivityController extends Controller
     }
 
     /**
-     * Calling Summary KPI (Calls Made, Connected, Talk Time Minutes, Remaining)
-     * Dynamically filters based on date range, assigned owner, and optional filters.
+     * Today's Calling Performance Summary (Calls Made, Connected, Talk Time Minutes, Remaining)
+     * Strictly locked to today's performance; scoped by advisor or team.
      */
     public function callingSummary(Request $request)
     {
+        $today = Carbon::today();
         $user = $request->query('user_name') ?: $request->query('assigned_owner');
-        $dateFrom = $request->query('date_from');
-        $dateTo = $request->query('date_to') ?: $dateFrom;
-        $preset = $request->query('preset');
-        $leadType = $request->query('lead_type');
-        $callOutcome = $request->query('call_outcome');
 
-        // Determine date bounds
-        $startDate = null;
-        $endDate = null;
-        if (!empty($dateFrom)) {
-            $startDate = Carbon::parse($dateFrom)->startOfDay();
-            $endDate = Carbon::parse($dateTo)->endOfDay();
-        } elseif ($preset === 'today') {
-            $startDate = Carbon::today()->startOfDay();
-            $endDate = Carbon::today()->endOfDay();
-        }
-
-        // Base calls query
-        $callsQuery = Activity::where('type', 'call');
-
-        if ($startDate && $endDate) {
-            $callsQuery->whereBetween('created_at', [$startDate, $endDate]);
-        }
+        // Base calls query strictly for Today
+        $callsQuery = Activity::where('type', 'call')
+            ->whereDate('created_at', $today);
 
         if ($user && $user !== 'all' && $user !== 'unassigned') {
             $callsQuery->where('user_name', $user);
         }
 
-        if ($leadType && $leadType !== 'all') {
-            $callsQuery->whereHas('contact', function ($cq) use ($leadType) {
-                $cq->where('lead_type', $leadType);
-            });
-        }
-
-        if ($callOutcome && $callOutcome !== 'all') {
-            $callsQuery->where('call_outcome', 'like', "%{$callOutcome}%");
-        }
-
         $totalCalls = (clone $callsQuery)->count();
 
-        // Connected calls (Where outcome indicates conversation)
+        // Connected calls today (Where outcome indicates conversation)
         $connectedCalls = (clone $callsQuery)->where(function ($q) {
             $q->where('call_outcome', 'like', '%Interested%')
               ->orWhere('call_outcome', 'like', '%Callback%')
@@ -287,17 +259,13 @@ class ActivityController extends Controller
               ->orWhere('call_outcome', 'like', '%Contacted%');
         })->where('call_outcome', 'not like', '%Not Interested%')->count();
 
-        // 3CX Authentic Talk Time / minutes
+        // 3CX Authentic Talk Time / minutes for today
         $totalDurationSec = 0;
         try {
-            $recordingsQuery = \App\Models\CallRecording::query();
-
-            if ($startDate && $endDate) {
-                $recordingsQuery->where(function ($q) use ($startDate, $endDate) {
-                    $q->whereBetween('recorded_at', [$startDate, $endDate])
-                      ->orWhereBetween('created_at', [$startDate, $endDate]);
-                });
-            }
+            $recordingsQuery = \App\Models\CallRecording::where(function ($q) use ($today) {
+                $q->whereDate('recorded_at', $today)
+                  ->orWhereDate('created_at', $today);
+            });
 
             if ($user && $user !== 'all' && $user !== 'unassigned') {
                 $nameParts = array_filter(explode(' ', trim($user)), fn($p) => strlen($p) >= 3);
@@ -312,7 +280,7 @@ class ActivityController extends Controller
                     }
                 }
 
-                // Also collect contact IDs called by this user in this scope
+                // Also collect contact IDs called by this user today
                 $calledContactIds = (clone $callsQuery)->pluck('contact_id')->filter()->unique()->toArray();
 
                 $recordingsQuery->where(function ($rq) use ($user, $nameParts, $matchingExts, $calledContactIds) {
@@ -396,17 +364,9 @@ class ActivityController extends Controller
                 ->where('assigned_to', '!=', 'Unassigned');
         }
 
-        if ($startDate && $endDate) {
-            $totalAssignedQuery->whereBetween('created_at', [$startDate, $endDate]);
-        }
-
-        if ($leadType && $leadType !== 'all') {
-            $totalAssignedQuery->where('lead_type', $leadType);
-        }
-
         $totalAssignedCount = $totalAssignedQuery->count();
 
-        // Remaining uncalled leads = Total assigned leads minus leads already called in this scope
+        // Remaining uncalled leads = Total assigned leads minus leads already called today
         $remainingCount = max(0, $totalAssignedCount - $uniqueLeadsCalled);
 
         $connectionRate = $totalCalls > 0 ? (int) round(($connectedCalls / $totalCalls) * 100) : 0;
