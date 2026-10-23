@@ -64,7 +64,7 @@ export default function ReportsPage() {
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'agent_work' | 'overview' | 'sources' | 'properties' | 'telephony'>('agent_work');
+  const [activeTab, setActiveTab] = useState<'agent_work' | 'sources'>('agent_work');
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [timeRange, setTimeRange] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month' | 'quarter' | 'ytd'>('all');
   const [selectedOutcome, setSelectedOutcome] = useState<string>('all');
@@ -518,18 +518,6 @@ export default function ReportsPage() {
             </button>
 
             <button
-              onClick={() => setActiveTab('overview')}
-              className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-                activeTab === 'overview'
-                  ? 'bg-[#081428] text-[#C8A147] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-[#081428] hover:bg-slate-50'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>Deal Pipeline & Funnel</span>
-            </button>
-
-            <button
               onClick={() => setActiveTab('sources')}
               className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
                 activeTab === 'sources'
@@ -539,30 +527,6 @@ export default function ReportsPage() {
             >
               <TrendingUp className="w-3.5 h-3.5" />
               <span>Lead Sources & Channels</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('properties')}
-              className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-                activeTab === 'properties'
-                  ? 'bg-[#081428] text-[#C8A147] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-[#081428] hover:bg-slate-50'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Property Portfolio</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('telephony')}
-              className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-                activeTab === 'telephony'
-                  ? 'bg-[#081428] text-[#C8A147] font-bold shadow-2xs'
-                  : 'text-slate-600 hover:text-[#081428] hover:bg-slate-50'
-              }`}
-            >
-              <PhoneCall className="w-3.5 h-3.5" />
-              <span>3CX Telephony & Call Logs</span>
             </button>
           </div>
 
@@ -1154,54 +1118,7 @@ export default function ReportsPage() {
             </div>
           )}
 
-          {/* ================= TAB 2: DEAL PIPELINE & FUNNEL ================= */}
-          {activeTab === 'overview' && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="bg-white rounded-xl border border-[#E8E4DC] p-5 shadow-2xs space-y-4">
-                <div className="flex items-center justify-between border-b border-[#E8E4DC] pb-3">
-                  <div>
-                    <h3 className="font-heading font-bold text-base text-[#081428]">
-                      Stage-by-Stage Deal Pipeline Velocity
-                    </h3>
-                    <p className="text-xs text-[#6E6E6E]">
-                      Live opportunity valuation and stage conversion distribution {selectedAgent !== 'all' ? `for ${selectedAgent}` : 'across the sales desk'}.
-                    </p>
-                  </div>
-                  <div className="text-xs font-bold text-[#081428]">
-                    Total Pipeline: AED {metrics.total_pipeline_aed.toLocaleString()}
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-                  {Object.entries(stageBreakdown).map(([key, st]: [string, any]) => (
-                    <div
-                      key={key}
-                      className="p-4 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg space-y-2 hover:border-[#C8A147] transition-all"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-[#081428]">{st.label}</span>
-                        <span
-                          className="w-2.5 h-2.5 rounded-full"
-                          style={{ backgroundColor: st.color }}
-                        />
-                      </div>
-                      <div className="font-heading font-bold text-xl text-[#081428]">
-                        AED {st.volume_aed.toLocaleString()}
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-[#6E6E6E] pt-1 border-t border-[#E8E4DC]">
-                        <span>{st.count} Active Deals</span>
-                        <span className="font-semibold text-[#081428]">
-                          {metrics.total_pipeline_aed > 0
-                            ? `${Math.round((st.volume_aed / metrics.total_pipeline_aed) * 100)}%`
-                            : '0%'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* ================= TAB 3: LEAD SOURCES & MARKETING ROI ================= */}
           {activeTab === 'sources' && (
@@ -1264,91 +1181,7 @@ export default function ReportsPage() {
             </div>
           )}
 
-          {/* ================= TAB 4: PROPERTY PORTFOLIO & UNITS ================= */}
-          {activeTab === 'properties' && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
-                <div className="p-4 bg-white rounded-xl border border-[#E8E4DC] shadow-2xs">
-                  <span className="text-slate-500 font-semibold">Total Listed Units</span>
-                  <div className="font-heading font-bold text-2xl text-[#081428] mt-1">
-                    {ownerStats.total_units} Units
-                  </div>
-                </div>
 
-                <div className="p-4 bg-white rounded-xl border border-[#E8E4DC] shadow-2xs">
-                  <span className="text-emerald-700 font-semibold">🟢 Available Units</span>
-                  <div className="font-heading font-bold text-2xl text-emerald-700 mt-1">
-                    {ownerStats.available} Available
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white rounded-xl border border-[#E8E4DC] shadow-2xs">
-                  <span className="text-blue-700 font-semibold">🔵 Rented Units</span>
-                  <div className="font-heading font-bold text-2xl text-blue-700 mt-1">
-                    {ownerStats.rented} Rented
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white rounded-xl border border-[#E8E4DC] shadow-2xs">
-                  <span className="text-slate-700 font-semibold">🔴 Sold Units</span>
-                  <div className="font-heading font-bold text-2xl text-slate-800 mt-1">
-                    {ownerStats.sold} Sold
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================= TAB 5: 3CX TELEPHONY & CALL LOGS ================= */}
-          {activeTab === 'telephony' && (
-            <div className="space-y-6 animate-fade-in">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
-                <div className="p-4 bg-white rounded-xl border border-[#E8E4DC] shadow-2xs">
-                  <span className="text-slate-500 font-semibold">Total Telephonic Calls</span>
-                  <div className="font-heading font-bold text-2xl text-[#081428] mt-1">
-                    {metrics.total_calls} Calls
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white rounded-xl border border-[#E8E4DC] shadow-2xs">
-                  <span className="text-emerald-700 font-semibold">Connected / Answered Rate</span>
-                  <div className="font-heading font-bold text-2xl text-emerald-700 mt-1">
-                    {metrics.connected_rate}%
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white rounded-xl border border-[#E8E4DC] shadow-2xs">
-                  <span className="text-blue-700 font-semibold">Total Talk Time</span>
-                  <div className="font-heading font-bold text-2xl text-blue-700 mt-1">
-                    {metrics.talk_time_formatted}
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white rounded-xl border border-[#E8E4DC] shadow-2xs">
-                  <span className="text-amber-700 font-semibold">SLA First-Response</span>
-                  <div className="font-heading font-bold text-2xl text-[#C8A147] mt-1">
-                    {metrics.sla_compliance_rate}%
-                  </div>
-                </div>
-              </div>
-
-              {/* Call Outcomes Breakdown in Telephony tab */}
-              <div className="bg-white rounded-xl border border-[#E8E4DC] p-5 shadow-2xs space-y-4">
-                <h4 className="font-heading font-bold text-sm text-[#081428]">
-                  Outreach Outcome Distribution
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
-                  {callOutcomes.map((item: any, idx: number) => (
-                    <div key={idx} className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg text-center">
-                      <div className="text-[11px] font-semibold text-slate-600 truncate">{item.outcome}</div>
-                      <div className="font-heading font-bold text-xl text-[#081428] mt-1">{item.count}</div>
-                      <div className="text-[10px] text-slate-500 font-bold mt-0.5">{item.percentage}%</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </main>
 
         {/* Global Floating Audio Player Dock for Live Work Audit Trail */}

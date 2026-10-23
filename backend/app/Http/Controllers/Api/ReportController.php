@@ -110,16 +110,12 @@ class ReportController extends Controller
         $assignedContactsCount = $assignedContactsQuery->count();
         $assignedIds = (clone $assignedContactsQuery)->pluck('id');
 
-        // Contacted Leads: strictly counts leads assigned to this advisor that THIS advisor personally contacted
+        // Contacted Leads: matches Leads Desk definition (assigned leads with at least 1 call activity logged)
         $actContactedQuery = Activity::whereIn('contact_id', $assignedIds)
-            ->whereIn('user_name', $aliases)
-            ->where('type', 'call');
-        $recContactedQuery = CallRecording::whereIn('contact_id', $assignedIds)
-            ->where(function ($q) use ($aliases) {
-                foreach ($aliases as $a) {
-                    $q->orWhere('agent_name', 'like', "%{$a}%");
-                }
+            ->where(function ($q) {
+                $q->where('type', 'call')->orWhereNotNull('call_outcome');
             });
+        $recContactedQuery = CallRecording::whereIn('contact_id', $assignedIds);
 
         if ($startDate && $endDate) {
             $actContactedQuery->whereBetween('created_at', [$startDate, $endDate]);
@@ -479,28 +475,61 @@ class ReportController extends Controller
             $conversionRate = $selectedAgentProfile['conversion_rate'] ?? 0.0;
         }
 
-        // Call Activities Query for Outcomes Breakdown
-        $callActivitiesQuery = (clone $activitiesQuery)->where('type', 'call');
-
-        // Call Outcomes Distribution Breakdown
-        $allCallOutcomes = (clone $callActivitiesQuery)
-            ->select('call_outcome', DB::raw('count(*) as count'))
-            ->groupBy('call_outcome')
-            ->get();
-
+        // Call Outcomes Distribution Breakdown (Aligned 1:1 with Leads Desk)
         $callOutcomesBreakdown = [];
         $totalOutcomesLogged = 0;
-        foreach ($allCallOutcomes as $item) {
-            $outcomeName = trim($item->call_outcome ?: 'Not Specified');
-            $callOutcomesBreakdown[$outcomeName] = ($callOutcomesBreakdown[$outcomeName] ?? 0) + $item->count;
-            $totalOutcomesLogged += $item->count;
-        }
 
-        // Include unlinked 3CX PBX calls so all calls in total_calls are 100% accounted for
-        $unlinked3cxCount = (clone $callRecordingsQuery)->whereNull('contact_id')->count();
-        if ($unlinked3cxCount > 0) {
-            $callOutcomesBreakdown['Answered (3CX PBX Direct)'] = ($callOutcomesBreakdown['Answered (3CX PBX Direct)'] ?? 0) + $unlinked3cxCount;
-            $totalOutcomesLogged += $unlinked3cxCount;
+        if (!$isAll) {
+            $targetContactIds = (clone $contactsQuery)->pluck('id');
+            $acts = Activity::whereIn('contact_id', $targetContactIds)
+                ->where(function ($q) {
+                    $q->where('type', 'call')->orWhereNotNull('call_outcome');
+                })
+                ->when($startDate && $endDate, fn($q) => $q->whereBetween('created_at', [$startDate, $endDate]))
+                ->orderByDesc('id')
+                ->get(['id', 'contact_id', 'call_outcome']);
+
+            $latestByContact = [];
+            foreach ($acts as $a) {
+                if (!isset($latestByContact[$a->contact_id])) {
+                    $latestByContact[$a->contact_id] = $a->call_outcome;
+                }
+            }
+
+            foreach ($targetContactIds as $cId) {
+                $rawOut = $latestByContact[$cId] ?? 'Uncontacted';
+                $outName = trim($rawOut ?: 'Uncontacted');
+                $callOutcomesBreakdown[$outName] = ($callOutcomesBreakdown[$outName] ?? 0) + 1;
+                $totalOutcomesLogged++;
+            }
+        } else {
+            $allContactsCount = Contact::count();
+            $acts = Activity::where(function ($q) {
+                    $q->where('type', 'call')->orWhereNotNull('call_outcome');
+                })
+                ->whereNotNull('contact_id')
+                ->when($startDate && $endDate, fn($q) => $q->whereBetween('created_at', [$startDate, $endDate]))
+                ->orderByDesc('id')
+                ->get(['id', 'contact_id', 'call_outcome']);
+
+            $latestByContact = [];
+            foreach ($acts as $a) {
+                if (!isset($latestByContact[$a->contact_id])) {
+                    $latestByContact[$a->contact_id] = $a->call_outcome;
+                }
+            }
+
+            $contactedTotal = 0;
+            foreach ($latestByContact as $cId => $rawOut) {
+                $cleanOut = trim($rawOut ?: 'Not Specified');
+                $callOutcomesBreakdown[$cleanOut] = ($callOutcomesBreakdown[$cleanOut] ?? 0) + 1;
+                $contactedTotal++;
+            }
+            $uncontactedTotal = max(0, $allContactsCount - $contactedTotal);
+            if ($uncontactedTotal > 0) {
+                $callOutcomesBreakdown['Uncontacted'] = ($callOutcomesBreakdown['Uncontacted'] ?? 0) + $uncontactedTotal;
+            }
+            $totalOutcomesLogged = $allContactsCount;
         }
 
         $formattedCallOutcomes = [];
@@ -647,13 +676,50 @@ class ReportController extends Controller
         usort($leadSourcesList, fn($a, $b) => $b['leads_count'] <=> $a['leads_count']);
 
         // 10. Live Agent Work Trail / Activity Audit Trail (With Outcome & Search Filtering)
-        $activitiesAuditQuery = (clone $activitiesQuery);
+        $activitiesAuditQuery = Activity::query();
 
-        if (!empty($activityOutcome) && $activityOutcome !== 'all') {
-            if ($activityOutcome === 'Answered (3CX PBX Direct)') {
-                $activitiesAuditQuery->whereRaw('1 = 0'); // Handled by 3CX recordings below
+        if (!$isAll) {
+            $targetContactIds = (clone $contactsQuery)->pluck('id');
+            if (!empty($activityOutcome) && $activityOutcome !== 'all') {
+                if ($activityOutcome === 'Uncontacted') {
+                    $activitiesAuditQuery->whereRaw('1 = 0');
+                } else {
+                    $acts = Activity::whereIn('contact_id', $targetContactIds)
+                        ->where(function ($q) {
+                            $q->where('type', 'call')->orWhereNotNull('call_outcome');
+                        })
+                        ->orderByDesc('id')
+                        ->get(['id', 'contact_id', 'call_outcome']);
+
+                    $matchingActIds = [];
+                    $seenContact = [];
+                    foreach ($acts as $a) {
+                        if (!isset($seenContact[$a->contact_id])) {
+                            $seenContact[$a->contact_id] = true;
+                            if (strcasecmp($a->call_outcome, $activityOutcome) === 0 || stripos($a->call_outcome, $activityOutcome) !== false) {
+                                $matchingActIds[] = $a->id;
+                            }
+                        }
+                    }
+
+                    $activitiesAuditQuery->whereIn('id', $matchingActIds);
+                }
             } else {
-                $activitiesAuditQuery->where('call_outcome', $activityOutcome);
+                $activitiesAuditQuery->where(function ($q) use ($selectedAliases, $targetContactIds) {
+                    $q->whereIn('user_name', $selectedAliases)
+                      ->orWhereIn('contact_id', $targetContactIds);
+                });
+            }
+        } else {
+            if (!empty($activityOutcome) && $activityOutcome !== 'all') {
+                if ($activityOutcome === 'Uncontacted') {
+                    $activitiesAuditQuery->whereRaw('1 = 0');
+                } else {
+                    $activitiesAuditQuery->where(function ($q) use ($activityOutcome) {
+                        $q->where('call_outcome', $activityOutcome)
+                          ->orWhere('call_outcome', 'like', "%{$activityOutcome}%");
+                    });
+                }
             }
         }
 
@@ -683,10 +749,17 @@ class ReportController extends Controller
             ->get()
             ->groupBy('contact_id');
 
-        // Preload recent recordings per agent as fallback
-        $agentRecordings = CallRecording::latest('recorded_at')->limit(100)->get();
+        // Also build a phone lookup from unlinked recordings for contacts present in this activity batch
+        $phoneCleanToRec = [];
+        $unlinkedRecsForBatch = CallRecording::whereNull('contact_id')->latest('recorded_at')->limit(500)->get();
+        foreach ($unlinkedRecsForBatch as $ur) {
+            $dest = preg_replace('/[^0-9]/', '', $ur->destination_number ?: $ur->caller_number ?: '');
+            if (strlen($dest) >= 7) {
+                $phoneCleanToRec[substr($dest, -7)] = $ur;
+            }
+        }
 
-        $recentActivities = $rawActivities->map(function ($act) use ($recordingsByContact, $agentRecordings) {
+        $recentActivities = $rawActivities->map(function ($act) use ($recordingsByContact, $phoneCleanToRec) {
             $recId = null;
             $hasRecording = false;
 
@@ -695,13 +768,14 @@ class ReportController extends Controller
                     $matchedRec = $recordingsByContact[$act->contact_id]->first();
                     $recId = $matchedRec->id;
                     $hasRecording = true;
-                } else {
-                    $actUser = strtolower(trim($act->user_name ?? ''));
-                    $agentRec = $agentRecordings->first(function ($r) use ($actUser) {
-                        return str_contains(strtolower($r->agent_name), $actUser) || str_contains($actUser, strtolower($r->agent_name));
-                    });
-                    $recId = $agentRec ? $agentRec->id : ($agentRecordings->first()->id ?? 1);
-                    $hasRecording = true;
+                } elseif (!empty($act->contact?->phone)) {
+                    $cleanPhone = preg_replace('/[^0-9]/', '', $act->contact->phone);
+                    $last7 = strlen($cleanPhone) >= 7 ? substr($cleanPhone, -7) : null;
+                    if ($last7 && isset($phoneCleanToRec[$last7])) {
+                        $matchedRec = $phoneCleanToRec[$last7];
+                        $recId = $matchedRec->id;
+                        $hasRecording = true;
+                    }
                 }
             }
 

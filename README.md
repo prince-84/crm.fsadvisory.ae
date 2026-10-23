@@ -2798,6 +2798,29 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Implemented a fixed bottom playback dock (`#081428` navy backdrop with gold border) that appears whenever any call is playing.
     - Displays client name, telephone number, call outcome badge, advisor name, and timestamp.
     - Provides full audio player controls (time scrubber, play/pause, volume control) and one-click `[✕]` close button.
+  - **Authentic Call Mapping Precision & Elimination of Duplicate Audio Fallback**:
+    - Removed arbitrary agent fallback assignment which previously assigned a single default sample audio recording to unrecorded calls (such as unanswered 6s–9s ringouts).
+    - Strict matching ensures only calls with verified, unique `CallRecording` records or telephone digit matches display the `[ ▶ Listen Call ]` trigger, while unrecorded attempts cleanly display `—`.
+    - Eliminates duplicate audio repetition across distinct audit trail records.
+
+- **212 — Reports & Leads Desk 100% Data Parity & Portfolio Outcomes Alignment (`ReportController.php`, `reports/page.tsx`)**:
+  - **Single Source of Truth for Call Outcomes**:
+    - Replaced raw historical `activities.user_name` grouped counts on the Reports page with the current latest call outcome of each assigned lead (`Activity::where('type', 'call')->orWhereNotNull('call_outcome')->latest()`), matching [`ContactController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ContactController.php) 1:1.
+    - Resolved the critical mismatch where advisors (such as *Hiba Alam*) displayed **15 Follow-up leads** on the Leads Desk (`/`) but only **2 calls** on the Reports page (`/reports`), caused by SLA auto-reassignments of leads previously called by other agents (e.g., Shafi Uddin, Rayyan Shuja).
+  - **Complete Portfolio Accounting & Number Consistency**:
+    - Every outcome card (*No Answer*, *Wrong Number*, *Not Interested*, *Real Estate Agent*, *Interested*, *Busy*, *Follow-up*, *Callback*, *Uncontacted*) now precisely reflects the advisor's current lead portfolio.
+    - All outcome cards sum to exactly 100% of the advisor's assigned leads (`assigned_leads`, e.g., 1,485 leads for Hiba: 1,005 No Answer + 213 Wrong Number + 183 Not Interested + 24 Agent + 19 Interested + 16 Busy + 15 Follow-up + 6 Callback + 3 Uncontacted + 1 Voicemail = 1,485).
+  - **Synchronized Live Work Audit Trail Filter**:
+    - When clicking an outcome card on the Reports page (e.g., `Follow-up`), the Live Work Audit Trail table immediately renders the exact matching records (e.g. exactly 15 records), displaying the full client name, telephone digits, latest notes, duration, audio recording player, and the advisor who logged the disposition.
+  - **Harmonized Contacted & Uncontacted Lead Metrics**:
+    - Aligned `contacted_leads` and `uncontacted_leads` in [`ReportController::calculateAdvisorRow`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/ReportController.php) with the Leads Desk tab logic (leads with at least 1 call logged vs 0 calls logged), eliminating conflicting contact status figures across the system.
+
+- **213 — Reports Navigation Tab Streamlining & Clutter Reduction (`frontend/src/app/reports/page.tsx`)**:
+  - **Removed Redundant Secondary Tabs**: Cleanly excised the 3 secondary tabs (**`Deal Pipeline & Funnel`**, **`Property Portfolio`**, and **`3CX Telephony & Call Logs`**) from the top navigation and DOM render tree of [`/reports`](file:///d:/FSadvisory-crm/frontend/src/app/reports/page.tsx).
+  - **Focus on Core Executive Intelligence**: Retained the two primary, highest-value modules:
+    1. **Agent Performance & Work Audit** (`agent_work`): High-density advisor leaderboard, portfolio call outcome breakdown, and chronological live work audit trail with in-table audio playback.
+    2. **Lead Sources & Channels** (`sources`): Detailed marketing channel attribution, acquisition share, and deal conversion rates.
+  - **TypeScript Type Refinement**: Updated `activeTab` state union to `'agent_work' | 'sources'`, ensuring zero leftover dead code or type leaks.
 
 ## ⚙️ Installation & Running Instructions
 
