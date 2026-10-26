@@ -81,53 +81,58 @@ class User extends Authenticatable
 
     /**
      * Check if user has specific permission.
+     * Permissions are derived strictly from the user's assigned Role as the single source of truth.
      */
     public function hasPermission(string $permission): bool
     {
-        // Super Admin has everything
-        if (strtolower($this->role) === 'super admin' || $this->role_id === 1) {
+        // Super Admin has unrestricted access to everything
+        if (strtolower($this->role ?? '') === 'super admin' || $this->role_id === 1 || $this->id === 1) {
             return true;
         }
 
-        // Check user-specific granular permissions override
-        if (!empty($this->permissions) && is_array($this->permissions)) {
-            if (in_array('*', $this->permissions) || in_array($permission, $this->permissions)) {
-                return true;
-            }
+        // Strict derivation from assigned Role
+        $role = $this->roleModel;
+        if (!$role && !empty($this->role)) {
+            $role = Role::where('name', $this->role)->first();
         }
 
-        // Fallback to role permissions
-        if ($this->roleModel && !empty($this->roleModel->permissions)) {
-            if (in_array('*', $this->roleModel->permissions) || in_array($permission, $this->roleModel->permissions)) {
-                return true;
-            }
+        if ($role && !empty($role->permissions)) {
+            $perms = is_array($role->permissions) ? $role->permissions : explode(' ', $role->permissions);
+            return in_array('*', $perms) || in_array($permission, $perms);
+        }
+
+        // Fallback to user stored permissions if no role model found
+        if (!empty($this->permissions) && is_array($this->permissions)) {
+            return in_array('*', $this->permissions) || in_array($permission, $this->permissions);
         }
 
         return false;
     }
 
     /**
-     * Get computed effective permissions array.
+     * Get computed effective permissions array strictly from assigned Role.
      */
     public function getEffectivePermissionsAttribute(): array
     {
-        if (strtolower($this->role ?? '') === 'super admin' || $this->role_id === 1) {
+        if (strtolower($this->role ?? '') === 'super admin' || $this->role_id === 1 || $this->id === 1) {
             return ['*'];
         }
-        if (!empty($this->permissions) && is_array($this->permissions)) {
-            return $this->permissions;
+
+        $role = $this->roleModel;
+        if (!$role && !empty($this->role)) {
+            $role = Role::where('name', $this->role)->first();
         }
-        if ($this->roleModel && !empty($this->roleModel->permissions)) {
-            return is_array($this->roleModel->permissions)
-                ? $this->roleModel->permissions
-                : explode(' ', $this->roleModel->permissions);
-        }
-        $role = Role::where('name', $this->role)->first();
+
         if ($role && !empty($role->permissions)) {
             return is_array($role->permissions)
                 ? $role->permissions
                 : explode(' ', $role->permissions);
         }
+
+        if (!empty($this->permissions) && is_array($this->permissions)) {
+            return $this->permissions;
+        }
+
         return [];
     }
 

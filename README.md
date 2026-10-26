@@ -2819,8 +2819,31 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Removed Redundant Secondary Tabs**: Cleanly excised the 3 secondary tabs (**`Deal Pipeline & Funnel`**, **`Property Portfolio`**, and **`3CX Telephony & Call Logs`**) from the top navigation and DOM render tree of [`/reports`](file:///d:/FSadvisory-crm/frontend/src/app/reports/page.tsx).
   - **Focus on Core Executive Intelligence**: Retained the two primary, highest-value modules:
     1. **Agent Performance & Work Audit** (`agent_work`): High-density advisor leaderboard, portfolio call outcome breakdown, and chronological live work audit trail with in-table audio playback.
-    2. **Lead Sources & Channels** (`sources`): Detailed marketing channel attribution, acquisition share, and deal conversion rates.
-  - **TypeScript Type Refinement**: Updated `activeTab` state union to `'agent_work' | 'sources'`, ensuring zero leftover dead code or type leaks.
+- **214 — Reports Outcome Cards Exact Match & Audit Trail Parity Fix (`ReportController.php`)**:
+  - **Resolved Substring Matching Flaw in Outcome Cards**:
+    - Previously, clicking the `Interested` card in the Live Work Audit Trail used `stripos($a->call_outcome, $activityOutcome) !== false` (and SQL `like "%{$activityOutcome}%"`), causing leads with `Not Interested` to falsely match because `"Not Interested"` contains `"Interested"` as a substring.
+    - Updated filtering to perform exact, case-insensitive string matching (`strcasecmp(trim($a->call_outcome), trim($activityOutcome)) === 0` and exact SQL equality) across both single-advisor and all-advisors modes.
+    - Clicking `Interested` (e.g., 7 records for Shafi Uddin) now returns exactly those 7 records, completely eliminating all `Not Interested` records from the filtered audit view.
+  - **Full Support for Uncontacted Leads Card**:
+    - Fixed the `Uncontacted` card filter which previously returned 0 records due to `whereRaw('1 = 0')`.
+    - It now dynamically queries assigned leads that have zero logged call activities, displaying complete lead profiles (name, telephone digits, acquisition source, assignment date) directly in the Live Work Audit Trail table.
+  - **Dynamic Outcome Limit Expansion (Elimination of 500 Records Cap)**:
+    - Previously, the audit trail query was hardcoded with `->limit(500)`, causing outcome cards with more than 500 records (e.g. `Not Interested` with 569 records) to display only 500 in the table and footer (`Showing 1 to 25 of 500 records`).
+    - Made the limit dynamic (`$auditTrailLimit = (!empty($activityOutcome) && $activityOutcome !== 'all') ? 5000 : 500`), ensuring that clicking an outcome card loads all matching records (e.g. all 569 records) with 100% card-to-table parity while preserving the 500 limit on the default unfiltered view.
+- **215 — Centralized Role-Based Permissions Architecture & Team Members Table Streamlining (`User.php`, `UserController.php`, `AuthController.php`, `RoleController.php`, `users/page.tsx`)**:
+  - **Single Source of Truth for Permissions (Role & Permissions Tab)**:
+    - Centralized all permission governance strictly to the **Role & Permissions** tab (`/users?tab=roles`). Every role (`Super Admin`, `Sales Manager`, `Property Consultant`, `Telesales Agent`, etc.) defines its module permission matrix as the definitive single source of truth.
+    - Updated [`User.php`](file:///d:/FSadvisory-crm/backend/app/Models/User.php) so that `hasPermission(string $permission)` and `getEffectivePermissionsAttribute()` derive permissions directly from the user's assigned `Role` model (with `['*']` universally for Super Admin).
+    - Fixed permissions resetting/disappearing over time: previously, individual user permission edits mutated the shared role and cascaded conflicting arrays across co-role members. User updates now preserve and inherit the role's permissions without any overrides.
+  - **Automatic Role & User Synchronization**:
+    - When creating a user (`UserController::store`) or updating details (`UserController::update`), the user's `role_id` and `permissions` are automatically linked to the matching `Role` record and populated with that role's exact permissions matrix.
+    - When a role's permissions are modified in the "Role & Permissions" tab (`RoleController::update`), all users assigned to that role are instantly updated across the database.
+    - Updated [`AuthController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/AuthController.php) login bypass and `/auth/me` to consistently return `$user->effective_permissions`.
+    - Executed a one-time database synchronization aligning all existing team member records with their respective role IDs and permissions.
+  - **Team Members Table Streamlining (`frontend/src/app/users/page.tsx`)**:
+    - Removed individual user permissions trigger / KeyRound (`🔑`) button from the Actions column in the Team Members table.
+    - Renamed the table column header from **`Role & Permissions`** to simply **`Role`**.
+    - Removed the redundant "Granular CRM Permissions: [User]" modal (`isPermModalOpen`), preset selectors, and unused per-user modal handlers, keeping the Team Members table focused purely on member profiles, department, contact info, auto-lead assignment switch, status, and account actions (Edit Profile, Force Sign Out, Remove).
 
 ## ⚙️ Installation & Running Instructions
 

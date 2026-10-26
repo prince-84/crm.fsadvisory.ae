@@ -45,7 +45,7 @@ class AuthController extends Controller
                         'role' => $user->role,
                         'department' => $user->department,
                         'initials' => $user->initials,
-                        'permissions' => $user->permissions,
+                        'permissions' => $user->effective_permissions,
                         'is_active' => $user->is_active,
                     ],
                 ]);

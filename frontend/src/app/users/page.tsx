@@ -14,7 +14,6 @@ import {
   Plus,
   Edit3,
   Trash2,
-  KeyRound,
   Check,
   X,
   RefreshCw,
@@ -169,12 +168,6 @@ export default function UserManagementPage() {
     is_active: true,
   });
   const [submittingDept, setSubmittingDept] = useState(false);
-
-  // Granular Permissions Modal State
-  const [isPermModalOpen, setIsPermModalOpen] = useState(false);
-  const [permTargetUser, setPermTargetUser] = useState<UserItem | null>(null);
-  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
-  const [savingPermissions, setSavingPermissions] = useState(false);
 
   // Helper: Extract all keys from matrix
   const getAllMatrixKeys = (): string[] => {
@@ -643,88 +636,6 @@ export default function UserManagementPage() {
     }
   };
 
-  // Granular Permissions Handlers (User Modal)
-  const handleOpenPermModal = (u: UserItem) => {
-    setPermTargetUser(u);
-    const matchedRole = roles.find(
-      (r) => r.name.toLowerCase() === (u.role || '').toLowerCase() || r.id === u.role_id
-    );
-    const raw = (u.permissions && u.permissions.length > 0)
-      ? u.permissions
-      : (u.role_model?.permissions || matchedRole?.permissions || []);
-    const expanded = expandPermissions(raw);
-    setSelectedPermissions(expanded);
-    setIsPermModalOpen(true);
-  };
-
-  const handleTogglePermKey = (key: string) => {
-    if (selectedPermissions.includes(key)) {
-      setSelectedPermissions(selectedPermissions.filter((k) => k !== key && k !== '*'));
-    } else {
-      setSelectedPermissions([...selectedPermissions.filter((k) => k !== '*'), key]);
-    }
-  };
-
-  const handleUserSelectAllGlobal = () => {
-    setSelectedPermissions(getAllMatrixKeys());
-  };
-
-  const handleUserDeselectAllGlobal = () => {
-    setSelectedPermissions([]);
-  };
-
-  const handleUserToggleModule = (modKeys: string[]) => {
-    const allSelected = modKeys.every((k) => selectedPermissions.includes(k));
-    if (allSelected) {
-      setSelectedPermissions(selectedPermissions.filter((k) => !modKeys.includes(k) && k !== '*'));
-    } else {
-      const set = new Set([...selectedPermissions.filter((k) => k !== '*'), ...modKeys]);
-      setSelectedPermissions(Array.from(set));
-    }
-  };
-
-  const handleApplyRolePresetInPermModal = (roleName: string) => {
-    const matchedRole = roles.find((r) => r.name.toLowerCase() === roleName.toLowerCase());
-    if (matchedRole) {
-      const expanded = expandPermissions(matchedRole.permissions || []);
-      setSelectedPermissions(expanded);
-    }
-  };
-
-  const handleSavePermissions = async () => {
-    if (!permTargetUser) return;
-    setSavingPermissions(true);
-    try {
-      const data = await fetchApi(`/users/${permTargetUser.id}/permissions`, {
-        method: 'PUT',
-        body: JSON.stringify({ permissions: selectedPermissions }),
-      });
-
-      if (data.success) {
-        setIsPermModalOpen(false);
-        const current = getCurrentUser();
-        if (current && current.id === permTargetUser.id) {
-          refreshCurrentUser();
-        }
-        Swal.fire({
-          icon: 'success',
-          title: 'Permissions Updated!',
-          text: data.message,
-          timer: 1500,
-          showConfirmButton: false,
-        });
-        loadUsers();
-        loadRolesAndMatrix();
-      } else {
-        Swal.fire('Error', data.message || 'Failed to save permissions', 'error');
-      }
-    } catch (err: any) {
-      Swal.fire('Error', err.message || 'Failed to save permissions', 'error');
-    } finally {
-      setSavingPermissions(false);
-    }
-  };
-
   if (canManageUsers === false) {
     return <AccessDenied moduleName="User Management & Access Governance" requiredPermission="users.manage" />;
   }
@@ -925,7 +836,7 @@ export default function UserManagementPage() {
                   <thead>
                     <tr className="bg-[#081428] text-white text-[11px] font-semibold uppercase tracking-wider">
                       <th className="py-3 px-4">Member Name</th>
-                      <th className="py-3 px-4">Role & Permissions</th>
+                      <th className="py-3 px-4">Role</th>
                       <th className="py-3 px-4">Department</th>
                       <th className="py-3 px-4">Contact Info</th>
                       <th className="py-3 px-4 text-center">Auto-Lead Switch</th>
@@ -1015,13 +926,6 @@ export default function UserManagementPage() {
 
                             <td className="py-3.5 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
-                                <button
-                                  onClick={() => handleOpenPermModal(u)}
-                                  className="p-1.5 bg-slate-100 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-600 rounded transition-colors cursor-pointer"
-                                  title="Manage Permissions Matrix"
-                                >
-                                  <KeyRound className="w-3.5 h-3.5" />
-                                </button>
                                 <button
                                   onClick={() => handleOpenEditUser(u)}
                                   className="p-1.5 bg-slate-100 hover:bg-[#081428] hover:text-[#C9A84C] text-slate-600 rounded transition-colors cursor-pointer"
@@ -1585,150 +1489,6 @@ export default function UserManagementPage() {
                 </div>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* GRANULAR PERMISSION MATRIX CHECKBOX MODAL (USER MODAL) */}
-      {isPermModalOpen && permTargetUser && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full max-w-4xl overflow-hidden animate-fade-in flex flex-col max-h-[92vh]">
-            <div className="bg-[#081428] text-white px-6 py-4 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-white/10 text-[#C9A84C] flex items-center justify-center font-bold text-sm">
-                  <KeyRound className="w-4 h-4 text-[#C9A84C]" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-heading font-bold text-base tracking-wide">
-                      Granular CRM Permissions: {permTargetUser.name}
-                    </h2>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#C9A84C] text-[#081428]">
-                      {permTargetUser.role}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 mt-0.5">
-                    Toggle individual permission checkboxes across all CRM modules or select all per section.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsPermModalOpen(false)}
-                className="text-slate-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Global Controls & Preset Bar */}
-            <div className="bg-[#FAF8F5] border-b border-[#E8E2D9] px-6 py-2.5 shrink-0 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-600">Apply Role Preset:</span>
-                <select
-                  onChange={(e) => handleApplyRolePresetInPermModal(e.target.value)}
-                  className="px-2.5 py-1 border border-[#E8E2D9] rounded bg-white font-semibold cursor-pointer text-xs"
-                >
-                  <option value="">Select Role Preset...</option>
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.name}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleUserSelectAllGlobal}
-                  className="text-[11px] font-bold text-[#081428] hover:text-[#C9A84C] bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
-                >
-                  ✓ Select All (All Modules)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleUserDeselectAllGlobal}
-                  className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white px-2.5 py-1 rounded border border-[#E8E2D9] cursor-pointer shadow-2xs"
-                >
-                  ✕ Deselect All
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 overflow-y-auto space-y-4 text-xs flex-1">
-              {permMatrix.map((mod) => {
-                const modKeys = mod.permissions.map((p) => p.key);
-                const allModSelected = modKeys.every((k) => selectedPermissions.includes(k));
-                const selectedCount = modKeys.filter((k) => selectedPermissions.includes(k)).length;
-
-                return (
-                  <div key={mod.module} className="bg-[#FAF8F5] p-4 rounded-xl border border-[#E8E2D9] space-y-3">
-                    <div className="flex items-center justify-between border-b border-[#E8E2D9] pb-2">
-                      <strong className="text-xs text-[#081428] font-bold uppercase tracking-wider">{mod.module}</strong>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono text-[#C9A84C] font-bold">
-                          {selectedCount} / {modKeys.length} Selected
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleUserToggleModule(modKeys)}
-                          className="text-[10px] font-bold text-[#081428] hover:text-[#C9A84C] bg-white px-2 py-0.5 rounded border border-[#E8E2D9] cursor-pointer transition-colors"
-                        >
-                          {allModSelected ? '✕ Deselect Module' : '✓ Select All Module'}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {mod.permissions.map((p) => {
-                        const checked = selectedPermissions.includes(p.key);
-                        return (
-                          <label
-                            key={p.key}
-                            className={`p-2.5 rounded-lg border transition-all cursor-pointer flex items-start gap-2.5 ${
-                              checked ? 'bg-white border-[#C9A84C] shadow-2xs' : 'bg-white/60 border-[#E8E2D9]'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => handleTogglePermKey(p.key)}
-                              className="accent-[#C9A84C] rounded mt-0.5 cursor-pointer"
-                            />
-                            <div>
-                              <div className="font-bold text-[#081428]">{p.label}</div>
-                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">{p.key}</div>
-                              <div className="text-[11px] text-slate-600 mt-0.5">{p.desc}</div>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="bg-white border-t border-[#E8E2D9] px-6 py-3.5 shrink-0 flex items-center justify-between text-xs">
-              <div className="text-slate-500 text-[11px]">
-                Target: <strong className="text-[#081428]">{permTargetUser.name}</strong> ({permTargetUser.email})
-              </div>
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsPermModalOpen(false)}
-                  className="px-4 py-2 border border-[#E8E2D9] rounded-md text-slate-600 hover:bg-slate-50 font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSavePermissions}
-                  disabled={savingPermissions}
-                  className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded-md shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {savingPermissions ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  <span>Save Granular Permissions</span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       )}

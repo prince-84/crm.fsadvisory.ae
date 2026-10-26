@@ -508,6 +508,7 @@ class ReportController extends Controller
                     $q->where('type', 'call')->orWhereNotNull('call_outcome');
                 })
                 ->whereNotNull('contact_id')
+                ->whereIn('contact_id', Contact::select('id'))
                 ->when($startDate && $endDate, fn($q) => $q->whereBetween('created_at', [$startDate, $endDate]))
                 ->orderByDesc('id')
                 ->get(['id', 'contact_id', 'call_outcome']);
@@ -677,128 +678,10 @@ class ReportController extends Controller
 
         // 10. Live Agent Work Trail / Activity Audit Trail (With Outcome & Search Filtering)
         $activitiesAuditQuery = Activity::query();
+        $recentActivities = collect();
+        $totalMatchingActivities = 0;
+        $auditTrailLimit = (!empty($activityOutcome) && $activityOutcome !== 'all') ? 5000 : 500;
 
-        if (!$isAll) {
-            $targetContactIds = (clone $contactsQuery)->pluck('id');
-            if (!empty($activityOutcome) && $activityOutcome !== 'all') {
-                if ($activityOutcome === 'Uncontacted') {
-                    $activitiesAuditQuery->whereRaw('1 = 0');
-                } else {
-                    $acts = Activity::whereIn('contact_id', $targetContactIds)
-                        ->where(function ($q) {
-                            $q->where('type', 'call')->orWhereNotNull('call_outcome');
-                        })
-                        ->orderByDesc('id')
-                        ->get(['id', 'contact_id', 'call_outcome']);
-
-                    $matchingActIds = [];
-                    $seenContact = [];
-                    foreach ($acts as $a) {
-                        if (!isset($seenContact[$a->contact_id])) {
-                            $seenContact[$a->contact_id] = true;
-                            if (strcasecmp($a->call_outcome, $activityOutcome) === 0 || stripos($a->call_outcome, $activityOutcome) !== false) {
-                                $matchingActIds[] = $a->id;
-                            }
-                        }
-                    }
-
-                    $activitiesAuditQuery->whereIn('id', $matchingActIds);
-                }
-            } else {
-                $activitiesAuditQuery->where(function ($q) use ($selectedAliases, $targetContactIds) {
-                    $q->whereIn('user_name', $selectedAliases)
-                      ->orWhereIn('contact_id', $targetContactIds);
-                });
-            }
-        } else {
-            if (!empty($activityOutcome) && $activityOutcome !== 'all') {
-                if ($activityOutcome === 'Uncontacted') {
-                    $activitiesAuditQuery->whereRaw('1 = 0');
-                } else {
-                    $activitiesAuditQuery->where(function ($q) use ($activityOutcome) {
-                        $q->where('call_outcome', $activityOutcome)
-                          ->orWhere('call_outcome', 'like', "%{$activityOutcome}%");
-                    });
-                }
-            }
-        }
-
-        if (!empty($activitySearch)) {
-            $activitiesAuditQuery->where(function ($q) use ($activitySearch) {
-                $q->where('description', 'like', "%{$activitySearch}%")
-                  ->orWhere('call_outcome', 'like', "%{$activitySearch}%")
-                  ->orWhereHas('contact', function ($cq) use ($activitySearch) {
-                      $cq->where('name', 'like', "%{$activitySearch}%")
-                         ->orWhere('phone', 'like', "%{$activitySearch}%");
-                  });
-            });
-        }
-
-        $totalMatchingActivities = (clone $activitiesAuditQuery)->count();
-
-        $rawActivities = $activitiesAuditQuery
-            ->with(['contact:id,name,phone,source', 'opportunity:id,stage,budget_max'])
-            ->latest()
-            ->limit(500)
-            ->get();
-
-        // Preload call recordings for these contacts in one single batch query
-        $contactIds = $rawActivities->pluck('contact_id')->filter()->unique();
-        $recordingsByContact = CallRecording::whereIn('contact_id', $contactIds)
-            ->latest('recorded_at')
-            ->get()
-            ->groupBy('contact_id');
-
-        // Also build a phone lookup from unlinked recordings for contacts present in this activity batch
-        $phoneCleanToRec = [];
-        $unlinkedRecsForBatch = CallRecording::whereNull('contact_id')->latest('recorded_at')->limit(500)->get();
-        foreach ($unlinkedRecsForBatch as $ur) {
-            $dest = preg_replace('/[^0-9]/', '', $ur->destination_number ?: $ur->caller_number ?: '');
-            if (strlen($dest) >= 7) {
-                $phoneCleanToRec[substr($dest, -7)] = $ur;
-            }
-        }
-
-        $recentActivities = $rawActivities->map(function ($act) use ($recordingsByContact, $phoneCleanToRec) {
-            $recId = null;
-            $hasRecording = false;
-
-            if ($act->type === 'call') {
-                if ($act->contact_id && isset($recordingsByContact[$act->contact_id]) && $recordingsByContact[$act->contact_id]->isNotEmpty()) {
-                    $matchedRec = $recordingsByContact[$act->contact_id]->first();
-                    $recId = $matchedRec->id;
-                    $hasRecording = true;
-                } elseif (!empty($act->contact?->phone)) {
-                    $cleanPhone = preg_replace('/[^0-9]/', '', $act->contact->phone);
-                    $last7 = strlen($cleanPhone) >= 7 ? substr($cleanPhone, -7) : null;
-                    if ($last7 && isset($phoneCleanToRec[$last7])) {
-                        $matchedRec = $phoneCleanToRec[$last7];
-                        $recId = $matchedRec->id;
-                        $hasRecording = true;
-                    }
-                }
-            }
-
-            return [
-                'id' => $act->id,
-                'user_name' => $act->user_name,
-                'type' => $act->type,
-                'call_outcome' => $act->call_outcome,
-                'duration_seconds' => $act->duration_seconds,
-                'duration_formatted' => $this->formatDuration($act->duration_seconds),
-                'description' => $act->description,
-                'contact_name' => $act->contact->name ?? 'N/A',
-                'contact_phone' => $act->contact->phone ?? '',
-                'contact_source' => $act->contact->source ?? '',
-                'created_at' => $act->created_at ? $act->created_at->format('Y-m-d H:i') : null,
-                'time_ago' => $act->created_at ? $act->created_at->diffForHumans() : '',
-                'has_recording' => $hasRecording,
-                'recording_id' => $recId,
-                'audio_url' => $hasRecording ? url("/api/3cx/recordings/{$recId}/stream") : null,
-            ];
-        });
-
-        // If filtering by 'Answered (3CX PBX Direct)' or if showing all, include unlinked 3CX call recordings:
         if ($activityOutcome === 'Answered (3CX PBX Direct)') {
             $unlinkedRecs = (clone $callRecordingsQuery)->whereNull('contact_id');
             if (!empty($activitySearch)) {
@@ -808,7 +691,7 @@ class ReportController extends Controller
                 });
             }
             $totalMatchingActivities = (clone $unlinkedRecs)->count();
-            $recentActivities = $unlinkedRecs->latest()->limit(500)->get()->map(function ($rec) {
+            $recentActivities = $unlinkedRecs->latest()->limit($auditTrailLimit)->get()->map(function ($rec) {
                 return [
                     'id' => 'rec_' . $rec->id,
                     'user_name' => $rec->agent_name,
@@ -825,6 +708,170 @@ class ReportController extends Controller
                     'has_recording' => true,
                     'recording_id' => $rec->id,
                     'audio_url' => url("/api/3cx/recordings/{$rec->id}/stream"),
+                ];
+            });
+        } elseif ($activityOutcome === 'Uncontacted') {
+            $uncontactedQuery = Contact::query();
+            if (!$isAll) {
+                $uncontactedQuery->whereIn('assigned_to', $selectedAliases);
+            }
+
+            $contactedIdsQuery = Activity::where(function ($q) {
+                $q->where('type', 'call')->orWhereNotNull('call_outcome');
+            })->whereNotNull('contact_id');
+
+            if (!$isAll) {
+                $contactedIdsQuery->whereIn('contact_id', (clone $contactsQuery)->select('id'));
+            } else {
+                $contactedIdsQuery->whereIn('contact_id', Contact::select('id'));
+            }
+            $contactedIds = $contactedIdsQuery->pluck('contact_id')->unique();
+            $uncontactedQuery->whereNotIn('id', $contactedIds);
+
+            if (!empty($activitySearch)) {
+                $uncontactedQuery->where(function ($cq) use ($activitySearch) {
+                    $cq->where('name', 'like', "%{$activitySearch}%")
+                       ->orWhere('phone', 'like', "%{$activitySearch}%")
+                       ->orWhere('source', 'like', "%{$activitySearch}%");
+                });
+            }
+
+            $totalMatchingActivities = (clone $uncontactedQuery)->count();
+            $uncontactedLeads = $uncontactedQuery->latest('created_at')->limit($auditTrailLimit)->get();
+
+            $recentActivities = $uncontactedLeads->map(function ($c) {
+                return [
+                    'id' => 'uncontacted_' . $c->id,
+                    'user_name' => $c->assigned_to ?: 'Unassigned',
+                    'type' => 'lead',
+                    'call_outcome' => 'Uncontacted',
+                    'duration_seconds' => 0,
+                    'duration_formatted' => '—',
+                    'description' => 'Uncontacted lead — Assigned to ' . ($c->assigned_to ?: 'advisor') . ', pending first outreach call',
+                    'contact_name' => $c->name ?? 'N/A',
+                    'contact_phone' => $c->phone ?? 'N/A',
+                    'contact_source' => $c->source ?? 'Direct Inbound',
+                    'created_at' => $c->created_at ? $c->created_at->format('Y-m-d H:i') : null,
+                    'time_ago' => $c->created_at ? $c->created_at->diffForHumans() : '',
+                    'has_recording' => false,
+                    'recording_id' => null,
+                    'audio_url' => null,
+                ];
+            });
+        } else {
+            if (!empty($activityOutcome) && $activityOutcome !== 'all') {
+                $actsQuery = Activity::where(function ($q) {
+                        $q->where('type', 'call')->orWhereNotNull('call_outcome');
+                    })
+                    ->whereNotNull('contact_id')
+                    ->when($startDate && $endDate, fn($q) => $q->whereBetween('created_at', [$startDate, $endDate]));
+
+                if (!$isAll) {
+                    $targetContactIds = (clone $contactsQuery)->pluck('id');
+                    $actsQuery->whereIn('contact_id', $targetContactIds);
+                } else {
+                    $actsQuery->whereIn('contact_id', Contact::select('id'));
+                }
+
+                $acts = $actsQuery->orderByDesc('id')->get(['id', 'contact_id', 'call_outcome']);
+
+                $matchingActIds = [];
+                $seenContact = [];
+                foreach ($acts as $a) {
+                    if (!isset($seenContact[$a->contact_id])) {
+                        $seenContact[$a->contact_id] = true;
+                        if (strcasecmp(trim((string)$a->call_outcome), trim($activityOutcome)) === 0) {
+                            $matchingActIds[] = $a->id;
+                        }
+                    }
+                }
+
+                $activitiesAuditQuery->whereIn('id', $matchingActIds);
+            } else {
+                if (!$isAll) {
+                    $targetContactIds = (clone $contactsQuery)->pluck('id');
+                    $activitiesAuditQuery->where(function ($q) use ($selectedAliases, $targetContactIds) {
+                        $q->whereIn('user_name', $selectedAliases)
+                          ->orWhereIn('contact_id', $targetContactIds);
+                    });
+                }
+                if ($startDate && $endDate) {
+                    $activitiesAuditQuery->whereBetween('created_at', [$startDate, $endDate]);
+                }
+            }
+
+            if (!empty($activitySearch)) {
+                $activitiesAuditQuery->where(function ($q) use ($activitySearch) {
+                    $q->where('description', 'like', "%{$activitySearch}%")
+                      ->orWhere('call_outcome', 'like', "%{$activitySearch}%")
+                      ->orWhereHas('contact', function ($cq) use ($activitySearch) {
+                          $cq->where('name', 'like', "%{$activitySearch}%")
+                             ->orWhere('phone', 'like', "%{$activitySearch}%");
+                      });
+                });
+            }
+
+            $totalMatchingActivities = (clone $activitiesAuditQuery)->count();
+
+            $rawActivities = $activitiesAuditQuery
+                ->with(['contact:id,name,phone,source', 'opportunity:id,stage,budget_max'])
+                ->latest()
+                ->limit($auditTrailLimit)
+                ->get();
+
+            // Preload call recordings for these contacts in one single batch query
+            $contactIds = $rawActivities->pluck('contact_id')->filter()->unique();
+            $recordingsByContact = CallRecording::whereIn('contact_id', $contactIds)
+                ->latest('recorded_at')
+                ->get()
+                ->groupBy('contact_id');
+
+            // Also build a phone lookup from unlinked recordings for contacts present in this activity batch
+            $phoneCleanToRec = [];
+            $unlinkedRecsForBatch = CallRecording::whereNull('contact_id')->latest('recorded_at')->limit(500)->get();
+            foreach ($unlinkedRecsForBatch as $ur) {
+                $dest = preg_replace('/[^0-9]/', '', $ur->destination_number ?: $ur->caller_number ?: '');
+                if (strlen($dest) >= 7) {
+                    $phoneCleanToRec[substr($dest, -7)] = $ur;
+                }
+            }
+
+            $recentActivities = $rawActivities->map(function ($act) use ($recordingsByContact, $phoneCleanToRec) {
+                $recId = null;
+                $hasRecording = false;
+
+                if ($act->type === 'call') {
+                    if ($act->contact_id && isset($recordingsByContact[$act->contact_id]) && $recordingsByContact[$act->contact_id]->isNotEmpty()) {
+                        $matchedRec = $recordingsByContact[$act->contact_id]->first();
+                        $recId = $matchedRec->id;
+                        $hasRecording = true;
+                    } elseif (!empty($act->contact?->phone)) {
+                        $cleanPhone = preg_replace('/[^0-9]/', '', $act->contact->phone);
+                        $last7 = strlen($cleanPhone) >= 7 ? substr($cleanPhone, -7) : null;
+                        if ($last7 && isset($phoneCleanToRec[$last7])) {
+                            $matchedRec = $phoneCleanToRec[$last7];
+                            $recId = $matchedRec->id;
+                            $hasRecording = true;
+                        }
+                    }
+                }
+
+                return [
+                    'id' => $act->id,
+                    'user_name' => $act->user_name,
+                    'type' => $act->type,
+                    'call_outcome' => $act->call_outcome,
+                    'duration_seconds' => $act->duration_seconds,
+                    'duration_formatted' => $this->formatDuration($act->duration_seconds),
+                    'description' => $act->description,
+                    'contact_name' => $act->contact->name ?? 'N/A',
+                    'contact_phone' => $act->contact->phone ?? '',
+                    'contact_source' => $act->contact->source ?? '',
+                    'created_at' => $act->created_at ? $act->created_at->format('Y-m-d H:i') : null,
+                    'time_ago' => $act->created_at ? $act->created_at->diffForHumans() : '',
+                    'has_recording' => $hasRecording,
+                    'recording_id' => $recId,
+                    'audio_url' => $hasRecording ? url("/api/3cx/recordings/{$recId}/stream") : null,
                 ];
             });
         }

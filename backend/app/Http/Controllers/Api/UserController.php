@@ -92,28 +92,28 @@ class UserController extends Controller
         }
         $initials = substr($initials, 0, 2);
 
-        // If role_id not provided, match by name
-        $roleId = $validated['role_id'] ?? null;
-        if (!$roleId) {
+        // Resolve Role Model as single source of truth
+        $roleModel = null;
+        if (!empty($validated['role_id'])) {
+            $roleModel = Role::find($validated['role_id']);
+        }
+        if (!$roleModel && !empty($validated['role'])) {
             $roleModel = Role::where('name', $validated['role'])->first();
-            $roleId = $roleModel?->id;
         }
 
-        // Default permissions from role if not explicitly customized
-        $permissions = $validated['permissions'] ?? null;
-        if ($permissions === null && $roleId) {
-            $roleModel = Role::find($roleId);
-            $permissions = $roleModel?->permissions;
-        }
+        $roleId = $roleModel?->id;
+        $roleName = $roleModel ? $roleModel->name : $validated['role'];
+        $isSuper = strtolower($roleName) === 'super admin' || $roleId === 1;
+        $permissions = $isSuper ? ['*'] : ($roleModel?->permissions ?? []);
 
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?? null,
-            'role' => $validated['role'],
+            'role' => $roleName,
             'department' => $validated['department'] ?? 'Sales',
             'role_id' => $roleId,
-            'permissions' => $permissions ?? [],
+            'permissions' => $permissions,
             'initials' => $initials,
             'is_active' => $validated['is_active'] ?? true,
             'in_distribution_pool' => $request->has('in_distribution_pool') ? $request->boolean('in_distribution_pool') : true,
@@ -124,7 +124,7 @@ class UserController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Agent / User created successfully.',
-            'user' => $user,
+            'user' => $user->load('roleModel'),
         ]);
     }
 
@@ -159,19 +159,35 @@ class UserController extends Controller
             unset($validated['password']);
         }
 
+        // Always resolve Role model and assign its permissions strictly
+        $roleModel = null;
+        if (!empty($validated['role_id'])) {
+            $roleModel = Role::find($validated['role_id']);
+        }
+        if (!$roleModel && !empty($validated['role'])) {
+            $roleModel = Role::where('name', $validated['role'])->first();
+        }
+
+        if ($roleModel) {
+            $validated['role_id'] = $roleModel->id;
+            $validated['role'] = $roleModel->name;
+        }
+
+        $isSuper = strtolower($validated['role']) === 'super admin' || ($roleModel && $roleModel->id === 1) || $user->id === 1;
+        $validated['permissions'] = $isSuper ? ['*'] : ($roleModel?->permissions ?? []);
+
         $user->update($validated);
 
         return response()->json([
             'success' => true,
             'message' => 'User details updated successfully.',
-            'user' => $user,
+            'user' => $user->fresh()->load('roleModel'),
         ]);
     }
 
     /**
      * Update Granular Permissions directly for a user.
-     * Synchronizes permissions both to the user profile and to the assigned Role
-     * so that the Granular Permissions Modal and the Role & Permissions Matrix stay 100% in sync.
+     * Centralized to the user's assigned Role so all role members stay 100% in sync.
      */
     public function updatePermissions(Request $request, $id)
     {
@@ -181,10 +197,9 @@ class UserController extends Controller
             'permissions' => 'required|array',
         ]);
 
-        $user->permissions = $validated['permissions'];
-        $user->save();
+        $newPermissions = $validated['permissions'];
 
-        // Also synchronize the updated permissions to the user's assigned Role
+        // Synchronize permissions to the assigned Role
         $role = null;
         if ($user->role_id) {
             $role = Role::find($user->role_id);
@@ -195,28 +210,32 @@ class UserController extends Controller
 
         if ($role && strtolower($role->name) !== 'super admin') {
             $role->update([
-                'permissions' => $validated['permissions'],
+                'permissions' => $newPermissions,
             ]);
 
-            // Sync to any other users who share this same role
+            // Sync to all users who share this role
             User::where(function($q) use ($role) {
                     $q->where('role_id', $role->id)
                       ->orWhere('role', $role->name);
                 })
-                ->where('id', '!=', $user->id)
                 ->get()
-                ->each(function ($otherUser) use ($validated) {
-                    $otherUser->update([
-                        'permissions' => $validated['permissions'],
+                ->each(function ($u) use ($role, $newPermissions) {
+                    $u->update([
+                        'role_id' => $role->id,
+                        'permissions' => $newPermissions,
                     ]);
                 });
+        } else {
+            $user->update([
+                'permissions' => $newPermissions,
+            ]);
         }
 
         return response()->json([
             'success' => true,
-            'message' => "Permissions updated for {$user->name} and synced with role '{$user->role}' successfully.",
-            'permissions' => $user->permissions,
-            'user' => $user->load('roleModel'),
+            'message' => "Permissions updated and synced for role '{$user->role}' successfully.",
+            'permissions' => $user->fresh()->effective_permissions,
+            'user' => $user->fresh()->load('roleModel'),
         ]);
     }
 
