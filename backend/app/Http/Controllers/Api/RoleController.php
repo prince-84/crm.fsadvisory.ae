@@ -4,14 +4,107 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Role;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class RoleController extends Controller
 {
     public function index()
     {
-        $roles = Role::withCount('users')->orderBy('id', 'asc')->get();
+        // 1. Auto-heal any user whose role_id is null, 0, or mismatched
+        $allRoles = Role::all();
+        foreach ($allRoles as $role) {
+            $name = trim(strtolower($role->name));
+            $slug = trim(strtolower($role->slug));
+            $aliases = [$name, $slug];
+
+            if (str_contains($name, 'sales manager')) {
+                $aliases = array_merge($aliases, ['sales manager', 'sales-manager', 'sales_manager']);
+            }
+            if (str_contains($name, 'senior') || str_contains($slug, 'senior')) {
+                $aliases = array_merge($aliases, ['senior property advisor', 'senior property consultant', 'senior advisor', 'senior-advisor', 'senior agent']);
+            }
+            if (str_contains($name, 'operations') || str_contains($slug, 'operations')) {
+                $aliases = array_merge($aliases, ['operations coordinator', 'operations-coordinator', 'operations', 'operations manager', 'coordinator']);
+            }
+            if (str_contains($name, 'property consultant') || str_contains($slug, 'property-consultant')) {
+                $aliases = array_merge($aliases, ['property consultant', 'property-consultant', 'property advisor', 'agent', 'sales agent']);
+            }
+            if (str_contains($name, 'telesales') || str_contains($slug, 'telesales')) {
+                $aliases = array_merge($aliases, ['telesales agent', 'telesales-agent', 'telesales', 'tele-sales']);
+            }
+            if (str_contains($name, 'marketing') || str_contains($slug, 'marketing')) {
+                $aliases = array_merge($aliases, ['marketing manager', 'marketing-manager', 'marketing']);
+            }
+            if (str_contains($name, 'developer') || str_contains($slug, 'developer')) {
+                $aliases = array_merge($aliases, ['developer', 'it', 'programmer']);
+            }
+            if (str_contains($name, 'super admin') || str_contains($slug, 'super-admin')) {
+                $aliases = array_merge($aliases, ['super admin', 'super-admin', 'admin', 'administrator', 'superadmin']);
+            }
+            $aliases = array_values(array_unique(array_map('strtolower', array_map('trim', $aliases))));
+
+            // Auto-heal users matching this role by text who have null or missing role_id
+            User::where(function ($q) use ($role) {
+                $q->whereNull('role_id')->orWhere('role_id', 0);
+            })
+            ->where(function ($q) use ($role, $aliases) {
+                $q->where('role', $role->name)
+                  ->orWhere('role', $role->slug)
+                  ->orWhereIn(DB::raw('LOWER(TRIM(role))'), $aliases);
+            })
+            ->update([
+                'role_id' => $role->id,
+                'role' => $role->name,
+                'permissions' => $role->permissions ?? [],
+            ]);
+        }
+
+        // 2. Compute accurate users_count for every role card
+        $roles = Role::orderBy('id', 'asc')->get()->map(function ($role) {
+            $name = trim(strtolower($role->name));
+            $slug = trim(strtolower($role->slug));
+            $aliases = [$name, $slug];
+
+            if (str_contains($name, 'sales manager')) {
+                $aliases = array_merge($aliases, ['sales manager', 'sales-manager', 'sales_manager']);
+            }
+            if (str_contains($name, 'senior') || str_contains($slug, 'senior')) {
+                $aliases = array_merge($aliases, ['senior property advisor', 'senior property consultant', 'senior advisor', 'senior-advisor', 'senior agent']);
+            }
+            if (str_contains($name, 'operations') || str_contains($slug, 'operations')) {
+                $aliases = array_merge($aliases, ['operations coordinator', 'operations-coordinator', 'operations', 'operations manager', 'coordinator']);
+            }
+            if (str_contains($name, 'property consultant') || str_contains($slug, 'property-consultant')) {
+                $aliases = array_merge($aliases, ['property consultant', 'property-consultant', 'property advisor', 'agent', 'sales agent']);
+            }
+            if (str_contains($name, 'telesales') || str_contains($slug, 'telesales')) {
+                $aliases = array_merge($aliases, ['telesales agent', 'telesales-agent', 'telesales', 'tele-sales']);
+            }
+            if (str_contains($name, 'marketing') || str_contains($slug, 'marketing')) {
+                $aliases = array_merge($aliases, ['marketing manager', 'marketing-manager', 'marketing']);
+            }
+            if (str_contains($name, 'developer') || str_contains($slug, 'developer')) {
+                $aliases = array_merge($aliases, ['developer', 'it', 'programmer']);
+            }
+            if (str_contains($name, 'super admin') || str_contains($slug, 'super-admin')) {
+                $aliases = array_merge($aliases, ['super admin', 'super-admin', 'admin', 'administrator', 'superadmin']);
+            }
+            $aliases = array_values(array_unique(array_map('strtolower', array_map('trim', $aliases))));
+
+            $count = User::where(function ($q) use ($role, $aliases) {
+                $q->where('role_id', $role->id)
+                  ->orWhere('role', $role->name)
+                  ->orWhere('role', $role->slug)
+                  ->orWhereIn(DB::raw('LOWER(TRIM(role))'), $aliases);
+            })->count();
+
+            $role->users_count = $count;
+            return $role;
+        });
+
         return response()->json([
             'success' => true,
             'roles' => $roles,

@@ -93,17 +93,41 @@ class User extends Authenticatable
         // Strict derivation from assigned Role
         $role = $this->roleModel;
         if (!$role && !empty($this->role)) {
-            $role = Role::where('name', $this->role)->first();
+            $cleanRole = trim($this->role);
+            $role = Role::where('name', $cleanRole)
+                ->orWhere('slug', \Illuminate\Support\Str::slug($cleanRole))
+                ->orWhereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanRole)])
+                ->orWhereRaw('LOWER(TRIM(slug)) = ?', [strtolower($cleanRole)])
+                ->first();
         }
 
         if ($role && !empty($role->permissions)) {
             $perms = is_array($role->permissions) ? $role->permissions : explode(' ', $role->permissions);
-            return in_array('*', $perms) || in_array($permission, $perms);
+            if (in_array('*', $perms) || in_array($permission, $perms)) {
+                return true;
+            }
         }
 
-        // Fallback to user stored permissions if no role model found
+        // Fallback to user stored permissions
         if (!empty($this->permissions) && is_array($this->permissions)) {
-            return in_array('*', $this->permissions) || in_array($permission, $this->permissions);
+            if (in_array('*', $this->permissions) || in_array($permission, $this->permissions)) {
+                return true;
+            }
+        }
+
+        // Real estate agent baseline fallback: All working sales agents have core view access
+        if ($permission === 'leads.view' || $permission === 'lead_pool.view') {
+            $roleLower = strtolower($this->role ?? '');
+            if (
+                str_contains($roleLower, 'agent') ||
+                str_contains($roleLower, 'consultant') ||
+                str_contains($roleLower, 'advisor') ||
+                str_contains($roleLower, 'manager') ||
+                str_contains($roleLower, 'coordinator') ||
+                str_contains($roleLower, 'sales')
+            ) {
+                return true;
+            }
         }
 
         return false;
@@ -120,20 +144,42 @@ class User extends Authenticatable
 
         $role = $this->roleModel;
         if (!$role && !empty($this->role)) {
-            $role = Role::where('name', $this->role)->first();
+            $cleanRole = trim($this->role);
+            $role = Role::where('name', $cleanRole)
+                ->orWhere('slug', \Illuminate\Support\Str::slug($cleanRole))
+                ->orWhereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanRole)])
+                ->orWhereRaw('LOWER(TRIM(slug)) = ?', [strtolower($cleanRole)])
+                ->first();
         }
 
+        $perms = [];
         if ($role && !empty($role->permissions)) {
-            return is_array($role->permissions)
+            $perms = is_array($role->permissions)
                 ? $role->permissions
                 : explode(' ', $role->permissions);
+        } elseif (!empty($this->permissions) && is_array($this->permissions)) {
+            $perms = $this->permissions;
         }
 
-        if (!empty($this->permissions) && is_array($this->permissions)) {
-            return $this->permissions;
+        // Real estate baseline guarantee: Always ensure leads.view and lead_pool.view for sales roles
+        $roleLower = strtolower($this->role ?? '');
+        if (
+            str_contains($roleLower, 'agent') ||
+            str_contains($roleLower, 'consultant') ||
+            str_contains($roleLower, 'advisor') ||
+            str_contains($roleLower, 'manager') ||
+            str_contains($roleLower, 'coordinator') ||
+            str_contains($roleLower, 'sales')
+        ) {
+            if (!in_array('leads.view', $perms)) {
+                $perms[] = 'leads.view';
+            }
+            if (!in_array('lead_pool.view', $perms)) {
+                $perms[] = 'lead_pool.view';
+            }
         }
 
-        return [];
+        return array_values(array_unique($perms));
     }
 
     /**

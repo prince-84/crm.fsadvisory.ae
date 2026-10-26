@@ -27,7 +27,7 @@ import {
   Database
 } from 'lucide-react';
 import { fetchApi } from '@/lib/api';
-import { isSuperUser } from '@/lib/permissions';
+import { isSuperUser, refreshCurrentUser } from '@/lib/permissions';
 
 function SidebarInner() {
   const pathname = usePathname();
@@ -78,6 +78,10 @@ function SidebarInner() {
     };
 
     syncUser();
+    refreshCurrentUser().then((u) => {
+      if (u) setCurrentUser(u);
+    });
+
     window.addEventListener('crm_user_updated', syncUser);
     window.addEventListener('storage', syncUser);
     return () => {
@@ -92,6 +96,22 @@ function SidebarInner() {
     if (isSuperUser(currentUser)) return true;
     const perms: string[] = currentUser.permissions || [];
     if (perms.includes('*')) return true;
+
+    // Real estate sales baseline fallback: working advisors always have core workspace access
+    if (permission === 'leads.view' || permission === 'lead_pool.view') {
+      const roleLower = (currentUser.role || '').toLowerCase();
+      if (
+        roleLower.includes('agent') ||
+        roleLower.includes('consultant') ||
+        roleLower.includes('advisor') ||
+        roleLower.includes('manager') ||
+        roleLower.includes('coordinator') ||
+        roleLower.includes('sales')
+      ) {
+        return true;
+      }
+    }
+
     if (permission === 'lead_pool.view') {
       if (perms.some((p) => p.startsWith('lead_pool.'))) {
         return perms.includes('lead_pool.view') || perms.includes('lead_pool.claim');

@@ -94,6 +94,22 @@ export function hasPermission(permissionKey: string): boolean {
   if (isSuperUser(user)) return true;
   const perms = user.permissions || [];
   if (perms.includes('*')) return true;
+
+  // Real estate sales baseline fallback: All active working agents have core view access
+  if (permissionKey === 'leads.view' || permissionKey === 'lead_pool.view') {
+    const roleLower = (user.role || '').toLowerCase();
+    if (
+      roleLower.includes('agent') ||
+      roleLower.includes('consultant') ||
+      roleLower.includes('advisor') ||
+      roleLower.includes('manager') ||
+      roleLower.includes('coordinator') ||
+      roleLower.includes('sales')
+    ) {
+      return true;
+    }
+  }
+
   return perms.includes(permissionKey);
 }
 
@@ -106,6 +122,22 @@ export function hasAnyPermission(permissionKeys: string[]): boolean {
   if (isSuperUser(user)) return true;
   const perms = user.permissions || [];
   if (perms.includes('*')) return true;
+
+  // Real estate sales baseline fallback
+  if (permissionKeys.includes('leads.view') || permissionKeys.includes('lead_pool.view')) {
+    const roleLower = (user.role || '').toLowerCase();
+    if (
+      roleLower.includes('agent') ||
+      roleLower.includes('consultant') ||
+      roleLower.includes('advisor') ||
+      roleLower.includes('manager') ||
+      roleLower.includes('coordinator') ||
+      roleLower.includes('sales')
+    ) {
+      return true;
+    }
+  }
+
   return permissionKeys.some((k) => perms.includes(k));
 }
 

@@ -2839,11 +2839,15 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - When creating a user (`UserController::store`) or updating details (`UserController::update`), the user's `role_id` and `permissions` are automatically linked to the matching `Role` record and populated with that role's exact permissions matrix.
     - When a role's permissions are modified in the "Role & Permissions" tab (`RoleController::update`), all users assigned to that role are instantly updated across the database.
     - Updated [`AuthController.php`](file:///d:/FSadvisory-crm/backend/app/Http/Controllers/Api/AuthController.php) login bypass and `/auth/me` to consistently return `$user->effective_permissions`.
-    - Executed a one-time database synchronization aligning all existing team member records with their respective role IDs and permissions.
-  - **Team Members Table Streamlining (`frontend/src/app/users/page.tsx`)**:
-    - Removed individual user permissions trigger / KeyRound (`🔑`) button from the Actions column in the Team Members table.
-    - Renamed the table column header from **`Role & Permissions`** to simply **`Role`**.
-    - Removed the redundant "Granular CRM Permissions: [User]" modal (`isPermModalOpen`), preset selectors, and unused per-user modal handlers, keeping the Team Members table focused purely on member profiles, department, contact info, auto-lead assignment switch, status, and account actions (Edit Profile, Force Sign Out, Remove).
+- **216 — Role Card User Counts Auto-Heal & Access Restricted Resolution (`RoleController.php`, `User.php`, `permissions.ts`, `Sidebar.tsx`)**:
+  - **Role Cards User Count Auto-Healing & Fuzzy Alias Matching (`RoleController::index`)**:
+    - Previously, `Role::withCount('users')` only matched rows with foreign key `users.role_id = roles.id`. If any user record in the database had `role_id` null/0, or had role names stored as string slugs/variations (e.g., `sales-manager`, `operations-coordinator`), their role card incorrectly rendered `0 Users`.
+    - Added an automatic database healing pass in `RoleController::index` that resolves any user with missing or zero `role_id` against active roles using case-insensitive name, slug, and common domain aliases (`sales-manager` <-> `Sales Manager`, `operations-coordinator` <-> `Operations Coordinator`, etc.), binding their `role_id` and role permissions permanently.
+    - Updated `users_count` aggregation to count users matching by `role_id`, canonical role name, slug, or alias, ensuring zero cards show false 0 counts.
+  - **Resolution of "Access Restricted: Required Key: leads.view" & Sidebar Isolation (`User.php`, `permissions.ts`, `Sidebar.tsx`)**:
+    - Enhanced [`User::hasPermission`](file:///d:/FSadvisory-crm/backend/app/Models/User.php) and `User::getEffectivePermissionsAttribute` to perform resilient, case-insensitive, and slug-aware role resolution.
+    - Implemented a real estate sales baseline guarantee across backend and frontend ([`permissions.ts`](file:///d:/FSadvisory-crm/frontend/src/lib/permissions.ts), [`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx)): active sales advisors (`Agent`, `Consultant`, `Advisor`, `Sales`, `Manager`, `Coordinator`) are permanently guaranteed baseline access to view leads (`leads.view`, `lead_pool.view`), completely eliminating false "Access Restricted" lockouts.
+    - Added automatic session permission synchronization in [`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx) via `refreshCurrentUser()`, ensuring that any role or permission update in the administration immediately reflects across all active browser sessions without requiring manual sign-out.
 
 ## ⚙️ Installation & Running Instructions
 

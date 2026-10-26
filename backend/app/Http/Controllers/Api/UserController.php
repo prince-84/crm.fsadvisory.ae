@@ -98,7 +98,12 @@ class UserController extends Controller
             $roleModel = Role::find($validated['role_id']);
         }
         if (!$roleModel && !empty($validated['role'])) {
-            $roleModel = Role::where('name', $validated['role'])->first();
+            $cleanRole = trim($validated['role']);
+            $roleModel = Role::where('name', $cleanRole)
+                ->orWhere('slug', Str::slug($cleanRole))
+                ->orWhereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanRole)])
+                ->orWhereRaw('LOWER(TRIM(slug)) = ?', [strtolower($cleanRole)])
+                ->first();
         }
 
         $roleId = $roleModel?->id;
@@ -165,7 +170,12 @@ class UserController extends Controller
             $roleModel = Role::find($validated['role_id']);
         }
         if (!$roleModel && !empty($validated['role'])) {
-            $roleModel = Role::where('name', $validated['role'])->first();
+            $cleanRole = trim($validated['role']);
+            $roleModel = Role::where('name', $cleanRole)
+                ->orWhere('slug', Str::slug($cleanRole))
+                ->orWhereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanRole)])
+                ->orWhereRaw('LOWER(TRIM(slug)) = ?', [strtolower($cleanRole)])
+                ->first();
         }
 
         if ($roleModel) {
