@@ -85,19 +85,10 @@ async function triggerPageQrReload() {
   if (!client || !client.pupPage) return false;
   try {
     const clicked = await client.pupPage.evaluate(() => {
-      const selectors = [
-        'div[data-ref] span[role="button"]',
-        'button[aria-label="Reload QR code"]',
-        'span[data-icon="refresh"]',
-        'div[data-ref] button',
-        'div[role="button"]'
-      ];
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el) {
-          el.click();
-          return true;
-        }
+      const reloadBtn = document.querySelector('button[aria-label*="Reload"], span[data-icon="refresh"], div[data-ref] [role="button"]');
+      if (reloadBtn) {
+        reloadBtn.click();
+        return true;
       }
       return false;
     });
@@ -105,8 +96,11 @@ async function triggerPageQrReload() {
       console.log('🔄 Clicked reload QR button on WhatsApp Web page');
       return true;
     }
+    console.log('🔄 Reloading Puppeteer page for fresh QR code...');
+    await client.pupPage.reload({ waitUntil: 'domcontentloaded' });
+    return true;
   } catch (e) {
-    console.warn('Could not click reload button:', e.message);
+    console.warn('Could not reload QR:', e.message);
   }
   return false;
 }
@@ -754,20 +748,21 @@ function transcodeToWhatsAppOpus(base64Data) {
 // ── REST API ────────────────────────────────────────────────────────────────
 app.get('/api/status', (_, res) => {
   const now = Date.now();
-  const isExpired = currentQrTimestamp ? (now - currentQrTimestamp > 60000) : false;
+  const ageMs = currentQrTimestamp ? (now - currentQrTimestamp) : null;
+  const isExpired = ageMs !== null && ageMs > 22000;
   res.json({
     status: connectionStatus,
     user: connectedUser,
     has_qr: !!currentQrImage && !isExpired,
     is_expired: isExpired,
-    qr_age_sec: currentQrTimestamp ? Math.floor((now - currentQrTimestamp) / 1000) : null
+    qr_age_sec: currentQrTimestamp ? Math.floor(ageMs / 1000) : null
   });
 });
 
-app.get('/api/qr', async (_, res) => {
+app.get('/api/qr', async (req, res) => {
   const now = Date.now();
   const ageMs = currentQrTimestamp ? (now - currentQrTimestamp) : null;
-  const isExpired = ageMs !== null && ageMs > 60000;
+  const isCurrentlyFresh = (ageMs !== null && ageMs < 18000 && !!currentQrRaw && !!currentQrImage);
 
   if (connectionStatus === 'connected') {
     return res.json({
@@ -780,21 +775,33 @@ app.get('/api/qr', async (_, res) => {
     });
   }
 
-  // If older than 50 seconds or missing while not connected, auto-trigger refresh
-  if ((ageMs === null || ageMs > 50000 || !currentQrRaw) && !isAuthenticating) {
-    refreshQrSession().catch(() => {});
+  // If we don't have a fresh active QR code (< 18s old), trigger reload and wait for fresh one
+  if (!isCurrentlyFresh && !isAuthenticating) {
+    const prevTimestamp = currentQrTimestamp;
+    triggerPageQrReload().catch(() => {});
+
+    // Wait up to 4s for a brand-new QR code to be emitted by WhatsApp Web
+    const waitStart = Date.now();
+    while (Date.now() - waitStart < 4000) {
+      if (currentQrTimestamp && currentQrTimestamp !== prevTimestamp && currentQrRaw && currentQrImage) {
+        break;
+      }
+      await sleep(150);
+    }
   }
 
-  const expiresIn = currentQrTimestamp
-    ? Math.max(5, Math.floor((60000 - ageMs) / 1000))
-    : 45;
+  const finalAgeMs = currentQrTimestamp ? (Date.now() - currentQrTimestamp) : null;
+  const expiresIn = finalAgeMs !== null
+    ? Math.max(3, Math.floor((25000 - finalAgeMs) / 1000))
+    : 20;
 
   res.json({
     status: connectionStatus === 'connected' ? 'connected' : (currentQrRaw ? 'qr_ready' : connectionStatus),
     qr_image: currentQrImage,
     qr_code: currentQrRaw,
-    is_expired: isExpired,
+    is_expired: false,
     expires_in: expiresIn,
+    qr_age_sec: finalAgeMs ? Math.floor(finalAgeMs / 1000) : 0,
     user: connectedUser
   });
 });
@@ -1048,13 +1055,23 @@ app.get('/api/inspect-media', async (req, res) => {
 
 // ── Periodic Heartbeat Sync with Laravel ────────────────────────────────────
 setInterval(() => {
-  if (connectionStatus === 'qr_ready' && currentQrRaw && currentQrImage) {
-    postToLaravel('/api/whatsapp/sync-qr', {
-      qr_code: currentQrRaw,
-      qr_image: currentQrImage,
-      status: 'qr_ready',
-      expires_in: 60,
-    }).catch(() => {});
+  const now = Date.now();
+  const age = currentQrTimestamp ? (now - currentQrTimestamp) : null;
+
+  if (connectionStatus === 'qr_ready') {
+    // If QR code hasn't updated for over 35 seconds and we are not in the middle of scanning, reload it once
+    if ((age === null || age > 35000) && !isAuthenticating) {
+      triggerPageQrReload().catch(() => {});
+    }
+
+    if (currentQrRaw && currentQrImage && age !== null && age <= 25000) {
+      postToLaravel('/api/whatsapp/sync-qr', {
+        qr_code: currentQrRaw,
+        qr_image: currentQrImage,
+        status: 'qr_ready',
+        expires_in: Math.max(3, Math.floor((25000 - age) / 1000)),
+      }).catch(() => {});
+    }
   } else if (connectionStatus === 'connected' && connectedUser) {
     postToLaravel('/api/whatsapp/sync-qr', {
       qr_code: null,
@@ -1064,7 +1081,7 @@ setInterval(() => {
       connected_user: connectedUser,
     }).catch(() => {});
   }
-}, 15000);
+}, 10000);
 
 // ── Start ───────────────────────────────────────────────────────────────────
 app.listen(PORT, '127.0.0.1', () => {

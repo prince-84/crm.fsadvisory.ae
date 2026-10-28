@@ -2875,6 +2875,33 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - **Single-Click Windows Gateway Launcher (`start_whatsapp_gateway.bat`)**:
       - Created a dedicated Windows batch launcher in the project root to run and monitor the WhatsApp gateway daemon on `http://127.0.0.1:5003` with a single double-click.
 
+- **218 — WhatsApp Ephemeral Pairing Handshake & Zero-Failure First Scan Assurance (`whatsapp-gateway/server.js`, `backend/app/Http/Controllers/Api/WhatsAppController.php`, `frontend/src/app/whatsapp/page.tsx`)**:
+  - **Issue Investigated ("Couldn't link device" on 1st Scan, Succeeded on 2nd Scan)**:
+    - Scanning the WhatsApp QR code on mobile for the first time resulted in WhatsApp reporting *"Couldn't link device"*. Reopening or clicking "Link WhatsApp Device" a second time allowed the device to pair and connect immediately.
+  - **Deep Root Cause & Protocol Analysis**:
+    1. **Accidental Session Destruction via `generateQr` (`WhatsAppController.php`)**:
+       - In `backend/app/Http/Controllers/Api/WhatsAppController.php` `generateQr()`, an outdated check `if ($request->boolean('force_refresh', false) || $request->boolean('logout_first', false))` sent an HTTP POST to `/api/logout`.
+       - Because `frontend/src/app/whatsapp/page.tsx` previously passed `force_refresh: true`, Laravel triggered `/api/logout`, causing `whatsapp-gateway/server.js` to execute `await client.destroy(); client = null;`.
+       - This destroyed the active Puppeteer Chromium browser session right as the user was raising their phone to scan the QR code. WhatsApp servers received a terminated WebSocket handshake and returned *"Couldn't link device"*.
+    2. **Premature Timeout & Stale QR Delivery in Gateway `/api/qr`**:
+       - In `whatsapp-gateway/server.js`, passing `force=1` triggered `triggerPageQrReload()` even if the QR code was only 5–10 seconds old.
+       - WhatsApp Web requires ~1.5–2.5s to generate a new QR. The gateway's wait loop timed out after only 1.2s and returned the *old* QR code that WhatsApp Web had just cancelled by clicking the reload button, rendering the displayed QR dead on arrival.
+    3. **Aggressive Heartbeat Invalidation**:
+       - The heartbeat interval reloaded the page every 16 seconds, interrupting users mid-scan.
+    4. **Frontend Dual-Call Race Condition**:
+       - `handleOpenQrModal()` called `fetchGateway('/api/qr')` and immediately followed with `fetchApi('/whatsapp/channels/generate-qr', { force_refresh: true })`, creating duplicate overlapping requests and session resets.
+  - **Technical Upgrades Implemented**:
+    - **Safe Logout Isolation (`WhatsAppController.php`)**:
+      - Restricted `/api/logout` strictly to explicit `logout_first: true` requests (e.g. clicking "Unlink Device"). `force_refresh` or normal QR modal opens NEVER trigger logout.
+      - Increased Laravel proxy timeout in `gatewayQr()` from 3s to 5s and set cache freshness ceiling to 25s.
+    - **Fresh Key Immediate Delivery & 4-Second Wait Guarantee (`whatsapp-gateway/server.js`)**:
+      - In `/api/qr`, if the existing QR code is fresh (< 18 seconds old), it is served **immediately** without triggering any reload or disruption, giving advisors a stable, uninterrupted 20+ second scanning window.
+      - If the QR is expired (>= 18s), it triggers `triggerPageQrReload()` with clean fallback to `client.pupPage.reload({ waitUntil: 'domcontentloaded' })`, and waits up to 4.0 seconds for the new key (`currentQrTimestamp !== prevTimestamp`). The loop breaks instantly upon key generation, delivering a brand-new 0–1s fresh QR code.
+      - Heartbeat interval stabilized to 10s and only triggers reloads if idle and unauthenticated for > 35s.
+    - **Streamlined Frontend Hydration (`frontend/src/app/whatsapp/page.tsx`)**:
+      - `handleOpenQrModal()` now directly retrieves the live gateway QR. Upon receiving a valid QR (`qr_image || qr_code`), it renders immediately and halts, eliminating redundant calls and race conditions.
+      - Removed `force_refresh: true` from backend channel queries.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)

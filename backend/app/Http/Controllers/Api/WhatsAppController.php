@@ -205,8 +205,8 @@ class WhatsAppController extends Controller
             );
         }
 
-        // If client requested a fresh QR or logout of previous session, reset gateway
-        if ($request->boolean('force_refresh', false) || $request->boolean('logout_first', false)) {
+        // Only logout if client explicitly requested logout_first
+        if ($request->boolean('logout_first', false)) {
             try {
                 \Illuminate\Support\Facades\Http::timeout(6)->post($this->gatewayUrl() . '/api/logout');
                 sleep(2);
@@ -217,9 +217,10 @@ class WhatsAppController extends Controller
         $realQrCode = null;
         $realQrImage = null;
         $gatewayStatus = 'disconnected';
-        $connectedUser = null;
+        $force = $request->boolean('force_refresh', false);
+        $gwEndpoint = $force ? '/api/qr?force=1' : '/api/qr';
         try {
-            $gwRes = \Illuminate\Support\Facades\Http::timeout(4)->get($this->gatewayUrl() . '/api/qr');
+            $gwRes = \Illuminate\Support\Facades\Http::timeout(4)->get($this->gatewayUrl() . $gwEndpoint);
             if ($gwRes->successful()) {
                 $gwData = $gwRes->json();
                 $gatewayStatus = $gwData['status'] ?? 'disconnected';
@@ -244,10 +245,11 @@ class WhatsAppController extends Controller
             // Gateway not running or connecting
         }
 
-        // If direct gateway HTTP request didn't return a QR, check pushed state in cache
+        // If direct gateway HTTP request didn't return a QR, check pushed state in cache (strictly enforce freshness <= 22s)
         if (!$realQrCode && !$realQrImage) {
             $cached = \Illuminate\Support\Facades\Cache::get('whatsapp_gateway_state');
-            if ($cached && !empty($cached['updated_at']) && (now()->timestamp - $cached['updated_at']) < 180) {
+            $age = $cached && !empty($cached['updated_at']) ? (now()->timestamp - $cached['updated_at']) : 999;
+            if ($cached && $age <= 22) {
                 $gatewayStatus = $cached['status'] ?? $gatewayStatus;
                 $connectedUser = $cached['connected_user'] ?? $connectedUser;
                 if (!empty($cached['qr_code'])) $realQrCode = $cached['qr_code'];
@@ -416,10 +418,12 @@ class WhatsAppController extends Controller
     /**
      * Proxy WhatsApp Gateway QR image for secure HTTPS clients (Vercel)
      */
-    public function gatewayQr()
+    public function gatewayQr(Request $request)
     {
+        $force = $request->boolean('force_refresh', false) || $request->input('force') == '1';
+        $gwEndpoint = $force ? '/api/qr?force=1' : '/api/qr';
         try {
-            $res = \Illuminate\Support\Facades\Http::timeout(3)->get($this->gatewayUrl() . '/api/qr');
+            $res = \Illuminate\Support\Facades\Http::timeout(5)->get($this->gatewayUrl() . $gwEndpoint);
             if ($res->successful()) {
                 $data = $res->json();
                 if (!empty($data['qr_image']) || !empty($data['qr_code'])) {
@@ -428,17 +432,21 @@ class WhatsAppController extends Controller
             }
         } catch (\Exception $e) {}
 
-        // Fallback to state pushed by gateway daemon
+        // Fallback to state pushed by gateway daemon (strictly <= 25 seconds old)
         $cached = \Illuminate\Support\Facades\Cache::get('whatsapp_gateway_state');
         if ($cached && (!empty($cached['qr_image']) || !empty($cached['qr_code']))) {
-            $ttl = max(5, ($cached['expires_at'] ?? (now()->timestamp + 30)) - now()->timestamp);
-            return response()->json([
-                'status' => $cached['status'] ?? 'qr_ready',
-                'qr_image' => $cached['qr_image'] ?? null,
-                'qr_code' => $cached['qr_code'] ?? null,
-                'expires_in' => $ttl,
-                'user' => $cached['connected_user'] ?? null,
-            ], 200);
+            $age = now()->timestamp - ($cached['updated_at'] ?? 0);
+            if ($age <= 25) {
+                $ttl = max(3, 25 - $age);
+                return response()->json([
+                    'status' => $cached['status'] ?? 'qr_ready',
+                    'qr_image' => $cached['qr_image'] ?? null,
+                    'qr_code' => $cached['qr_code'] ?? null,
+                    'expires_in' => $ttl,
+                    'qr_age_sec' => $age,
+                    'user' => $cached['connected_user'] ?? null,
+                ], 200);
+            }
         }
 
         return response()->json([

@@ -1077,16 +1077,19 @@ export default function WhatsAppPage() {
     }
     const finalTargetId = Number(targetId) || (channels[0]?.id ? Number(channels[0].id) : 1);
     setQrChannelId(finalTargetId);
-    setQrTimer(30);
+    setQrTimer(25);
     setQrImageData('');
     setQrCodeData('');
     setIsRealQr(false);
     wasConnectedOnOpenRef.current = (qrGatewayStatus === 'connected' || gatewayStatus === 'connected');
     setIsQrModalOpen(true);
 
-    // 1. Fetch live gateway QR first (direct or via Laravel proxy)
+    // 1. Fetch live guaranteed-fresh gateway QR first (direct or via Laravel proxy)
     try {
-      const data = await fetchGateway('/api/qr');
+      let data = await fetchGateway('/api/qr');
+      if (!data?.qr_image && !data?.qr_code && data?.status !== 'connected') {
+        data = await fetchApi('/whatsapp/gateway/qr').catch(() => null);
+      }
       if (data?.status === 'connected') {
         setQrGatewayStatus('connected');
         setGatewayStatus('connected');
@@ -1098,12 +1101,15 @@ export default function WhatsAppPage() {
         if (data.qr_code) setQrCodeData(data.qr_code);
         setIsRealQr(true);
         if (data.expires_in) setQrTimer(data.expires_in);
+        if (data?.status) setQrGatewayStatus(data.status);
+        if (data?.user) setQrConnectedUser(data.user);
+        return; // Valid active QR code received! Do not call generate-qr to avoid race conditions
       }
       if (data?.status) setQrGatewayStatus(data.status);
       if (data?.user) setQrConnectedUser(data.user);
     } catch (_) {}
 
-    // 2. Request QR from CRM Backend API
+    // 2. Fallback to CRM Backend API if gateway wasn't reached directly
     try {
       const backendRes = await fetchApi('/whatsapp/channels/generate-qr', {
         method: 'POST',
@@ -1150,18 +1156,21 @@ export default function WhatsAppPage() {
         if (data.qr_code) setQrCodeData(data.qr_code);
         setIsRealQr(true);
         if (data.expires_in) setQrTimer(data.expires_in);
+        if (data?.status) setQrGatewayStatus(data.status);
+        if (data?.user) setQrConnectedUser(data.user);
+        return;
       }
       if (data?.status) setQrGatewayStatus(data.status);
       if (data?.user) setQrConnectedUser(data.user);
     } catch (_) {}
 
-    // 2. Refresh from backend API
+    // 2. Fallback to backend API
     try {
       const backendRes = await fetchApi('/whatsapp/channels/generate-qr', {
         method: 'POST',
         body: JSON.stringify({ 
           channel_id: qrChannelId || 1,
-          force_refresh: forceLogout,
+          logout_first: forceLogout,
         }),
       });
       if (backendRes?.qr_image || backendRes?.qr_code) {
