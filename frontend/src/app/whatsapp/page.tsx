@@ -209,11 +209,6 @@ export default function WhatsAppPage() {
   const [channels, setChannels] = useState<any[]>([]);
   const [selectedChannelId, setSelectedChannelId] = useState<string>('all');
 
-  const activeChannel = useMemo(() => {
-    if (selectedChannelId === 'all') return null;
-    return channels.find((c) => String(c.id) === String(selectedChannelId));
-  }, [channels, selectedChannelId]);
-
   const connectedChannelsCount = useMemo(() => {
     return channels.filter((c) => c.status === 'connected').length;
   }, [channels]);
@@ -227,15 +222,33 @@ export default function WhatsAppPage() {
   const [messageText, setMessageText] = useState('');
   const [sending, setSending] = useState(false);
 
-  // Current Logged-in CRM User & Permissions
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('crm_user');
-      if (raw) setCurrentUser(JSON.parse(raw));
-    } catch (_) {}
+    const syncUser = () => {
+      try {
+        const raw = localStorage.getItem('crm_user');
+        if (raw) setCurrentUser(JSON.parse(raw));
+      } catch (_) {}
+    };
+    syncUser();
+    window.addEventListener('crm_user_updated', syncUser);
+    window.addEventListener('storage', syncUser);
+
+    fetchApi('/auth/me').then((res) => {
+      if (res?.user) {
+        setCurrentUser(res.user);
+        try {
+          localStorage.setItem('crm_user', JSON.stringify(res.user));
+        } catch (_) {}
+      }
+    }).catch(() => {});
+
+    return () => {
+      window.removeEventListener('crm_user_updated', syncUser);
+      window.removeEventListener('storage', syncUser);
+    };
   }, []);
 
   const isSuperAdminUser = useMemo(() => {
@@ -244,6 +257,16 @@ export default function WhatsAppPage() {
     return ['super admin', 'agency owner', 'owner', 'ceo', 'admin'].includes(role)
       || Boolean(currentUser?.effective_permissions?.includes('*'));
   }, [isSuperAdmin, currentUser]);
+
+  const activeChannel = useMemo(() => {
+    if (!isSuperAdminUser && channels.length > 0) {
+      const myChan = channels.find((c) => c.user_id === currentUser?.id || c.agent_name?.toLowerCase() === currentUser?.name?.toLowerCase());
+      if (myChan) return myChan;
+      return channels[0];
+    }
+    if (selectedChannelId === 'all') return null;
+    return channels.find((c) => String(c.id) === String(selectedChannelId));
+  }, [channels, selectedChannelId, isSuperAdminUser, currentUser]);
 
   // New Chat Modal State (WhatsApp Web Style)
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
@@ -464,14 +487,24 @@ export default function WhatsAppPage() {
       const chList = data.channels || [];
       setChannels(chList);
 
+      if (data.current_user) {
+        setCurrentUser(data.current_user);
+      }
+
+      const activeUser = data.current_user || currentUser;
       const isSuper = data.is_super_admin !== undefined
         ? Boolean(data.is_super_admin)
-        : ['super admin', 'agency owner', 'owner', 'ceo', 'admin'].includes((currentUser?.role || '').toLowerCase());
+        : ['super admin', 'agency owner', 'owner', 'ceo', 'admin'].includes((activeUser?.role || '').toLowerCase());
       setIsSuperAdmin(isSuper);
 
       // If regular user (non-super-admin), lock selection to their own channel
       if (!isSuper && chList.length > 0) {
-        setSelectedChannelId(String(chList[0].id));
+        const myChan = data.current_user_channel
+          || chList.find((c: any) => c.user_id === activeUser?.id || c.agent_name?.toLowerCase() === activeUser?.name?.toLowerCase())
+          || chList[0];
+        if (myChan?.id) {
+          setSelectedChannelId(String(myChan.id));
+        }
       }
 
       try {
@@ -1446,7 +1479,7 @@ export default function WhatsAppPage() {
                   <h1 className="font-heading font-bold text-sm text-white tracking-wide">
                     WhatsApp Web Mirroring
                   </h1>
-                  {selectedChannelId === 'all' ? (
+                  {(selectedChannelId === 'all' && isSuperAdminUser) ? (
                     connectedChannelsCount > 0 ? (
                       <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-[#25D366]/20 text-[#25D366] border border-[#25D366]/30 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] animate-pulse"></span>
@@ -1458,20 +1491,20 @@ export default function WhatsAppPage() {
                         All Disconnected
                       </span>
                     )
-                  ) : activeChannel?.status === 'connected' ? (
+                  ) : (activeChannel?.status === 'connected' || (!isSuperAdminUser && channels[0]?.status === 'connected')) ? (
                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-[#25D366]/20 text-[#25D366] border border-[#25D366]/30 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#25D366] animate-pulse"></span>
-                      {activeChannel.agent_name} Online
+                      {currentUser?.name || activeChannel?.agent_name || channels[0]?.agent_name} Online
                     </span>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => handleOpenQrModal(activeChannel?.id)}
+                      onClick={() => handleOpenQrModal(activeChannel?.id || channels[0]?.id)}
                       className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center gap-1 cursor-pointer transition-colors"
                       title="Device disconnected. Click to scan QR code and link."
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                      {activeChannel?.agent_name || 'Account'} Disconnected · Click to Link
+                      {currentUser?.name || activeChannel?.agent_name || 'Account'} Disconnected · Click to Link
                     </button>
                   )}
                 </div>
@@ -1517,14 +1550,14 @@ export default function WhatsAppPage() {
                   <Smartphone className="w-3.5 h-3.5 text-[#25D366] shrink-0" />
                   <span className="text-[11px] font-semibold text-[#B0C0D8]">My Account:</span>
                   <span className="text-white text-[11px] font-bold">
-                    {channels[0]?.agent_name || currentUser?.name || 'Personal Account'}
+                    {currentUser?.name || activeChannel?.agent_name || channels[0]?.agent_name || 'Personal Account'}
                   </span>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                    channels[0]?.status === 'connected'
+                    (activeChannel?.status === 'connected' || channels[0]?.status === 'connected')
                       ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
                       : 'bg-slate-800 text-slate-400 border border-slate-700'
                   }`}>
-                    {channels[0]?.status === 'connected' ? '🟢 Online' : '⚪ Offline'}
+                    {(activeChannel?.status === 'connected' || channels[0]?.status === 'connected') ? '🟢 Online' : '⚪ Offline'}
                   </span>
                 </div>
               )}
@@ -1795,7 +1828,7 @@ export default function WhatsAppPage() {
                     <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
                       <span className="font-mono font-medium">{formatPhoneOrId(selectedChat.phone)}</span>
                       <span>•</span>
-                      <span>Channel: <strong className="text-[#081428]">{selectedChat.channel?.agent_name || 'Advisor'}</strong></span>
+                      <span>Channel: <strong className="text-[#081428]">{(!isSuperAdminUser && currentUser?.name) ? currentUser.name : (selectedChat.channel?.agent_name || activeChannel?.agent_name || currentUser?.name || 'Advisor')}</strong></span>
                     </div>
                   </div>
                 </div>

@@ -114,39 +114,34 @@ class WhatsAppController extends Controller
             $currentUserChannel = $channels->firstWhere('user_id', $user?->id) ?? $channels->first();
         } else {
             // Individual user: ONLY return their own account/channel
-            $query = WhatsAppChannel::withCount('chats');
+            $userChan = null;
             if ($user) {
-                $query->where(function ($q) use ($user, $hasUserIdCol) {
-                    if ($hasUserIdCol) {
-                        $q->where('user_id', $user->id);
-                    }
-                    $q->orWhere('agent_name', $user->name)
-                      ->orWhere('session_name', $user->name);
-                    if (!empty($user->phone)) {
-                        $cleanPhone = preg_replace('/[^0-9]/', '', $user->phone);
-                        if (strlen($cleanPhone) >= 7) {
-                            $last7 = substr($cleanPhone, -7);
-                            $q->orWhere('phone_number', 'like', "%{$last7}%");
-                        }
-                    }
-                });
+                if ($hasUserIdCol) {
+                    $userChan = WhatsAppChannel::where('user_id', $user->id)->first();
+                }
+                if (!$userChan) {
+                    $userChan = WhatsAppChannel::where('agent_name', $user->name)
+                        ->orWhere('session_name', $user->name)
+                        ->first();
+                }
             }
-            $channels = $query->get();
 
             // Auto-create if not present
-            if ($channels->isEmpty() && $user) {
-                $newChan = WhatsAppChannel::create([
+            if (!$userChan && $user) {
+                $userChan = WhatsAppChannel::create([
                     'user_id' => $hasUserIdCol ? $user->id : null,
                     'session_name' => $user->name,
                     'agent_name' => $user->name,
-                    'phone_number' => $user->phone,
+                    'agent_extension' => substr($user->phone ?? '', -4) ?: '1000',
+                    'phone_number' => $user->phone ?: null,
                     'status' => 'disconnected',
                     'platform' => 'WhatsApp Multi-Device',
                     'battery_level' => 100,
                 ]);
-                $channels = collect([$newChan]);
             }
-            $currentUserChannel = $channels->first();
+
+            $channels = $userChan ? collect([$userChan->loadCount('chats')]) : collect([]);
+            $currentUserChannel = $userChan;
         }
 
         // Self-Healing: Clean Faraz Shafi from any stolen phone number (+971505559646)
@@ -204,11 +199,24 @@ class WhatsAppController extends Controller
         if ($isSuper) {
             $channels = WhatsAppChannel::withCount('chats')->orderBy('id', 'asc')->get();
             $currentUserChannel = $channels->firstWhere('user_id', $user?->id) ?? $channels->first();
+        } else {
+            if ($userChan) {
+                $freshUserChan = $userChan->fresh()->loadCount('chats');
+                $channels = collect([$freshUserChan]);
+                $currentUserChannel = $freshUserChan;
+            }
         }
 
         return response()->json([
             'channels' => $channels,
             'is_super_admin' => $isSuper,
+            'current_user' => $user ? [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role,
+                'phone' => $user->phone,
+            ] : null,
             'current_user_channel' => $currentUserChannel,
             'total_connected' => $channels->where('status', 'connected')->count(),
             'total_channels' => $channels->count(),

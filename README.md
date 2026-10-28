@@ -206,6 +206,10 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Migrated existing orphaned chats (e.g. Chat 393, 397, 398) to Channel 17 (`Shafi Uddin`).
   - **User Profile & WhatsApp Channel Synchronization (`UserController.php`)**:
     - In `UserController::update()`: Added automatic hook syncing changes to `name` or `phone` directly into the corresponding `whatsapp_channels` table entry, ensuring administrator edits immediately reflect across WhatsApp channels without being reverted.
+  - **Logged-in Agent Identity Resolution & Channel Isolation (`WhatsAppController.php`, `page.tsx`)**:
+    - **Strict Agent Channel Matching**: Purged loose phone-number matching (`orWhere('phone_number')`) from individual user channel lookup in `WhatsAppController::channels()`. For any agent (e.g. Shafi Uddin, Babar Ali, Mako Deka), their channel is strictly resolved by `user_id` or `agent_name`, ensuring one agent's login never matches or displays another agent's channel.
+    - **Fresh Profile Sync via `/auth/me`**: In `frontend/src/app/whatsapp/page.tsx`, integrated direct authentication handshake with `/auth/me` on mount alongside `crm_user_updated` listener, eliminating stale cached session data from previous logins.
+    - **Dynamic Account Badge & Header**: Fixed the top-left status pill (`{currentUser?.name || activeChannel?.agent_name} Online`), account badge (`My Account: {currentUser?.name}`), and active chat header (`Channel: {currentUser?.name}`) so whoever logs in always sees their own name, account state, and conversations.
   - **Frontend Account Linking Decoupling (`frontend/src/app/whatsapp/page.tsx`)**:
     - Decoupled hardcoded "Scan QR to Link Faraz Shafi's WhatsApp" button, converting it to a dynamic "Scan QR to Link WhatsApp" button that targets Shafi Uddin or the currently selected channel.
 - **40 — Dedicated Lead Pool Page (`/lead-pool`) & Clean Separation from Inbound Leads**:
