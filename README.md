@@ -2849,6 +2849,32 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Implemented a real estate sales baseline guarantee across backend and frontend ([`permissions.ts`](file:///d:/FSadvisory-crm/frontend/src/lib/permissions.ts), [`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx)): active sales advisors (`Agent`, `Consultant`, `Advisor`, `Sales`, `Manager`, `Coordinator`) are permanently guaranteed baseline access to view leads (`leads.view`, `lead_pool.view`), completely eliminating false "Access Restricted" lockouts.
     - Added automatic session permission synchronization in [`Sidebar.tsx`](file:///d:/FSadvisory-crm/frontend/src/components/Sidebar.tsx) via `refreshCurrentUser()`, ensuring that any role or permission update in the administration immediately reflects across all active browser sessions without requiring manual sign-out.
 
+- **217 — WhatsApp Live Authentic QR Code Delivery & Multi-Host Gateway Synchronization (`whatsapp-gateway/server.js`, `backend/app/Http/Controllers/Api/WhatsAppController.php`, `backend/routes/api.php`, `frontend/src/app/whatsapp/page.tsx`, `start_whatsapp_gateway.bat`)**:
+  - **Issue Investigated ("Link WhatsApp Device" Modal Stuck on Infinite Spinner)**:
+    - In the Link WhatsApp Device modal (`/whatsapp`), the QR code container was stuck displaying:
+      *"Generating Authentic QR... Fetching Live WhatsApp QR... Waiting for official cryptographic pairing keys from WhatsApp Web..."* without ever rendering a scannable QR code.
+  - **Root Cause & Technical Diagnostics**:
+    1. **Offline Gateway Daemon**: The Puppeteer WhatsApp Web daemon (`whatsapp-gateway/server.js`) on port 5003 was not running, leaving all direct local requests and remote Laravel proxy queries failing with connection refused.
+    2. **Unidirectional Gateway Coupling**: `whatsapp-gateway/server.js` was listening on `127.0.0.1:5003` and pushing webhooks for messages and pairings to Laravel, but **never pushed live pairing QR codes or session state to Laravel**. On remote deployments (e.g. Vercel HTTPS frontend querying cPanel Laravel API), the backend's local `127.0.0.1:5003` proxy had no running daemon, returning empty QR payloads.
+    3. **Premature 30-Second QR Nullification**: In `whatsapp-gateway/server.js`, `/api/qr` marked QR codes as expired after only 30 seconds and wiped `currentQrRaw` and `currentQrImage` to `null`. During page reloads, the QR was destroyed, causing the frontend poller to clear its state and display the infinite loading spinner.
+    4. **Overly Restrictive Frontend Guard**: In `frontend/src/app/whatsapp/page.tsx`, the JSX rendered the QR code only if `isRealQr && qrImageData` or `isRealQr && qrCodeData`. If a transient poll returned without setting `isRealQr = true`, the QR code was suppressed even when valid image/SVG data was available.
+  - **Technical Upgrades Implemented**:
+    - **Active Gateway Push Ingestion (`POST /api/whatsapp/sync-qr`)**:
+      - Added public webhook endpoint in `backend/routes/api.php` and controller method `WhatsAppController::syncQr`.
+      - `whatsapp-gateway/server.js` now proactively pushes fresh authentic cryptographic QR strings and PNG data URLs directly to Laravel via `postToLaravel('/api/whatsapp/sync-qr')` on the `client.on('qr')` event, connection state updates (`connecting`, `connected`, `disconnected`), and a 15-second heartbeat.
+      - Laravel stores the gateway state in cache (`whatsapp_gateway_state`) with fallback in `gatewayQr()`, `gatewayStatus()`, and `generateQr()`, enabling live QR delivery across separate hosts, local tunnels, or remote VPS environments.
+    - **Robust In-Memory QR Retention & 60s Lifecycle (`whatsapp-gateway/server.js`)**:
+      - Expanded QR lifecycle to 60 seconds (matching official WhatsApp Web reload intervals).
+      - Updated `refreshQrSession()` to preserve `currentQrRaw` and `currentQrImage` in memory while Puppeteer refreshes in the background, eliminating UI flickering and blank spinners.
+    - **Resilient Frontend QR Hydration (`frontend/src/app/whatsapp/page.tsx`)**:
+      - `pollInterval` now checks `/whatsapp/gateway/qr` as a fallback if direct gateway polling returns empty.
+      - Removed destructive state wiping in `handleRefreshQr()` on transient null responses.
+      - Updated JSX render guard to display the QR code whenever `qrImageData` or `qrCodeData` exists (`Boolean(qrImageData || qrCodeData)`), guaranteeing immediate visual rendering.
+    - **Removal of Simulation Test Button**:
+      - Excised the artificial **"Simulate Mobile Scan & Pair (1-Click Test)"** button from the modal footer, enforcing genuine, authentic QR scanning with mobile WhatsApp devices.
+    - **Single-Click Windows Gateway Launcher (`start_whatsapp_gateway.bat`)**:
+      - Created a dedicated Windows batch launcher in the project root to run and monitor the WhatsApp gateway daemon on `http://127.0.0.1:5003` with a single double-click.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
@@ -2989,6 +3015,7 @@ FSadvisory-crm/
 │   ├── server.js             # Gateway Express server & Baileys socket
 │   ├── auth_sessions/        # Multi-device session credentials
 │   └── contacts_map.json     # Persistent LID-to-phone mapping store
+├── start_whatsapp_gateway.bat # Single-click Windows launcher for WhatsApp Gateway
 ├── logo.svg                  # Official vector logo asset
 ├── fsadvisory_3cx_template.xml # 3CX v20 CRM Integration XML Template
 ├── test_leads_sample.xlsx    # Sample 22-column Excel test dataset for Lead Pool import testing

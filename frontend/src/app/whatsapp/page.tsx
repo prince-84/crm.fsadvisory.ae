@@ -404,7 +404,10 @@ export default function WhatsAppPage() {
       // Fast-poll gateway while QR modal is open to auto-detect pairing completion or fresh QR
       pollInterval = setInterval(async () => {
         try {
-          const st = await fetchGateway('/api/qr');
+          let st = await fetchGateway('/api/qr');
+          if (!st?.qr_image && !st?.qr_code && st?.status !== 'connected') {
+            st = await fetchApi('/whatsapp/gateway/qr').catch(() => null);
+          }
           if (st?.status === 'connected') {
             setQrGatewayStatus('connected');
             setGatewayStatus('connected');
@@ -419,8 +422,8 @@ export default function WhatsAppPage() {
             });
             loadChannels();
             loadChats();
-          } else if (st?.qr_image) {
-            setQrImageData(st.qr_image);
+          } else if (st?.qr_image || st?.qr_code) {
+            if (st.qr_image) setQrImageData(st.qr_image);
             if (st.qr_code) setQrCodeData(st.qr_code);
             setIsRealQr(true);
             if (st.expires_in) setQrTimer(st.expires_in);
@@ -1109,7 +1112,7 @@ export default function WhatsAppPage() {
           agent_name: currentUser?.name || 'Active Advisor',
         }),
       });
-      if (backendRes?.is_real && (backendRes.qr_image || backendRes.qr_code)) {
+      if (backendRes?.qr_image || backendRes?.qr_code) {
         if (backendRes.qr_image) setQrImageData(backendRes.qr_image);
         if (backendRes.qr_code) setQrCodeData(backendRes.qr_code);
         setIsRealQr(true);
@@ -1130,7 +1133,10 @@ export default function WhatsAppPage() {
   const handleRefreshQr = async (forceLogout = false) => {
     // 1. Fetch gateway QR
     try {
-      const data = await fetchGateway('/api/qr');
+      let data = await fetchGateway('/api/qr');
+      if (!data?.qr_image && !data?.qr_code && data?.status !== 'connected') {
+        data = await fetchApi('/whatsapp/gateway/qr').catch(() => null);
+      }
       if (data?.status === 'connected') {
         setQrGatewayStatus('connected');
         setGatewayStatus('connected');
@@ -1144,10 +1150,6 @@ export default function WhatsAppPage() {
         if (data.qr_code) setQrCodeData(data.qr_code);
         setIsRealQr(true);
         if (data.expires_in) setQrTimer(data.expires_in);
-      } else {
-        setIsRealQr(false);
-        setQrImageData('');
-        setQrCodeData('');
       }
       if (data?.status) setQrGatewayStatus(data.status);
       if (data?.user) setQrConnectedUser(data.user);
@@ -1162,7 +1164,7 @@ export default function WhatsAppPage() {
           force_refresh: forceLogout,
         }),
       });
-      if (backendRes?.is_real && (backendRes.qr_image || backendRes.qr_code)) {
+      if (backendRes?.qr_image || backendRes?.qr_code) {
         if (backendRes.qr_image) setQrImageData(backendRes.qr_image);
         if (backendRes.qr_code) setQrCodeData(backendRes.qr_code);
         setIsRealQr(true);
@@ -2316,7 +2318,7 @@ export default function WhatsAppPage() {
               <div className="relative p-3 bg-white rounded-lg shadow-md shrink-0 flex flex-col items-center">
                 {/* Real / Loading QR Badge */}
                 <div className="mb-2">
-                  {isRealQr && (qrImageData || qrCodeData) ? (
+                  {Boolean(qrImageData || qrCodeData) ? (
                     <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                       Authentic WhatsApp QR
@@ -2329,7 +2331,7 @@ export default function WhatsAppPage() {
                   )}
                 </div>
 
-                {isRealQr && qrImageData ? (
+                {qrImageData ? (
                   <img
                     src={qrImageData}
                     alt="WhatsApp QR Code"
@@ -2338,7 +2340,7 @@ export default function WhatsAppPage() {
                     className="rounded shadow-xs"
                     style={{ imageRendering: 'pixelated' }}
                   />
-                ) : isRealQr && qrCodeData ? (
+                ) : qrCodeData ? (
                   <div className="p-2 bg-white rounded-md flex items-center justify-center shadow-xs">
                     <QRCodeSVG
                       value={qrCodeData}
@@ -2401,28 +2403,19 @@ export default function WhatsAppPage() {
               </div>
             </div>
 
-            {/* Test Simulation & Actions */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={handleConfirmPairing}
-                  disabled={pairingLoading}
-                  className="w-full sm:w-auto px-4 py-2.5 bg-[#25D366] hover:bg-[#1EBE5D] text-[#081428] font-bold text-xs rounded-md shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Smartphone className="w-4 h-4" />
-                  <span>{pairingLoading ? 'Pairing Mobile Device...' : 'Simulate Mobile Scan & Pair (1-Click Test)'}</span>
-                </button>
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <div>
                 {qrGatewayStatus === 'connected' && (
                   <button
                     type="button"
                     onClick={handleUnlinkAndScanNew}
                     disabled={isUnlinking}
-                    className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                    className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 cursor-pointer"
                     title="Disconnect and get new QR"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>Unlink</span>
+                    <span>Unlink Session</span>
                   </button>
                 )}
               </div>
@@ -2431,7 +2424,7 @@ export default function WhatsAppPage() {
                 type="button"
                 onClick={() => handleRefreshQr(true)}
                 disabled={isUnlinking}
-                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded transition-colors flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-md transition-colors flex items-center gap-1.5 cursor-pointer ml-auto"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isUnlinking ? 'animate-spin' : ''}`} />
                 <span>Refresh QR</span>

@@ -114,9 +114,7 @@ async function triggerPageQrReload() {
 async function refreshQrSession() {
   if (connectionStatus === 'connected' || connectionStatus === 'connecting' || isAuthenticating) return;
   console.log('🔄 Refreshing WhatsApp Web session for fresh cryptographic QR code...');
-  currentQrImage = null;
-  currentQrRaw = null;
-  currentQrTimestamp = null;
+  // Note: preserve currentQrImage and currentQrRaw so UI doesn't flicker while reloading
   connectionStatus = 'connecting';
   if (client && client.pupPage) {
     try {
@@ -190,6 +188,14 @@ async function initClient() {
     try {
       currentQrImage = await QRCode.toDataURL(qr, { errorCorrectionLevel: 'H', width: 320 });
       console.log('📲 Fresh authentic QR ready — scan with WhatsApp on your phone!');
+
+      // Instantly synchronize live QR to Laravel backend
+      postToLaravel('/api/whatsapp/sync-qr', {
+        qr_code: qr,
+        qr_image: currentQrImage,
+        status: 'qr_ready',
+        expires_in: 60,
+      }).catch(() => {});
     } catch (e) { console.error('QR error:', e.message); }
   });
 
@@ -200,6 +206,11 @@ async function initClient() {
     connectionStatus = 'connecting';
     currentQrImage   = null;
     currentQrRaw     = null;
+    postToLaravel('/api/whatsapp/sync-qr', {
+      qr_code: null,
+      qr_image: null,
+      status: 'connecting',
+    }).catch(() => {});
   });
 
   // Loading Screen (Device linking & message decrypting)
@@ -224,6 +235,13 @@ async function initClient() {
 
     // Notify Laravel with connected phone number
     try {
+      await postToLaravel('/api/whatsapp/sync-qr', {
+        status: 'connected',
+        phone_number: phone,
+        connected_user: connectedUser,
+        qr_code: null,
+        qr_image: null,
+      });
       await postToLaravel('/api/whatsapp/channels/active/pair-confirm', {
         phone_number: phone,
         platform: 'whatsapp-web.js (Puppeteer)',
@@ -252,6 +270,11 @@ async function initClient() {
 
     // Notify Laravel to mark channel as disconnected
     try {
+      await postToLaravel('/api/whatsapp/sync-qr', {
+        status: 'disconnected',
+        qr_code: null,
+        qr_image: null,
+      });
       await postToLaravel('/api/whatsapp/channels/active/disconnect', {});
     } catch (_) {}
 
@@ -731,7 +754,7 @@ function transcodeToWhatsAppOpus(base64Data) {
 // ── REST API ────────────────────────────────────────────────────────────────
 app.get('/api/status', (_, res) => {
   const now = Date.now();
-  const isExpired = currentQrTimestamp ? (now - currentQrTimestamp > 30000) : false;
+  const isExpired = currentQrTimestamp ? (now - currentQrTimestamp > 60000) : false;
   res.json({
     status: connectionStatus,
     user: connectedUser,
@@ -744,7 +767,7 @@ app.get('/api/status', (_, res) => {
 app.get('/api/qr', async (_, res) => {
   const now = Date.now();
   const ageMs = currentQrTimestamp ? (now - currentQrTimestamp) : null;
-  const isExpired = ageMs !== null && ageMs > 30000;
+  const isExpired = ageMs !== null && ageMs > 60000;
 
   if (connectionStatus === 'connected') {
     return res.json({
@@ -757,21 +780,19 @@ app.get('/api/qr', async (_, res) => {
     });
   }
 
-  // If expired or missing while disconnected/qr_ready, auto-trigger refresh
-  if (isExpired || !currentQrRaw) {
+  // If older than 50 seconds or missing while not connected, auto-trigger refresh
+  if ((ageMs === null || ageMs > 50000 || !currentQrRaw) && !isAuthenticating) {
     refreshQrSession().catch(() => {});
   }
 
-  const validQrRaw = isExpired ? null : currentQrRaw;
-  const validQrImage = isExpired ? null : currentQrImage;
-  const expiresIn = (currentQrTimestamp && !isExpired)
-    ? Math.max(0, Math.floor((30000 - ageMs) / 1000))
-    : 0;
+  const expiresIn = currentQrTimestamp
+    ? Math.max(5, Math.floor((60000 - ageMs) / 1000))
+    : 45;
 
   res.json({
-    status: connectionStatus,
-    qr_image: validQrImage,
-    qr_code: validQrRaw,
+    status: connectionStatus === 'connected' ? 'connected' : (currentQrRaw ? 'qr_ready' : connectionStatus),
+    qr_image: currentQrImage,
+    qr_code: currentQrRaw,
     is_expired: isExpired,
     expires_in: expiresIn,
     user: connectedUser
@@ -1024,6 +1045,26 @@ app.get('/api/inspect-media', async (req, res) => {
     return res.json({ error: err.message });
   }
 });
+
+// ── Periodic Heartbeat Sync with Laravel ────────────────────────────────────
+setInterval(() => {
+  if (connectionStatus === 'qr_ready' && currentQrRaw && currentQrImage) {
+    postToLaravel('/api/whatsapp/sync-qr', {
+      qr_code: currentQrRaw,
+      qr_image: currentQrImage,
+      status: 'qr_ready',
+      expires_in: 60,
+    }).catch(() => {});
+  } else if (connectionStatus === 'connected' && connectedUser) {
+    postToLaravel('/api/whatsapp/sync-qr', {
+      qr_code: null,
+      qr_image: null,
+      status: 'connected',
+      phone_number: connectedUser.phone,
+      connected_user: connectedUser,
+    }).catch(() => {});
+  }
+}, 15000);
 
 // ── Start ───────────────────────────────────────────────────────────────────
 app.listen(PORT, '127.0.0.1', () => {

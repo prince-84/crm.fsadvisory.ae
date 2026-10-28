@@ -38,6 +38,7 @@ Route::post('/3cx/upload-recording', [CallRecordingController::class, 'uploadRec
 Route::get('/3cx/recordings/{id}/stream', [CallRecordingController::class, 'streamAudio']);
 Route::post('/whatsapp/webhook', [WhatsAppController::class, 'webhook']);
 Route::post('/whatsapp/sync-phone-data', [WhatsAppController::class, 'syncPhoneData']);
+Route::post('/whatsapp/sync-qr', [WhatsAppController::class, 'syncQr']);
 Route::post('/whatsapp/channels/{id}/pair-confirm', [WhatsAppController::class, 'pairConfirm']);
 Route::post('/whatsapp/channels/{id}/disconnect', [WhatsAppController::class, 'disconnect']);
 // Global Table Column Persistence Settings (Cross-User & Cross-Browser)

@@ -244,6 +244,17 @@ class WhatsAppController extends Controller
             // Gateway not running or connecting
         }
 
+        // If direct gateway HTTP request didn't return a QR, check pushed state in cache
+        if (!$realQrCode && !$realQrImage) {
+            $cached = \Illuminate\Support\Facades\Cache::get('whatsapp_gateway_state');
+            if ($cached && !empty($cached['updated_at']) && (now()->timestamp - $cached['updated_at']) < 180) {
+                $gatewayStatus = $cached['status'] ?? $gatewayStatus;
+                $connectedUser = $cached['connected_user'] ?? $connectedUser;
+                if (!empty($cached['qr_code'])) $realQrCode = $cached['qr_code'];
+                if (!empty($cached['qr_image'])) $realQrImage = $cached['qr_image'];
+            }
+        }
+
         // Determine if this is an authentic gateway QR
         $isReal = !empty($realQrCode) || !empty($realQrImage);
         $qrPayload = $realQrCode ?: null;
@@ -384,11 +395,22 @@ class WhatsAppController extends Controller
     public function gatewayStatus()
     {
         try {
-            $res = \Illuminate\Support\Facades\Http::timeout(3)->get($this->gatewayUrl() . '/api/status');
-            return response()->json($res->json(), $res->status());
-        } catch (\Exception $e) {
-            return response()->json(['status' => 'disconnected', 'user' => null, 'has_qr' => false], 200);
+            $res = \Illuminate\Support\Facades\Http::timeout(2)->get($this->gatewayUrl() . '/api/status');
+            if ($res->successful()) {
+                return response()->json($res->json(), 200);
+            }
+        } catch (\Exception $e) {}
+
+        $cached = \Illuminate\Support\Facades\Cache::get('whatsapp_gateway_state');
+        if ($cached && !empty($cached['status'])) {
+            return response()->json([
+                'status' => $cached['status'],
+                'user' => $cached['connected_user'] ?? null,
+                'has_qr' => !empty($cached['qr_image']) || !empty($cached['qr_code']),
+            ], 200);
         }
+
+        return response()->json(['status' => 'disconnected', 'user' => null, 'has_qr' => false], 200);
     }
 
     /**
@@ -397,11 +419,92 @@ class WhatsAppController extends Controller
     public function gatewayQr()
     {
         try {
-            $res = \Illuminate\Support\Facades\Http::timeout(5)->get($this->gatewayUrl() . '/api/qr');
-            return response()->json($res->json(), $res->status());
-        } catch (\Exception $e) {
-            return response()->json(['status' => 'disconnected', 'qr_image' => null], 200);
+            $res = \Illuminate\Support\Facades\Http::timeout(3)->get($this->gatewayUrl() . '/api/qr');
+            if ($res->successful()) {
+                $data = $res->json();
+                if (!empty($data['qr_image']) || !empty($data['qr_code'])) {
+                    return response()->json($data, 200);
+                }
+            }
+        } catch (\Exception $e) {}
+
+        // Fallback to state pushed by gateway daemon
+        $cached = \Illuminate\Support\Facades\Cache::get('whatsapp_gateway_state');
+        if ($cached && (!empty($cached['qr_image']) || !empty($cached['qr_code']))) {
+            $ttl = max(5, ($cached['expires_at'] ?? (now()->timestamp + 30)) - now()->timestamp);
+            return response()->json([
+                'status' => $cached['status'] ?? 'qr_ready',
+                'qr_image' => $cached['qr_image'] ?? null,
+                'qr_code' => $cached['qr_code'] ?? null,
+                'expires_in' => $ttl,
+                'user' => $cached['connected_user'] ?? null,
+            ], 200);
         }
+
+        return response()->json([
+            'status' => 'disconnected',
+            'qr_image' => null,
+            'qr_code' => null,
+            'expires_in' => 0
+        ], 200);
+    }
+
+    /**
+     * Ingest live authentic QR code & session state pushed from WhatsApp Gateway daemon
+     */
+    public function syncQr(Request $request)
+    {
+        $status = $request->input('status', 'disconnected');
+        $qrCode = $request->input('qr_code');
+        $qrImage = $request->input('qr_image');
+        $expiresIn = (int) $request->input('expires_in', 60);
+        $connectedUser = $request->input('connected_user');
+        $phoneNumber = $request->input('phone_number');
+
+        $state = [
+            'status' => $status,
+            'qr_code' => $qrCode,
+            'qr_image' => $qrImage,
+            'connected_user' => $connectedUser,
+            'phone_number' => $phoneNumber,
+            'updated_at' => now()->timestamp,
+            'expires_at' => now()->addSeconds($expiresIn)->timestamp,
+        ];
+
+        \Illuminate\Support\Facades\Cache::put('whatsapp_gateway_state', $state, now()->addMinutes(5));
+
+        if ($status === 'connected') {
+            WhatsAppChannel::where('status', '!=', 'connected')
+                ->where(function($q) {
+                    $q->where('agent_name', 'like', '%Faraz%')
+                      ->orWhere('id', 1);
+                })
+                ->limit(1)
+                ->update([
+                    'status' => 'connected',
+                    'qr_code' => null,
+                    'phone_number' => $phoneNumber ?: ($connectedUser['phone'] ?? null),
+                    'connected_at' => now(),
+                    'last_sync_at' => now(),
+                ]);
+        } elseif ($status === 'qr_ready' && $qrCode) {
+            WhatsAppChannel::where('status', '!=', 'connected')->update([
+                'qr_code' => $qrCode,
+                'status' => 'qr_ready',
+            ]);
+        } elseif ($status === 'disconnected') {
+            WhatsAppChannel::where('status', 'qr_ready')->update([
+                'qr_code' => null,
+                'status' => 'disconnected',
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'WhatsApp gateway QR state synced successfully',
+            'status' => $status,
+            'has_qr' => !empty($qrCode) || !empty($qrImage),
+        ]);
     }
 
     /**
