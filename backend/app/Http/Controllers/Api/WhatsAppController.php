@@ -289,7 +289,7 @@ class WhatsAppController extends Controller
             'is_real' => $isReal && !$isThisChannelConnected,
             'gateway_status' => $gatewayStatus,
             'connected_user' => $connectedUser,
-            'expires_in' => 30, // seconds
+            'expires_in' => 25, // seconds
             'instructions' => [
                 '1. Open WhatsApp on your mobile phone',
                 '2. Tap Menu or Settings and select Linked Devices',

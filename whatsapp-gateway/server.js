@@ -183,7 +183,7 @@ async function resolveLid(jid) {
 }
 
 async function triggerPageQrReload() {
-  if (!client || !client.pupPage) return false;
+  if (!client || !client.pupPage || (typeof client.pupPage.isClosed === 'function' && client.pupPage.isClosed())) return false;
   try {
     const clicked = await client.pupPage.evaluate(() => {
       const reloadBtn = document.querySelector('button[aria-label*="Reload"], span[data-icon="refresh"], div[data-ref] [role="button"]');
@@ -192,13 +192,13 @@ async function triggerPageQrReload() {
         return true;
       }
       return false;
-    });
+    }).catch(() => false);
     if (clicked) {
       console.log('🔄 Clicked reload QR button on WhatsApp Web page');
       return true;
     }
     console.log('🔄 Reloading Puppeteer page for fresh QR code...');
-    await client.pupPage.reload({ waitUntil: 'domcontentloaded' });
+    await client.pupPage.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
     return true;
   } catch (e) {
     console.warn('Could not reload QR:', e.message);
@@ -925,7 +925,7 @@ function transcodeToWhatsAppOpus(base64Data) {
 app.get('/api/status', (_, res) => {
   const now = Date.now();
   const ageMs = currentQrTimestamp ? (now - currentQrTimestamp) : null;
-  const isExpired = ageMs !== null && ageMs > 22000;
+  const isExpired = ageMs !== null && ageMs > 25000;
   res.json({
     status: connectionStatus,
     user: connectedUser,
@@ -938,7 +938,8 @@ app.get('/api/status', (_, res) => {
 app.get('/api/qr', async (req, res) => {
   const now = Date.now();
   const ageMs = currentQrTimestamp ? (now - currentQrTimestamp) : null;
-  const isCurrentlyFresh = (ageMs !== null && ageMs < 18000 && !!currentQrRaw && !!currentQrImage);
+  const force = req.query.force === '1' || req.query.reload === '1';
+  const isCurrentlyFresh = !force && (ageMs !== null && ageMs < 25000 && !!currentQrRaw && !!currentQrImage);
 
   if (connectionStatus === 'connected') {
     return res.json({
@@ -951,7 +952,7 @@ app.get('/api/qr', async (req, res) => {
     });
   }
 
-  // If we don't have a fresh active QR code (< 18s old), trigger reload and wait for fresh one
+  // If we don't have a fresh active QR code (< 25s old) or forced reload requested, trigger reload
   if (!isCurrentlyFresh && !isAuthenticating) {
     const prevTimestamp = currentQrTimestamp;
     triggerPageQrReload().catch(() => {});
@@ -968,8 +969,8 @@ app.get('/api/qr', async (req, res) => {
 
   const finalAgeMs = currentQrTimestamp ? (Date.now() - currentQrTimestamp) : null;
   const expiresIn = finalAgeMs !== null
-    ? Math.max(3, Math.floor((25000 - finalAgeMs) / 1000))
-    : 20;
+    ? Math.max(1, Math.floor((25000 - finalAgeMs) / 1000))
+    : 25;
 
   res.json({
     status: connectionStatus === 'connected' ? 'connected' : (currentQrRaw ? 'qr_ready' : connectionStatus),
@@ -1245,7 +1246,7 @@ setInterval(() => {
         qr_code: currentQrRaw,
         qr_image: currentQrImage,
         status: 'qr_ready',
-        expires_in: Math.max(3, Math.floor((25000 - age) / 1000)),
+        expires_in: Math.max(1, Math.floor((25000 - age) / 1000)),
       }).catch(() => {});
     }
   } else if (connectionStatus === 'connected' && connectedUser) {

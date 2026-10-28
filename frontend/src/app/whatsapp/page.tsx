@@ -256,7 +256,7 @@ export default function WhatsAppPage() {
   const [qrChannelId, setQrChannelId] = useState<number | null>(null);
   const [qrCodeData, setQrCodeData] = useState<string>('');
   const [qrImageData, setQrImageData] = useState<string>(''); // base64 PNG from gateway
-  const [qrTimer, setQrTimer] = useState<number>(45);
+  const [qrTimer, setQrTimer] = useState<number>(25);
   const [pairingLoading, setPairingLoading] = useState<boolean>(false);
   const [isRealQr, setIsRealQr] = useState<boolean>(false);
   const [qrGatewayStatus, setQrGatewayStatus] = useState<string>('disconnected');
@@ -387,57 +387,47 @@ export default function WhatsAppPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
-  // QR Countdown Timer & Modal Live Polling
+  // Dedicated Smooth 25s QR Countdown Timer (Zero Jitter, No Mid-way Resets)
   useEffect(() => {
-    let timer: any = null;
-    let pollInterval: any = null;
+    if (!isQrModalOpen) return;
 
-    if (isQrModalOpen) {
-      if (qrTimer > 0) {
-        timer = setInterval(() => {
-          setQrTimer((prev) => prev - 1);
-        }, 1000);
-      } else if (qrTimer === 0) {
-        handleRefreshQr();
-      }
+    setQrTimer(25);
 
-      // Fast-poll gateway while QR modal is open to auto-detect pairing completion or fresh QR
-      pollInterval = setInterval(async () => {
-        try {
-          let st = await fetchGateway('/api/qr');
-          if (!st?.qr_image && !st?.qr_code && st?.status !== 'connected') {
-            st = await fetchApi('/whatsapp/gateway/qr').catch(() => null);
-          }
-          if (st?.status === 'connected') {
-            setQrGatewayStatus('connected');
-            setGatewayStatus('connected');
-            if (st.user) setQrConnectedUser(st.user);
-            setIsQrModalOpen(false);
-            Swal.fire({
-              icon: 'success',
-              title: 'WhatsApp Connected!',
-              text: `Successfully linked ${st.user?.phone || 'device'}. Mirroring chats into CRM...`,
-              timer: 3000,
-              showConfirmButton: false,
-            });
-            loadChannels();
-            loadChats();
-          } else if (st?.qr_image || st?.qr_code) {
-            if (st.qr_image) setQrImageData(st.qr_image);
-            if (st.qr_code) setQrCodeData(st.qr_code);
-            setIsRealQr(true);
-            if (st.expires_in) setQrTimer(st.expires_in);
-            if (st.status) setQrGatewayStatus(st.status);
-          }
-        } catch (_) {}
-      }, 2500);
-    }
+    const timer = setInterval(() => {
+      setQrTimer((prev) => {
+        if (prev <= 1) {
+          // Exactly 25s elapsed! Refresh QR with fresh keys & restart countdown at 25s
+          handleRefreshQr(true);
+          return 25;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-    return () => {
-      if (timer) clearInterval(timer);
-      if (pollInterval) clearInterval(pollInterval);
-    };
-  }, [isQrModalOpen, qrTimer]);
+    return () => clearInterval(timer);
+  }, [isQrModalOpen]);
+
+  // Fast-poll gateway while QR modal is open if QR image has not loaded yet
+  useEffect(() => {
+    if (!isQrModalOpen || (qrImageData && isRealQr)) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        let st = await fetchGateway('/api/qr');
+        if (!st?.qr_image && !st?.qr_code && st?.status !== 'connected') {
+          st = await fetchApi('/whatsapp/gateway/qr').catch(() => null);
+        }
+        if (st?.qr_image || st?.qr_code) {
+          if (st.qr_image) setQrImageData(st.qr_image);
+          if (st.qr_code) setQrCodeData(st.qr_code);
+          setIsRealQr(true);
+          if (st.status) setQrGatewayStatus(st.status);
+        }
+      } catch (_) {}
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
+  }, [isQrModalOpen, qrImageData, isRealQr]);
 
   // Unified Gateway Caller: Direct on HTTP/Localhost, or via Laravel Proxy on HTTPS/Vercel
   const fetchGateway = async (path: string, options: any = {}) => {
@@ -996,23 +986,6 @@ export default function WhatsAppPage() {
     }
   };
 
-  // Live Countdown Timer for QR expiration
-  useEffect(() => {
-    let timer: any = null;
-    if (isQrModalOpen && qrTimer > 0) {
-      timer = setInterval(() => {
-        setQrTimer((prev) => {
-          if (prev <= 1) {
-            handleRefreshQr();
-            return 45;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [isQrModalOpen, qrTimer]);
-
   // Live Gateway Status Polling when QR modal is open
   useEffect(() => {
     let interval: any = null;
@@ -1172,7 +1145,7 @@ export default function WhatsAppPage() {
         if (data.qr_image) setQrImageData(data.qr_image);
         if (data.qr_code) setQrCodeData(data.qr_code);
         setIsRealQr(true);
-        if (data.expires_in) setQrTimer(data.expires_in);
+        setQrTimer(25);
         if (data?.status) setQrGatewayStatus(data.status);
         if (data?.user) setQrConnectedUser(data.user);
         return; // Valid active QR code received! Do not call generate-qr to avoid race conditions
@@ -1194,7 +1167,7 @@ export default function WhatsAppPage() {
         if (backendRes.qr_image) setQrImageData(backendRes.qr_image);
         if (backendRes.qr_code) setQrCodeData(backendRes.qr_code);
         setIsRealQr(true);
-        if (backendRes.expires_in) setQrTimer(backendRes.expires_in);
+        setQrTimer(25);
       }
       if (backendRes?.gateway_status) {
         setQrGatewayStatus(backendRes.gateway_status);
@@ -1209,9 +1182,11 @@ export default function WhatsAppPage() {
   };
 
   const handleRefreshQr = async (forceLogout = false) => {
-    // 1. Fetch gateway QR
+    setQrTimer(25);
+
+    // 1. Fetch gateway QR (forced fresh reload if manual click or timer expiry)
     try {
-      let data = await fetchGateway('/api/qr');
+      let data = await fetchGateway(forceLogout ? '/api/qr?force=1' : '/api/qr');
       if (!data?.qr_image && !data?.qr_code && data?.status !== 'connected') {
         data = await fetchApi('/whatsapp/gateway/qr').catch(() => null);
       }
@@ -1227,7 +1202,7 @@ export default function WhatsAppPage() {
         if (data.qr_image) setQrImageData(data.qr_image);
         if (data.qr_code) setQrCodeData(data.qr_code);
         setIsRealQr(true);
-        if (data.expires_in) setQrTimer(data.expires_in);
+        setQrTimer(25);
         if (data?.status) setQrGatewayStatus(data.status);
         if (data?.user) setQrConnectedUser(data.user);
         return;
@@ -1249,7 +1224,7 @@ export default function WhatsAppPage() {
         if (backendRes.qr_image) setQrImageData(backendRes.qr_image);
         if (backendRes.qr_code) setQrCodeData(backendRes.qr_code);
         setIsRealQr(true);
-        if (backendRes.expires_in) setQrTimer(backendRes.expires_in);
+        setQrTimer(25);
       }
       if (backendRes?.gateway_status) setQrGatewayStatus(backendRes.gateway_status);
       if (backendRes?.connected_user) setQrConnectedUser(backendRes.connected_user);

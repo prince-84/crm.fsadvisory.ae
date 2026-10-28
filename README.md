@@ -2937,6 +2937,29 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - `handleOpenQrModal()` now directly retrieves the live gateway QR. Upon receiving a valid QR (`qr_image || qr_code`), it renders immediately and halts, eliminating redundant calls and race conditions.
       - Removed `force_refresh: true` from backend channel queries.
 
+- **219 — Smooth 25-Second WhatsApp QR Countdown Synchronization & Premature Mid-Countdown Reset Elimination (`frontend/src/app/whatsapp/page.tsx`, `whatsapp-gateway/server.js`, `backend/app/Http/Controllers/Api/WhatsAppController.php`)**:
+  - **Problem Solved**:
+    - In the **Link WhatsApp Device** pairing modal, the expiration countdown timer exhibited erratic behavior: starting with mismatched durations (45s or 18s), jittering backwards and forwards during countdown (e.g. jumping from 6s to 25s), and restarting by itself in the middle of countdown before reaching 0.
+  - **Root Cause Analysis**:
+    1. **Conflicting Dual Timers in `page.tsx`**: Two separate `useEffect` hooks managed `qrTimer` concurrently—one decremented the timer while a duplicate at line 1000 also decremented it and reset to 45 upon completion. Both included `[isQrModalOpen, qrTimer]` in dependencies, tearing down and restarting the intervals on every second tick.
+    2. **Background Status Poller Overwriting Countdown**: Inside the 2.5s polling loop, `if (st.expires_in) setQrTimer(st.expires_in)` continuously overwrote the local countdown state with asynchronous network payload values, causing visible timer jumps mid-flight.
+    3. **Premature Gateway Reload at 18 Seconds (`server.js`)**: Gateway `/api/qr` treated any QR code older than 18 seconds (`ageMs < 18000`) as stale and triggered `triggerPageQrReload()`, forcing WhatsApp Web to discard the QR code at ~7 seconds remaining.
+    4. **Premature Status Invalidation**: In `/api/status`, `isExpired` was checked against 22 seconds (`ageMs > 22000`).
+  - **Technical Implementation**:
+    - **Single Dedicated 25s Countdown Engine (`frontend/src/app/whatsapp/page.tsx`)**:
+      - Replaced conflicting effects with a single, dedicated countdown interval dependent solely on `[isQrModalOpen]`.
+      - Initialized state and modal openings cleanly to `25s`.
+      - Decrements cleanly 1 second at a time (`prev - 1`) with zero interval churn. Only when `prev <= 1` does it trigger `handleRefreshQr(true)` and cycle back to 25s.
+      - Purged the duplicate `useEffect` timer from lines 1000-1014.
+      - Removed `setQrTimer(st.expires_in)` from status polling, preventing network responses from interrupting or overriding the active countdown.
+    - **Full 25-Second Freshness Window (`whatsapp-gateway/server.js`)**:
+      - Updated `/api/status` `isExpired` check to `ageMs > 25000` (up from 22000ms).
+      - Updated `/api/qr` freshness check to `ageMs < 25000` (up from 18000ms).
+      - Supported `?force=1` query parameter for on-demand reloads when user clicks "Refresh" or full 25s expires.
+      - Added Puppeteer `client.pupPage.isClosed()` checks to `triggerPageQrReload()` to eliminate detached frame exceptions.
+    - **Backend TTL Alignment (`backend/app/Http/Controllers/Api/WhatsAppController.php`)**:
+      - Aligned `expires_in` in `generateQr` and `gatewayQr` to 25 seconds.
+
 ## ⚙️ Installation & Running Instructions
 
 ### 1. Database (MySQL RDBMS)
