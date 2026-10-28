@@ -188,6 +188,22 @@ class UserController extends Controller
 
         $user->update($validated);
 
+        if (\Illuminate\Support\Facades\Schema::hasTable('whatsapp_channels')) {
+            $chan = \App\Models\WhatsAppChannel::where('user_id', $user->id)
+                ->orWhere('agent_name', $user->name)
+                ->first();
+            if ($chan) {
+                $chanUpdates = [
+                    'agent_name' => $user->name,
+                    'session_name' => $user->name,
+                ];
+                if (array_key_exists('phone', $validated)) {
+                    $chanUpdates['phone_number'] = $validated['phone'];
+                }
+                $chan->update($chanUpdates);
+            }
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'User details updated successfully.',

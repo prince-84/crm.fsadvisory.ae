@@ -1676,13 +1676,14 @@ export default function WhatsAppPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      const farazCh = channels.find((c) => c.agent_name?.toLowerCase().includes('faraz')) || channels[0];
-                      if (farazCh) handleOpenQrModal(farazCh.id);
+                      const targetCh = channels.find((c) => c.agent_name?.toLowerCase().includes('shafi') && !c.agent_name?.toLowerCase().includes('faraz')) || channels[0];
+                      if (targetCh) handleOpenQrModal(targetCh.id);
+                      else handleOpenQrModal();
                     }}
                     className="mt-3.5 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#25D366] hover:bg-[#1EBE5D] text-[#081428] rounded-md font-bold text-xs transition-colors cursor-pointer shadow-sm"
                   >
                     <QrCode className="w-4 h-4" />
-                    <span>Scan QR to Link Faraz Shafi's WhatsApp</span>
+                    <span>Scan QR to Link WhatsApp</span>
                   </button>
                 )}
               </div>

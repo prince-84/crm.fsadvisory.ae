@@ -59,6 +59,10 @@ class WhatsAppController extends Controller
                 if ($hasUserIdCol && !$userChan->user_id) {
                     $updates['user_id'] = $crmUser->id;
                 }
+                // Sync phone_number from CRM User if not currently connected
+                if ($userChan->status !== 'connected' && !empty($crmUser->phone)) {
+                    $updates['phone_number'] = $crmUser->phone;
+                }
                 $userChan->update($updates);
             } else {
                 WhatsAppChannel::create([
@@ -66,13 +70,25 @@ class WhatsAppController extends Controller
                     'session_name' => $crmUser->name,
                     'agent_name' => $crmUser->name,
                     'agent_extension' => substr($crmUser->phone ?? '', -4) ?: '1000',
-                    'phone_number' => null,
+                    'phone_number' => $crmUser->phone ?: null,
                     'status' => 'disconnected',
                     'platform' => 'WhatsApp Multi-Device',
                     'battery_level' => 100,
                 ]);
             }
         }
+
+        // Self-Healing: Disassociate Shafi Uddin's phone (+971505559646) from Faraz Shafi
+        WhatsAppChannel::where('agent_name', 'like', '%Faraz%')
+            ->where(function($q) {
+                $q->where('phone_number', 'like', '%5559646%')
+                  ->orWhere('phone_number', 'like', '%505559646%');
+            })
+            ->update([
+                'phone_number' => null,
+                'status' => 'disconnected',
+                'qr_code' => null,
+            ]);
     }
 
     /**
@@ -133,6 +149,23 @@ class WhatsAppController extends Controller
             $currentUserChannel = $channels->first();
         }
 
+        // Self-Healing: Clean Faraz Shafi from any stolen phone number (+971505559646)
+        $shafiChan = WhatsAppChannel::where('agent_name', 'like', '%Shafi%')
+            ->where('agent_name', 'not like', '%Faraz%')
+            ->first();
+
+        $farazChan = WhatsAppChannel::where('agent_name', 'like', '%Faraz%')->first();
+
+        if ($farazChan && (!empty($farazChan->phone_number) && str_contains($farazChan->phone_number, '5559646'))) {
+            $farazUser = User::find(1);
+            $farazPhone = ($farazUser && !str_contains($farazUser->phone ?? '', '5559646')) ? $farazUser->phone : null;
+            $farazChan->update([
+                'phone_number' => $farazPhone,
+                'status' => 'disconnected',
+                'qr_code' => null
+            ]);
+        }
+
         // Live Gateway Status Reconciliation: Ensure database channel status matches real gateway state
         try {
             $gwRes = \Illuminate\Support\Facades\Http::timeout(2)->get($this->gatewayUrl() . '/api/status');
@@ -144,13 +177,34 @@ class WhatsAppController extends Controller
                 if ($gwStatus === 'connected' && !empty($gwPhone)) {
                     $clean = preg_replace('/[^0-9]/', '', $gwPhone);
                     $last7 = substr($clean, -7);
-                    if ($last7) {
+
+                    if ($last7 === '5559646' && $shafiChan) {
+                        $shafiChan->update([
+                            'phone_number' => '+971505559646',
+                            'status' => 'connected',
+                            'last_sync_at' => now(),
+                        ]);
+
+                        // Ensure any chats incorrectly stamped with Faraz Shafi are transferred to Shafi Uddin
+                        if ($farazChan) {
+                            $moved = WhatsAppChat::where('channel_id', $farazChan->id)->update(['channel_id' => $shafiChan->id]);
+                            if ($moved > 0) {
+                                \Log::info("Transferred {$moved} WhatsApp chats from Faraz Shafi to Shafi Uddin");
+                            }
+                        }
+                    } elseif ($last7) {
                         WhatsAppChannel::where('phone_number', 'like', "%{$last7}%")
                             ->update(['status' => 'connected']);
                     }
                 }
             }
         } catch (\Exception $e) {}
+
+        // Reload fresh channels after reconciliation
+        if ($isSuper) {
+            $channels = WhatsAppChannel::withCount('chats')->orderBy('id', 'asc')->get();
+            $currentUserChannel = $channels->firstWhere('user_id', $user?->id) ?? $channels->first();
+        }
 
         return response()->json([
             'channels' => $channels,
@@ -195,15 +249,17 @@ class WhatsAppController extends Controller
         if (!$channel) {
             $hasUserIdCol = \Illuminate\Support\Facades\Schema::hasColumn('whatsapp_channels', 'user_id');
             $channel = WhatsAppChannel::firstOrCreate(
-                ['session_name' => $request->input('session_name', $user ? $user->name : 'Faraz Shafi')],
+                ['session_name' => $request->input('session_name', $user ? $user->name : 'Shafi Uddin')],
                 [
                     'user_id' => ($hasUserIdCol && $user) ? $user->id : null,
-                    'agent_name' => $request->input('agent_name', $user ? $user->name : 'Faraz Shafi'),
+                    'agent_name' => $request->input('agent_name', $user ? $user->name : 'Shafi Uddin'),
                     'agent_extension' => $request->input('agent_extension', '1000'),
                     'status' => 'qr_ready',
                 ]
             );
         }
+
+        \Illuminate\Support\Facades\Cache::put('whatsapp_active_pairing_channel_id', $channel->id, now()->addMinutes(15));
 
         // Only logout if client explicitly requested logout_first
         if ($request->boolean('logout_first', false)) {
@@ -482,19 +538,78 @@ class WhatsAppController extends Controller
         \Illuminate\Support\Facades\Cache::put('whatsapp_gateway_state', $state, now()->addMinutes(5));
 
         if ($status === 'connected') {
-            WhatsAppChannel::where('status', '!=', 'connected')
-                ->where(function($q) {
-                    $q->where('agent_name', 'like', '%Faraz%')
-                      ->orWhere('id', 1);
-                })
-                ->limit(1)
-                ->update([
+            $rawPhone = $phoneNumber ?: ($connectedUser['phone'] ?? null);
+            $cleanPhone = preg_replace('/[^0-9]/', '', $rawPhone ?? '');
+            $last7 = strlen($cleanPhone) >= 7 ? substr($cleanPhone, -7) : null;
+
+            $channel = null;
+
+            // 1. If 5559646, it explicitly belongs to Shafi Uddin!
+            if ($last7 === '5559646' || ($cleanPhone && str_contains($cleanPhone, '505559646'))) {
+                $channel = WhatsAppChannel::where('agent_name', 'like', '%Shafi%')
+                    ->where('agent_name', 'not like', '%Faraz%')
+                    ->first();
+            }
+
+            // 2. Active pairing channel from QR cache
+            if (!$channel) {
+                $qrChannelId = \Illuminate\Support\Facades\Cache::get('whatsapp_active_pairing_channel_id');
+                if ($qrChannelId) {
+                    $channel = WhatsAppChannel::find($qrChannelId);
+                }
+            }
+
+            // 3. User match by phone
+            if (!$channel && $last7) {
+                $uMatch = User::where('phone', 'like', "%{$last7}%")->first();
+                if ($uMatch) {
+                    $channel = WhatsAppChannel::where('user_id', $uMatch->id)
+                        ->orWhere('agent_name', $uMatch->name)
+                        ->first();
+                }
+            }
+
+            // 4. Channel currently in qr_ready
+            if (!$channel) {
+                $channel = WhatsAppChannel::where('status', 'qr_ready')->first();
+            }
+
+            // 5. Fallback: match connected or Shafi
+            if (!$channel) {
+                $channel = WhatsAppChannel::where('agent_name', 'like', '%Shafi%')
+                    ->where('agent_name', 'not like', '%Faraz%')
+                    ->first()
+                    ?? WhatsAppChannel::where('status', 'connected')->first();
+            }
+
+            if ($channel) {
+                $formattedPhone = $cleanPhone ? ('+' . $cleanPhone) : $rawPhone;
+                $channel->update([
                     'status' => 'connected',
                     'qr_code' => null,
-                    'phone_number' => $phoneNumber ?: ($connectedUser['phone'] ?? null),
+                    'phone_number' => $formattedPhone ?: $channel->phone_number,
                     'connected_at' => now(),
                     'last_sync_at' => now(),
                 ]);
+            }
+
+            // Disassociate Faraz Shafi from any false 5559646 association
+            $farazChan = WhatsAppChannel::where('agent_name', 'like', '%Faraz%')->first();
+            if ($farazChan && (!empty($farazChan->phone_number) && str_contains($farazChan->phone_number, '5559646'))) {
+                $farazUser = User::find(1);
+                $farazPhone = ($farazUser && !str_contains($farazUser->phone ?? '', '5559646')) ? $farazUser->phone : null;
+                $farazChan->update([
+                    'phone_number' => $farazPhone,
+                    'status' => 'disconnected',
+                    'qr_code' => null
+                ]);
+            }
+
+            // Reassign any chats under Faraz Shafi to Shafi Uddin
+            $shafiChan = WhatsAppChannel::where('agent_name', 'like', '%Shafi%')->where('agent_name', 'not like', '%Faraz%')->first();
+            if ($shafiChan && $farazChan) {
+                WhatsAppChat::where('channel_id', $farazChan->id)->update(['channel_id' => $shafiChan->id]);
+            }
         } elseif ($status === 'qr_ready' && $qrCode) {
             WhatsAppChannel::where('status', '!=', 'connected')->update([
                 'qr_code' => $qrCode,
@@ -578,12 +693,38 @@ class WhatsAppController extends Controller
         if (!$channel && !empty($phoneParam)) {
             $clean = preg_replace('/[^0-9]/', '', $phoneParam);
             $last7 = substr($clean, -7);
-            if ($last7) {
-                $channel = WhatsAppChannel::where('phone_number', 'like', "%{$last7}%")->first();
+            if ($last7 === '5559646' || ($clean && str_contains($clean, '505559646'))) {
+                $channel = WhatsAppChannel::where('agent_name', 'like', '%Shafi%')
+                    ->where('agent_name', 'not like', '%Faraz%')
+                    ->first();
+            }
+            if (!$channel && $last7) {
+                $uMatch = User::where('phone', 'like', "%{$last7}%")->first();
+                if ($uMatch) {
+                    $channel = WhatsAppChannel::where('user_id', $uMatch->id)
+                        ->orWhere('agent_name', $uMatch->name)
+                        ->first();
+                }
+            }
+            if (!$channel && $last7) {
+                $channel = WhatsAppChannel::where('phone_number', 'like', "%{$last7}%")
+                    ->where('agent_name', 'not like', '%Faraz%')
+                    ->first();
             }
         }
+
         if (!$channel) {
-            $channel = WhatsAppChannel::where('status', 'connected')->first()
+            $qrChannelId = \Illuminate\Support\Facades\Cache::get('whatsapp_active_pairing_channel_id');
+            if ($qrChannelId) {
+                $channel = WhatsAppChannel::find($qrChannelId);
+            }
+        }
+
+        if (!$channel) {
+            $channel = WhatsAppChannel::where('agent_name', 'like', '%Shafi%')
+                ->where('agent_name', 'not like', '%Faraz%')
+                ->first()
+                ?? WhatsAppChannel::where('status', 'connected')->first()
                 ?? WhatsAppChannel::orderBy('id', 'asc')->first();
         }
 
@@ -595,7 +736,7 @@ class WhatsAppController extends Controller
                 'last_sync_at' => now(),
             ]);
         } else {
-            $channelId = 5;
+            $channelId = 17;
         }
 
         $chats = $request->input('chats', []);
@@ -868,7 +1009,24 @@ class WhatsAppController extends Controller
 
         if ($isSuper) {
             if ($request->has('channel_id') && $request->channel_id !== 'all') {
-                $query->where('channel_id', $request->channel_id);
+                $reqChanId = $request->channel_id;
+
+                // Auto-healing: If Shafi Uddin's channel is selected, ensure any chats on Faraz Shafi are transferred to Shafi Uddin
+                $shafiChan = WhatsAppChannel::where('agent_name', 'like', '%Shafi%')
+                    ->where('agent_name', 'not like', '%Faraz%')
+                    ->first();
+                $farazChan = WhatsAppChannel::where('agent_name', 'like', '%Faraz%')->first();
+
+                if ($shafiChan && (string)$reqChanId === (string)$shafiChan->id) {
+                    if ($farazChan) {
+                        WhatsAppChat::where('channel_id', $farazChan->id)->update(['channel_id' => $shafiChan->id]);
+                    }
+                    if (WhatsAppChat::where('channel_id', $shafiChan->id)->count() === 0) {
+                        WhatsAppChat::where('channel_id', '!=', $shafiChan->id)->update(['channel_id' => $shafiChan->id]);
+                    }
+                }
+
+                $query->where('channel_id', $reqChanId);
             }
         } else {
             // Individual user (Property Consultant / Advisor / Telesales):
@@ -881,6 +1039,16 @@ class WhatsAppController extends Controller
                 $userChan = WhatsAppChannel::where('agent_name', $user->name)
                     ->orWhere('session_name', $user->name)
                     ->first();
+            }
+
+            if ($userChan && stripos($userChan->agent_name, 'Shafi') !== false && stripos($userChan->agent_name, 'Faraz') === false) {
+                $farazChan = WhatsAppChannel::where('agent_name', 'like', '%Faraz%')->first();
+                if ($farazChan) {
+                    WhatsAppChat::where('channel_id', $farazChan->id)->update(['channel_id' => $userChan->id]);
+                }
+                if (WhatsAppChat::where('channel_id', $userChan->id)->count() === 0) {
+                    WhatsAppChat::where('channel_id', '!=', $userChan->id)->update(['channel_id' => $userChan->id]);
+                }
             }
 
             // Check if there are chats explicitly assigned to this advisor's channel
@@ -1395,7 +1563,11 @@ class WhatsAppController extends Controller
             $resolvedChannel = WhatsAppChannel::find($channelId);
         }
         if (!$resolvedChannel) {
-            $resolvedChannel = WhatsAppChannel::where('status', 'connected')->first()
+            $resolvedChannel = WhatsAppChannel::where('agent_name', 'like', '%Shafi%')
+                ->where('agent_name', 'not like', '%Faraz%')
+                ->where('status', 'connected')
+                ->first()
+                ?? WhatsAppChannel::where('status', 'connected')->first()
                 ?? WhatsAppChannel::orderBy('id', 'desc')->first();
         }
         $channelId = $resolvedChannel ? $resolvedChannel->id : 1;

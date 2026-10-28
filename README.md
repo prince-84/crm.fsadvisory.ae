@@ -192,6 +192,22 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Updated `getMediaUrl(url, msgId)` to seamlessly fall back to `${API_BASE_URL}/whatsapp/messages/${msgId}/media`.
     - Enhanced `handleDownloadMedia(e, url, filename, msgId)` to trigger direct browser downloads through hidden programmatic anchors with `download` attributes and `?download=1` stream flags.
     - Updated image bubbles to load directly via `getMediaUrl(msg.media_url, msg.id)` with click-to-preview full modal support.
+- **48 — Shafi Uddin WhatsApp Ownership, Faraz Shafi Channel Disassociation & Chat Re-assignment Engine**:
+  - **Problem**:
+    1. Phone number `+971505559646` was repeatedly getting attributed to `Faraz Shafi` (Channel ID 14, User ID 1) instead of its true owner `Shafi Uddin` (Channel ID 17, User ID 18). Whenever administrators or users manually changed Faraz Shafi's phone number in the database or user settings, the background gateway daemon sync heartbeat would trigger `syncQr()`, which contained an obsolete fallback `where('agent_name', 'like', '%Faraz%')->orWhere('id', 1)`, overwriting Faraz Shafi's phone back to `+971505559646`.
+    2. Because Faraz Shafi's channel was wrongly stamped with `+971505559646` and had lower channel ID (14 vs 17), incoming WhatsApp chats were stamped under Faraz Shafi or disconnected channels, leaving Shafi Uddin with 0 chats when selected in the WhatsApp Account dropdown.
+  - **Channel Disassociation & Targeted Phone Ownership Routing (`WhatsAppController.php`)**:
+    - **Permanent Channel Disassociation**: In `syncChannelsFromUsers()` and `channels()`, added strict disassociation logic guaranteeing that phone `+971505559646` is never assigned to Faraz Shafi. If detected, Faraz Shafi is cleanly reset to his genuine phone number and disconnected state.
+    - **Strict Routing to Shafi Uddin**: In `syncQr()` and `syncPhoneData()`, any payload with phone `5559646` or `+971505559646` is strictly and deterministically mapped to **Shafi Uddin** (Channel ID 17). Removed all `%Faraz%` and `id = 1` overwrites from `syncQr()`.
+    - **Active Channel Pairing Cache**: Stored pairing intent in cache (`whatsapp_active_pairing_channel_id`) when generating QR codes to link incoming scans to the intended channel without race conditions.
+  - **Dynamic Chat Auto-Healing & Seamless Conversation Re-assignment**:
+    - In `chats()`: When Super Admin selects `Shafi Uddin` (or when Shafi Uddin logs into his own view), any chats incorrectly stamped with Faraz Shafi or disconnected channels are seamlessly migrated to Shafi Uddin (`channel_id = 17`).
+    - Added zero-chat protection: If Shafi Uddin's channel has 0 chats, the system claims active mirrored chats so that Shafi's full conversation history (e.g. client threads and group conversations) displays immediately.
+    - Migrated existing orphaned chats (e.g. Chat 393, 397, 398) to Channel 17 (`Shafi Uddin`).
+  - **User Profile & WhatsApp Channel Synchronization (`UserController.php`)**:
+    - In `UserController::update()`: Added automatic hook syncing changes to `name` or `phone` directly into the corresponding `whatsapp_channels` table entry, ensuring administrator edits immediately reflect across WhatsApp channels without being reverted.
+  - **Frontend Account Linking Decoupling (`frontend/src/app/whatsapp/page.tsx`)**:
+    - Decoupled hardcoded "Scan QR to Link Faraz Shafi's WhatsApp" button, converting it to a dynamic "Scan QR to Link WhatsApp" button that targets Shafi Uddin or the currently selected channel.
 - **40 — Dedicated Lead Pool Page (`/lead-pool`) & Clean Separation from Inbound Leads**:
   - **Sidebar Menu Navigation Order**: Positioned **Lead Pool** (`/lead-pool`) directly after **Owner Data** (`/owner-data`) under the SALES navigation group (`Leads` -> `Owner Data` -> `Lead Pool`), restoring the dedicated master imported database archive.
   - **Clean Separation (Imported Only vs Inbound Live Leads)**:
