@@ -709,6 +709,16 @@ async function syncHistoryToLaravel() {
 
             if (c.lastMessage) {
               const lm = c.lastMessage;
+              let mediaBase64 = null;
+              if (lm.hasMedia && typeof lm.downloadMedia === 'function') {
+                try {
+                  const dl = await lm.downloadMedia();
+                  if (dl && dl.data) {
+                    mediaBase64 = `data:${dl.mimetype};base64,${dl.data}`;
+                  }
+                } catch (_) {}
+              }
+
               lastMsg = lm.body || lm.caption || (lm.type !== 'chat' ? `[${lm.type || 'Media'}]` : 'Active chat');
               let status = 'sent';
               if (lm.ack === 2) status = 'delivered';
@@ -723,6 +733,7 @@ async function syncHistoryToLaravel() {
                 from_me: !!lm.fromMe,
                 timestamp: lm.timestamp || c.timestamp || Math.floor(Date.now() / 1000),
                 media_type: lm.type === 'chat' ? 'text' : (lm.type || 'text'),
+                media_base64: mediaBase64,
                 ack: lm.ack ?? 1,
                 status: status,
               });
@@ -738,7 +749,7 @@ async function syncHistoryToLaravel() {
               last_message: lastMsg,
               timestamp: ts,
               unread_count: c.unreadCount || 0,
-              messages: recentMsgs.filter(m => m.text && m.text.trim().length > 0),
+              messages: recentMsgs.filter(m => (m.text && m.text.trim().length > 0) || m.media_base64),
             });
           }
         }

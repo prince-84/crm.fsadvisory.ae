@@ -563,6 +563,27 @@ export default function WhatsAppPage() {
     return c.contact_name;
   };
 
+  const getMediaUrl = (url?: string | null): string => {
+    if (!url) return '';
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+
+    let storagePath = url;
+    if (storagePath.includes('/storage/')) {
+      storagePath = storagePath.substring(storagePath.indexOf('/storage/'));
+    } else if (storagePath.startsWith('storage/')) {
+      storagePath = `/${storagePath}`;
+    }
+
+    if (storagePath.startsWith('/storage/')) {
+      const backendBase = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api')
+        .replace(/\/+$/, '')
+        .replace(/\/api$/, '');
+      return `${backendBase}${storagePath}`;
+    }
+
+    return url;
+  };
+
   const loadChats = async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
     try {
@@ -1797,28 +1818,38 @@ export default function WhatsAppPage() {
                             {/* Message Content: Audio Voice Note OR Image OR Document OR Text */}
                             {msg.media_type === 'audio' || (msg.media_url && msg.media_url.startsWith('data:audio')) || (msg.text && msg.text.startsWith('🎤 Voice')) ? (
                               <WhatsAppAudioPlayer
-                                audioUrl={msg.media_url}
+                                audioUrl={getMediaUrl(msg.media_url)}
                                 isFromMe={isFromMe}
                                 durationText={msg.text}
                               />
                             ) : msg.media_type === 'image' || (msg.media_url && (msg.media_url.match(/\.(jpg|jpeg|png|webp|gif)$/i) || msg.media_url.startsWith('data:image'))) ? (
                               <div className="space-y-1.5">
-                                <div 
-                                  onClick={() => setPreviewImageModal(msg.media_url)}
-                                  className="cursor-pointer group relative overflow-hidden rounded-lg border border-black/10 bg-black/5"
-                                >
-                                  <img
-                                    src={msg.media_url}
-                                    alt="WhatsApp Image"
-                                    className="max-h-64 sm:max-h-72 w-auto object-cover rounded-lg group-hover:opacity-95 transition-opacity"
-                                    loading="lazy"
-                                  />
-                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                                    <span className="px-2.5 py-1 bg-black/75 text-white text-[11px] font-semibold rounded-md shadow-xs flex items-center gap-1.5">
-                                      <ExternalLink className="w-3.5 h-3.5" /> View Full
-                                    </span>
+                                {getMediaUrl(msg.media_url) ? (
+                                  <div 
+                                    onClick={() => setPreviewImageModal(getMediaUrl(msg.media_url))}
+                                    className="cursor-pointer group relative overflow-hidden rounded-lg border border-black/10 bg-black/5"
+                                  >
+                                    <img
+                                      src={getMediaUrl(msg.media_url)}
+                                      alt="WhatsApp Image"
+                                      className="max-h-64 sm:max-h-72 w-auto object-cover rounded-lg group-hover:opacity-95 transition-opacity"
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        (e.target as HTMLElement).style.display = 'none';
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                      <span className="px-2.5 py-1 bg-black/75 text-white text-[11px] font-semibold rounded-md shadow-xs flex items-center gap-1.5">
+                                        <ExternalLink className="w-3.5 h-3.5" /> View Full
+                                      </span>
+                                    </div>
                                   </div>
-                                </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 p-2.5 bg-black/5 rounded-lg border border-black/10 text-xs text-slate-600">
+                                    <ImageIcon className="w-4 h-4 text-[#C8A147] shrink-0" />
+                                    <span className="font-medium">Photo</span>
+                                  </div>
+                                )}
                                 {msg.text && !msg.text.startsWith('📷') && (
                                   <p className="text-xs sm:text-[13px] leading-relaxed whitespace-pre-wrap pt-0.5">
                                     {msg.text}
@@ -1828,7 +1859,7 @@ export default function WhatsAppPage() {
                             ) : (msg.media_type === 'document' || msg.media_type === 'pdf' || (msg.media_url && msg.media_url.match(/\.(pdf|docx?|xlsx?|txt)$/i))) ? (
                               <div className="space-y-1.5">
                                 <a
-                                  href={msg.media_url}
+                                  href={getMediaUrl(msg.media_url)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="flex items-center gap-2.5 p-2.5 rounded-lg bg-black/5 hover:bg-black/10 border border-black/10 transition-colors group text-decoration-none"
@@ -2603,7 +2634,7 @@ export default function WhatsAppPage() {
               </button>
             </div>
             <img
-              src={previewImageModal}
+              src={getMediaUrl(previewImageModal)}
               alt="Full size attachment"
               className="max-h-[80vh] max-w-full rounded-lg shadow-2xl object-contain border border-white/10"
             />

@@ -728,7 +728,29 @@ class WhatsAppController extends Controller
                 foreach ($chatData['messages'] as $m) {
                     $mId = $m['id'] ?? ('WA-HIST-' . Str::random(12));
                     $mText = $m['text'] ?? '';
-                    if (empty($mText)) continue;
+                    $mMediaType = $m['media_type'] ?? 'text';
+                    $mMediaBase64 = $m['media_base64'] ?? null;
+                    $mMediaUrl = $m['media_url'] ?? null;
+
+                    // Save incoming base64 media if provided from session
+                    if ($mMediaBase64 && str_contains($mMediaBase64, ';base64,')) {
+                        try {
+                            $dir = public_path('storage/whatsapp_media');
+                            if (!file_exists($dir)) mkdir($dir, 0777, true);
+                            $parts = explode(';base64,', $mMediaBase64);
+                            $mime = str_replace('data:', '', $parts[0]);
+                            $rawBin = base64_decode($parts[1]);
+                            $ext = 'jpg';
+                            if (str_contains($mime, 'pdf')) $ext = 'pdf';
+                            elseif (str_contains($mime, 'png')) $ext = 'png';
+                            elseif (str_contains($mime, 'webp')) $ext = 'webp';
+                            $fname = time() . '_' . Str::random(6) . '.' . $ext;
+                            file_put_contents($dir . '/' . $fname, $rawBin);
+                            $mMediaUrl = '/storage/whatsapp_media/' . $fname;
+                        } catch (\Exception $e) {}
+                    }
+
+                    if (empty($mText) && empty($mMediaUrl)) continue;
 
                     $mTs = isset($m['timestamp']) && $m['timestamp'] > 0
                         ? Carbon::createFromTimestamp($m['timestamp'])
@@ -741,7 +763,8 @@ class WhatsAppController extends Controller
                             'from_me' => !empty($m['from_me']),
                             'sender_name' => !empty($m['from_me']) ? 'You' : $chat->contact_name,
                             'text' => $mText,
-                            'media_type' => $m['media_type'] ?? 'text',
+                            'media_type' => $mMediaType,
+                            'media_url' => $mMediaUrl,
                             'status' => $m['status'] ?? (!empty($m['from_me']) ? 'sent' : 'read'),
                             'timestamp' => $mTs,
                         ]
@@ -1170,7 +1193,7 @@ class WhatsAppController extends Controller
                     $savedPath = $dir . '/' . time() . '_' . $safeName;
                     file_put_contents($savedPath, $rawBinary);
 
-                    $mediaUrl = url('storage/whatsapp_media/' . basename($savedPath));
+                    $mediaUrl = '/storage/whatsapp_media/' . basename($savedPath);
                 } catch (\Exception $e) {
                     \Log::warning('Media file save warning: ' . $e->getMessage());
                     $mediaUrl = $mediaBase64;
@@ -1406,7 +1429,7 @@ class WhatsAppController extends Controller
                 $origName = $payload['filename'] ?? ('in_' . time() . '_' . Str::random(6) . '.' . $ext);
                 $safeName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $origName);
                 file_put_contents($dir . '/' . $safeName, $rawBinary);
-                $mediaUrl = url('storage/whatsapp_media/' . $safeName);
+                $mediaUrl = '/storage/whatsapp_media/' . $safeName;
             } catch (\Exception $e) {
                 \Log::warning('Inbound media save warning: ' . $e->getMessage());
             }
@@ -1670,6 +1693,32 @@ class WhatsAppController extends Controller
             'chat' => $chat->load('channel'),
             'messages' => $messages,
             'contact' => $contact,
+        ]);
+    }
+
+    /**
+     * Direct streaming of WhatsApp media attachments with CORS headers
+     */
+    public function serveMedia($filename)
+    {
+        $safeName = basename($filename);
+        $path = public_path('storage/whatsapp_media/' . $safeName);
+
+        if (!file_exists($path)) {
+            $altPath = storage_path('app/public/whatsapp_media/' . $safeName);
+            if (file_exists($altPath)) {
+                $path = $altPath;
+            } else {
+                return response()->json(['error' => 'Media file not found'], 404);
+            }
+        }
+
+        $mime = mime_content_type($path) ?: 'application/octet-stream';
+
+        return response()->file($path, [
+            'Content-Type' => $mime,
+            'Access-Control-Allow-Origin' => '*',
+            'Cache-Control' => 'public, max-age=86400',
         ]);
     }
 }

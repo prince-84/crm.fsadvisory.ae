@@ -155,6 +155,20 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Frontend Display Sanitization (`frontend/src/app/whatsapp/page.tsx`)**:
     - `formatPhoneOrId`: If a phone number has length >= 14 or includes `@lid`, safely renders `'WhatsApp Contact'`.
     - `getChatDisplayName`: Replaces fake 14+ digit names with CRM contact name or `'WhatsApp Contact'`, displaying correct avatars (`AN` for Anastasiya instead of `+2`).
+- **45 — WhatsApp Media Attachments Ingestion, Cross-Domain Host Resolution & Broken Image Fallback**:
+  - **Problem**: Synced historical messages and real-time media attachments failed to render in the chat thread, displaying the browser's broken image icon `[ WhatsApp Image ]`. This was caused by:
+    1. `syncHistoryToLaravel` extracted `media_type: 'image'` without calling `downloadMedia()`, leaving `media_url = null` in the database while the frontend rendered `<img src={null} />`.
+    2. Inbound webhook media URLs were formatted with Laravel's `url()` using `APP_URL=http://localhost`, causing modern browsers on `https://crm.fsadvisory.ae` to block HTTP mixed content or attempt to load from local loopback.
+    3. Next.js on `crm.fsadvisory.ae` could not resolve relative `/storage/` paths because files reside on the backend host `api.fsadvisory.ae`.
+  - **Gateway Media Extraction (`whatsapp-gateway/server.js`)**: Updated `syncHistoryToLaravel` to detect `lm.hasMedia` and invoke `await lm.downloadMedia()`, encoding base64 data into `recentMsgs` and preserving media messages without captions.
+  - **Backend Media Storage & Dedicated Streaming Route (`WhatsAppController.php`, `routes/api.php`)**:
+    - `syncPhoneData`: Decodes `media_base64` from synced messages into `public/storage/whatsapp_media/` and persists relative URL `/storage/whatsapp_media/{file}`.
+    - Standardized media URLs across `webhook` and `sendMessage` to relative paths (`/storage/whatsapp_media/{file}`).
+    - Added public streaming endpoint `GET /api/whatsapp/media/{filename}` (`serveMedia`) delivering binary media with correct MIME type and `Access-Control-Allow-Origin: *` headers, bypassing web server static alias limitations.
+  - **Frontend Host Resolution & Graceful Fallback (`frontend/src/app/whatsapp/page.tsx`)**:
+    - Implemented `getMediaUrl(url)` helper: dynamically strips `localhost` / `127.0.0.1` and prefixes relative storage paths with the active backend API host (`https://api.fsadvisory.ae`).
+    - Graceful Photo Fallback: If `msg.media_type === 'image'` but the media file is not present/cached, renders an elegant `[ ImageIcon ] Photo` badge with caption instead of an ugly broken `<img />` box.
+    - Added image `onError` handler safely hiding broken DOM elements if remote files are unreachable.
 - **40 — Dedicated Lead Pool Page (`/lead-pool`) & Clean Separation from Inbound Leads**:
   - **Sidebar Menu Navigation Order**: Positioned **Lead Pool** (`/lead-pool`) directly after **Owner Data** (`/owner-data`) under the SALES navigation group (`Leads` -> `Owner Data` -> `Lead Pool`), restoring the dedicated master imported database archive.
   - **Clean Separation (Imported Only vs Inbound Live Leads)**:
