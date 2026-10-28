@@ -634,34 +634,35 @@ class WhatsAppController extends Controller
             // Resolve phone number
             $resolvedPhone = null;
 
-            if (!empty($chatData['phone'])) {
+            if (!empty($chatData['phone']) && !str_contains($chatData['phone'], '@lid') && strlen(preg_replace('/[^0-9]/', '', $chatData['phone'])) <= 13) {
                 $resolvedPhone = preg_replace('/[^0-9]/', '', $chatData['phone']);
             } elseif (str_contains($rawJid, '@c.us') || str_contains($rawJid, '@s.whatsapp.net')) {
-                $resolvedPhone = preg_replace('/[^0-9]/', '', explode('@', $rawJid)[0] ?? '');
+                $digits = preg_replace('/[^0-9]/', '', explode('@', $rawJid)[0] ?? '');
+                if (strlen($digits) >= 7 && strlen($digits) <= 13) {
+                    $resolvedPhone = $digits;
+                }
             } elseif (str_contains($rawJid, '@lid')) {
                 $cleanLid = str_replace('@lid', '', $rawJid);
-                $resolvedPhone = $lidPhoneMap[$rawJid] ?? $lidPhoneMap[$cleanLid] ?? null;
+                $fromMap = $lidPhoneMap[$rawJid] ?? $lidPhoneMap[$cleanLid] ?? null;
+                if ($fromMap && !str_contains($fromMap, '@lid')) {
+                    $cleanFromMap = preg_replace('/[^0-9]/', '', $fromMap);
+                    if (strlen($cleanFromMap) >= 7 && strlen($cleanFromMap) <= 13) {
+                        $resolvedPhone = $cleanFromMap;
+                    }
+                }
             }
 
-            // Fallback: Check if formattedTitle or name has phone digits
-            if (empty($resolvedPhone)) {
+            // Fallback: Check if formattedTitle or name has real phone digits (between 7 and 13 digits)
+            if (empty($resolvedPhone) && !str_contains($rawJid, '@lid')) {
                 $titleCandidate = $chatData['formattedTitle'] ?? ($chatData['name'] ?? '');
                 $extracted = preg_replace('/[^0-9]/', '', $titleCandidate);
-                if (strlen($extracted) >= 9) {
+                if (strlen($extracted) >= 9 && strlen($extracted) <= 13) {
                     $resolvedPhone = $extracted;
                 }
             }
 
-            // Fallback: Use numeric user portion of rawJid
-            if (empty($resolvedPhone)) {
-                $userPart = explode('@', $rawJid)[0] ?? '';
-                $extracted = preg_replace('/[^0-9]/', '', $userPart);
-                if (!empty($extracted)) {
-                    $resolvedPhone = $extracted;
-                }
-            }
-
-            if (empty($resolvedPhone)) continue;
+            // If still no real phone resolved (e.g. LID JID):
+            $phoneToStore = $resolvedPhone ? ('+' . $resolvedPhone) : $rawJid;
 
             // Resolve display name
             $savedName = $chatData['name'] 
@@ -670,11 +671,19 @@ class WhatsAppController extends Controller
                 ?? ($lidNameMap[$rawJid] ?? null)
                 ?? ($lidNameMap[str_replace('@lid', '', $rawJid)] ?? null);
 
-            if (empty($savedName) || $savedName === $rawJid) {
-                $savedName = '+' . $resolvedPhone;
+            // Sanitize name: If it's a 14+ digit number or matches an LID, discard it
+            if ($savedName) {
+                $nameClean = preg_replace('/[^0-9]/', '', $savedName);
+                if (strlen($nameClean) >= 14 || str_contains($savedName, '@lid')) {
+                    $savedName = null;
+                }
             }
 
-            $last7 = substr($resolvedPhone, -7);
+            if (empty($savedName) || $savedName === $rawJid) {
+                $savedName = $resolvedPhone ? ('+' . $resolvedPhone) : 'WhatsApp Contact';
+            }
+
+            $last7 = $resolvedPhone ? substr($resolvedPhone, -7) : null;
             $crmContact = null;
             if ($last7) {
                 $crmContact = Contact::where('phone', 'like', "%{$last7}%")
@@ -687,20 +696,32 @@ class WhatsAppController extends Controller
                 ? Carbon::createFromTimestamp($chatData['timestamp'])
                 : now();
 
-            $chat = WhatsAppChat::updateOrCreate(
-                [
+            $chat = WhatsAppChat::where('remote_jid', $rawJid)->first();
+            if (!$chat && $resolvedPhone) {
+                $chat = WhatsAppChat::where('phone', '+' . $resolvedPhone)->first();
+            }
+
+            if ($chat) {
+                $chat->update([
                     'channel_id' => $channelId,
-                    'phone' => '+' . $resolvedPhone,
-                ],
-                [
-                    'contact_id' => $crmContact ? $crmContact->id : null,
+                    'phone' => $resolvedPhone ? ('+' . $resolvedPhone) : $chat->phone,
+                    'contact_id' => $crmContact ? $crmContact->id : $chat->contact_id,
+                    'contact_name' => $crmContact ? $crmContact->name : ($savedName ?: $chat->contact_name),
+                    'last_message' => $lastMsg,
+                    'last_message_at' => $timestamp,
+                ]);
+            } else {
+                $chat = WhatsAppChat::create([
+                    'channel_id' => $channelId,
+                    'phone' => $phoneToStore,
                     'remote_jid' => $rawJid,
+                    'contact_id' => $crmContact ? $crmContact->id : null,
                     'contact_name' => $crmContact ? $crmContact->name : $savedName,
                     'last_message' => $lastMsg,
                     'last_message_at' => $timestamp,
                     'unread_count' => intval($chatData['unread_count'] ?? 0),
-                ]
-            );
+                ]);
+            }
 
             // Ingest recent messages array if provided from browser session
             if (!empty($chatData['messages']) && is_array($chatData['messages'])) {
@@ -905,7 +926,9 @@ class WhatsAppController extends Controller
                       ->take(250)
                       ->get();
 
-        // Auto-heal existing chats in database if contact_name was mistakenly set to channel phone/name or 'You'
+        // Auto-heal existing chats in database:
+        // 1. Advisor self-phone or agent name wrongly stamped on chat
+        // 2. Fake 14+ digit LID string wrongly stored as phone or contact name
         foreach ($chats as $c) {
             $chan = $c->channel;
             $chanPhone = $chan ? preg_replace('/[^0-9]/', '', $chan->phone_number ?? '') : '';
@@ -915,10 +938,30 @@ class WhatsAppController extends Controller
             $isSelfPhone = (!empty($chanPhone) && !empty($contactClean) && strlen($contactClean) >= 7 && str_contains($contactClean, substr($chanPhone, -7)));
             $isSelfName = (!empty($chanName) && strtolower(trim($c->contact_name ?? '')) === $chanName);
 
-            if ($isSelfPhone || $isSelfName || $c->contact_name === 'You') {
-                $healedName = $c->contact?->name ?: ($c->phone && !str_contains($c->phone, '@lid') ? $c->phone : 'WhatsApp Contact');
-                $c->update(['contact_name' => $healedName]);
+            $isLid = str_contains($c->remote_jid ?? '', '@lid') || str_contains($c->phone ?? '', '@lid');
+            $lidDigits = $isLid ? preg_replace('/[^0-9]/', '', explode('@', $c->remote_jid ?? '')[0] ?? '') : '';
+            $phoneClean = preg_replace('/[^0-9]/', '', $c->phone ?? '');
+
+            $isFakeLidPhone = $isLid && !empty($lidDigits) && ($phoneClean === $lidDigits || strlen($phoneClean) >= 14);
+            $isFakeLidName = !empty($contactClean) && strlen($contactClean) >= 14 && (!empty($lidDigits) && ($contactClean === $lidDigits || str_contains($contactClean, $lidDigits)));
+
+            $updates = [];
+
+            if ($isFakeLidPhone) {
+                $realPhone = $c->contact?->phone ?: ($c->remote_jid ?: 'WhatsApp Contact');
+                $updates['phone'] = $realPhone;
+                $c->phone = $realPhone;
+            }
+
+            if ($isSelfPhone || $isSelfName || $c->contact_name === 'You' || $isFakeLidName || empty($c->contact_name)) {
+                $phoneValid = !empty($c->phone) && !str_contains($c->phone, '@lid') && strlen(preg_replace('/[^0-9]/', '', $c->phone)) <= 13;
+                $healedName = $c->contact?->name ?: ($phoneValid ? $c->phone : 'WhatsApp Contact');
+                $updates['contact_name'] = $healedName;
                 $c->contact_name = $healedName;
+            }
+
+            if (!empty($updates)) {
+                $c->update($updates);
             }
         }
 
@@ -1374,17 +1417,26 @@ class WhatsAppController extends Controller
             $cleanPhone = preg_replace('/[^0-9]/', '', explode('@', $remoteJid)[0] ?? '');
         }
 
+        // Never treat a 14+ digit LID as a phone number
+        if ($cleanPhone && (strlen($cleanPhone) >= 14 || str_contains($remoteJid ?? '', '@lid'))) {
+            $lidDigits = preg_replace('/[^0-9]/', '', explode('@', $remoteJid)[0] ?? '');
+            if ($cleanPhone === $lidDigits || strlen($cleanPhone) >= 14) {
+                $cleanPhone = '';
+            }
+        }
+
         $isFromMe = !empty($payload['from_me']);
         $channelCleanPhone = $resolvedChannel ? preg_replace('/[^0-9]/', '', $resolvedChannel->phone_number ?? '') : '';
         $channelName = $resolvedChannel ? strtolower(trim($resolvedChannel->agent_name ?? '')) : '';
 
-        // Discard pushName if it matches the mirrored advisor's own phone, name, or 'You'
+        // Discard pushName if it matches the mirrored advisor's own phone, name, or 'You', or is a 14+ digit LID
         if (!empty($pushName)) {
             $pushClean = preg_replace('/[^0-9]/', '', $pushName);
             if (($channelCleanPhone && strlen($pushClean) >= 7 && str_contains($channelCleanPhone, substr($pushClean, -7))) ||
                 ($channelName && strtolower(trim($pushName)) === $channelName) ||
                 strtolower(trim($pushName)) === 'you' ||
-                str_contains($pushName, '@lid')) {
+                str_contains($pushName, '@lid') ||
+                strlen($pushClean) >= 14) {
                 $pushName = null;
             }
         }

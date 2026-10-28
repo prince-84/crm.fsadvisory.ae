@@ -81,6 +81,107 @@ let currentQrTimestamp = null;
 let connectedUser    = null;
 let syncDone         = false;
 
+async function resolveLid(jid) {
+  if (!jid) return { phone: '', name: '' };
+
+  // 1. Standard phone JID (@c.us or @s.whatsapp.net)
+  if (jid.includes('@c.us') || jid.includes('@s.whatsapp.net')) {
+    const digits = jid.split('@')[0].replace(/[^0-9]/g, '');
+    if (digits && digits.length >= 7 && digits.length <= 13) {
+      return { phone: `+${digits}`, name: '' };
+    }
+  }
+
+  // 2. LID JID (@lid)
+  if (jid.includes('@lid')) {
+    // Check cached phoneToNameMap first
+    if (phoneToNameMap[jid] && phoneToNameMap[jid].startsWith('+')) {
+      const cached = phoneToNameMap[jid].replace(/[^0-9]/g, '');
+      const myClean = connectedUser?.phone ? connectedUser.phone.replace(/[^0-9]/g, '') : '';
+      if (cached.length >= 7 && cached.length <= 13 && cached !== myClean) {
+        return { phone: `+${cached}`, name: '' };
+      }
+    }
+
+    if (!client) return { phone: '', name: '' };
+
+    // Strategy 1: Official client.getContactLidAndPhone
+    try {
+      if (typeof client.getContactLidAndPhone === 'function') {
+        const res = await client.getContactLidAndPhone(jid);
+        if (Array.isArray(res) && res.length > 0 && res[0].pn) {
+          const pnClean = res[0].pn.replace('@c.us', '').replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
+          if (pnClean && pnClean.length >= 7 && pnClean.length <= 13) {
+            const phone = `+${pnClean}`;
+            phoneToNameMap[jid] = phone;
+            saveContacts();
+            return { phone, name: '' };
+          }
+        }
+      }
+    } catch (e1) {
+      console.warn(`[LID Resolution] getContactLidAndPhone error for ${jid}:`, e1.message);
+    }
+
+    // Strategy 2: Deep evaluation inside WhatsApp Web page
+    try {
+      if (client.pupPage) {
+        const evalRes = await client.pupPage.evaluate(async (lidJid) => {
+          try {
+            const wid = window.require('WAWebWidFactory').createWid(lidJid);
+            const apiContact = window.require('WAWebApiContact');
+            let pnWid = null;
+            if (apiContact) {
+              if (typeof apiContact.getPhoneNumber === 'function') pnWid = apiContact.getPhoneNumber(wid);
+              if (!pnWid && typeof apiContact.getAlternateUserWid === 'function') pnWid = apiContact.getAlternateUserWid(wid);
+            }
+            if (!pnWid) {
+              const queryJob = window.require('WAWebQueryExistsJob');
+              if (queryJob && typeof queryJob.queryWidExists === 'function') {
+                const qRes = await queryJob.queryWidExists(wid);
+                if (qRes?.wid && apiContact) {
+                  pnWid = apiContact.getPhoneNumber(wid) || apiContact.getAlternateUserWid(wid);
+                }
+              }
+            }
+
+            let cName = '';
+            try {
+              const contactColl = window.require('WAWebCollections').Contact;
+              const contactObj = contactColl.get(wid) || (await contactColl.find(wid));
+              if (contactObj) {
+                const getters = window.require('WAWebContactGetters');
+                cName = (getters && getters.getName(contactObj)) || contactObj.name || contactObj.pushname || '';
+              }
+            } catch (_) {}
+
+            return {
+              pn: pnWid?._serialized || (typeof pnWid === 'string' ? pnWid : (pnWid?.user || '')),
+              name: cName
+            };
+          } catch (err) {
+            return { error: err.message };
+          }
+        }, jid);
+
+        if (evalRes && evalRes.pn) {
+          const pnClean = String(evalRes.pn).replace('@c.us', '').replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
+          if (pnClean && pnClean.length >= 7 && pnClean.length <= 13) {
+            const phone = `+${pnClean}`;
+            phoneToNameMap[jid] = phone;
+            saveContacts();
+            return { phone, name: evalRes.name || '' };
+          }
+        }
+      }
+    } catch (e2) {
+      console.warn(`[LID Resolution] evaluate error for ${jid}:`, e2.message);
+    }
+  }
+
+  return { phone: '', name: '' };
+}
+
 async function triggerPageQrReload() {
   if (!client || !client.pupPage) return false;
   try {
@@ -305,19 +406,23 @@ async function initClient() {
       let phone = '';
       let name = '';
 
-      if (rawJid.includes('@c.us') || rawJid.includes('@s.whatsapp.net')) {
-        phone = `+${rawJid.split('@')[0].replace(/[^0-9]/g, '')}`;
-      }
+      // Resolve phone & name via resolveLid (handles both @c.us and @lid)
+      const resLid = await resolveLid(rawJid);
+      if (resLid.phone) phone = resLid.phone;
+      if (resLid.name) name = resLid.name;
 
-      // Check contact to resolve real phone number & name
+      // Check contact to resolve name if still missing
       try {
         const contact = await msg.getContact();
         if (contact && !contact.isMe) {
           if (!name) name = contact.name || contact.pushname || contact.formattedName || '';
-          if (!phone) {
+          if (!phone && !rawJid.includes('@lid')) {
             const num = contact.number || contact.id?.user;
             if (num && !String(num).includes('lid')) {
-              phone = `+${String(num).replace(/[^0-9]/g, '')}`;
+              const clean = String(num).replace(/[^0-9]/g, '');
+              if (clean.length >= 7 && clean.length <= 13) {
+                phone = `+${clean}`;
+              }
             }
           }
         }
@@ -329,7 +434,10 @@ async function initClient() {
         if (chat) {
           if (!name) name = chat?.name || chat?.formattedTitle || '';
           if (!phone && chat?.id?._serialized && chat.id._serialized.includes('@c.us')) {
-            phone = `+${chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '')}`;
+            const clean = chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '');
+            if (clean.length >= 7 && clean.length <= 13) {
+              phone = `+${clean}`;
+            }
           }
         }
       } catch (_) {}
@@ -341,8 +449,14 @@ async function initClient() {
         if (name && (name.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7)) || name === connectedUser?.name || name === 'You')) name = '';
       }
 
+      // If phone is an LID or invalid (14+ digits), discard it
+      if (phone && phone.replace(/[^0-9]/g, '').length >= 14) {
+        phone = '';
+      }
+
       if (rawJid && !phone && phoneToNameMap[rawJid] && phoneToNameMap[rawJid] !== connectedUser?.phone) {
-        phone = phoneToNameMap[rawJid];
+        const cached = phoneToNameMap[rawJid].replace(/[^0-9]/g, '');
+        if (cached.length <= 13) phone = phoneToNameMap[rawJid];
       }
       if (rawJid && phone && phone !== connectedUser?.phone) {
         phoneToNameMap[rawJid] = phone;
@@ -386,9 +500,10 @@ async function initClient() {
       let phone = '';
       let name = '';
 
-      if (rawJid.includes('@c.us') || rawJid.includes('@s.whatsapp.net')) {
-        phone = `+${rawJid.split('@')[0].replace(/[^0-9]/g, '')}`;
-      }
+      // Resolve phone & name via resolveLid (handles both @c.us and @lid)
+      const resLid = await resolveLid(rawJid);
+      if (resLid.phone) phone = resLid.phone;
+      if (resLid.name) name = resLid.name;
 
       // FOR OUTGOING MESSAGES: DO NOT call msg.getContact()!
       // msg.getContact() on fromMe=true returns the SENDER (the advisor), which falsely
@@ -396,9 +511,12 @@ async function initClient() {
       try {
         const chat = await msg.getChat();
         if (chat) {
-          name = chat.name || chat.formattedTitle || '';
+          if (!name) name = chat.name || chat.formattedTitle || '';
           if (!phone && chat.id?._serialized && chat.id._serialized.includes('@c.us')) {
-            phone = `+${chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '')}`;
+            const clean = chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '');
+            if (clean.length >= 7 && clean.length <= 13) {
+              phone = `+${clean}`;
+            }
           }
         }
       } catch (_) {}
@@ -409,10 +527,13 @@ async function initClient() {
           const recipientContact = await client.getContactById(rawJid);
           if (recipientContact && !recipientContact.isMe) {
             if (!name) name = recipientContact.name || recipientContact.pushname || recipientContact.formattedName || '';
-            if (!phone) {
+            if (!phone && !rawJid.includes('@lid')) {
               const num = recipientContact.number || recipientContact.id?.user;
               if (num && !String(num).includes('lid')) {
-                phone = `+${String(num).replace(/[^0-9]/g, '')}`;
+                const clean = String(num).replace(/[^0-9]/g, '');
+                if (clean.length >= 7 && clean.length <= 13) {
+                  phone = `+${clean}`;
+                }
               }
             }
           }
@@ -426,8 +547,14 @@ async function initClient() {
         if (name && (name.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7)) || name === connectedUser?.name || name === 'You')) name = '';
       }
 
+      // If phone is an LID or invalid (14+ digits), discard it
+      if (phone && phone.replace(/[^0-9]/g, '').length >= 14) {
+        phone = '';
+      }
+
       if (rawJid && !phone && phoneToNameMap[rawJid] && phoneToNameMap[rawJid] !== connectedUser?.phone) {
-        phone = phoneToNameMap[rawJid];
+        const cached = phoneToNameMap[rawJid].replace(/[^0-9]/g, '');
+        if (cached.length <= 13) phone = phoneToNameMap[rawJid];
       }
       if (rawJid && phone && phone !== connectedUser?.phone) {
         phoneToNameMap[rawJid] = phone;
@@ -550,12 +677,27 @@ async function syncHistoryToLaravel() {
               continue;
             }
 
-            let cleanPhone = rawId.replace('@c.us', '').replace(/[^0-9]/g, '');
-            if (!cleanPhone && c.id?.user) {
-              cleanPhone = String(c.id.user).replace(/[^0-9]/g, '');
+            let isLid = rawId.includes('@lid');
+            let cleanPhone = '';
+
+            if (!isLid && (rawId.includes('@c.us') || rawId.includes('@s.whatsapp.net'))) {
+              const digits = rawId.split('@')[0].replace(/[^0-9]/g, '');
+              if (digits.length >= 7 && digits.length <= 13) {
+                cleanPhone = digits;
+              }
+            } else if (isLid) {
+              const resLid = await resolveLid(rawId);
+              if (resLid.phone) {
+                cleanPhone = resLid.phone.replace(/[^0-9]/g, '');
+              }
             }
 
             let name = c.name || c.formattedTitle || '';
+            // Sanitize name: if it's a 14+ digit string (raw LID), don't treat as name
+            if (name && name.replace(/[^0-9]/g, '').length >= 14) {
+              name = '';
+            }
+
             if (!name && cleanPhone) {
               name = `+${cleanPhone}`;
             } else if (!name) {

@@ -143,6 +143,18 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Frontend Resilient Title & Avatar Resolution (`frontend/src/app/whatsapp/page.tsx`)**:
     - Created `getChatDisplayName(chat)` helper protecting against advisor self-attribution across all channels and advisors.
     - Updated chat list item title, avatar initials, chat header title, message bubbles, and CRM Client Context drawer to use `getChatDisplayName()`. Even if an older unhealed record has the advisor's number in cache, the UI immediately displays the client's actual phone number or CRM name.
+- **44 — WhatsApp Multi-Device LID Resolution to Genuine Phone Numbers & Fake 14+ Digit LID Elimination**:
+  - **Problem**: When a contact engages via WhatsApp companion/multi-device mode, WhatsApp sends an internal 14-to-15 digit Local Identifier (`@lid`, e.g. `23149924077631@lid` or `227745204305928@lid`). The gateway previously stripped non-digits and prepended `+`, mistakenly treating the LID as a real phone number (`+23149924077631`), which contaminated both the chat list title, subtitle, and avatar icon (`+2`).
+  - **Gateway Multi-Strategy LID Resolution (`whatsapp-gateway/server.js`)**:
+    - Implemented `resolveLid(jid)` helper applying `client.getContactLidAndPhone(jid)` and deep Puppeteer evaluation hooks (`WAWebApiContact.getPhoneNumber`, `WAWebApiContact.getAlternateUserWid`, and `WAWebQueryExistsJob.queryWidExists`) to extract the recipient's true international `@c.us` phone number.
+    - Strict length validation (7 to 13 digits) prevents any 14+ digit LID from being stored in `phoneToNameMap` or dispatched as a phone number.
+  - **Backend LID Sanitization & Auto-Healing (`WhatsAppController.php`)**:
+    - `syncPhoneData`: Never assigns `$rawJid` user digits as `$resolvedPhone` when `str_contains($rawJid, '@lid')`.
+    - `webhook`: Discards `$cleanPhone` and `$pushName` if they match the raw LID or exceed 13 digits.
+    - `chats()`: In-memory dynamic database self-healing loop automatically repairs historical database records where `phone` or `contact_name` was falsely saved as a 14+ digit LID, reverting `phone` to the true CRM phone (or raw `@lid` JID) and `contact_name` to the CRM client name or `'WhatsApp Contact'`.
+  - **Frontend Display Sanitization (`frontend/src/app/whatsapp/page.tsx`)**:
+    - `formatPhoneOrId`: If a phone number has length >= 14 or includes `@lid`, safely renders `'WhatsApp Contact'`.
+    - `getChatDisplayName`: Replaces fake 14+ digit names with CRM contact name or `'WhatsApp Contact'`, displaying correct avatars (`AN` for Anastasiya instead of `+2`).
 - **40 — Dedicated Lead Pool Page (`/lead-pool`) & Clean Separation from Inbound Leads**:
   - **Sidebar Menu Navigation Order**: Positioned **Lead Pool** (`/lead-pool`) directly after **Owner Data** (`/owner-data`) under the SALES navigation group (`Leads` -> `Owner Data` -> `Lead Pool`), restoring the dedicated master imported database archive.
   - **Clean Separation (Imported Only vs Inbound Live Leads)**:

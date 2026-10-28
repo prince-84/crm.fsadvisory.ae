@@ -515,7 +515,8 @@ export default function WhatsAppPage() {
 
   const formatPhoneOrId = (phoneStr?: string) => {
     if (!phoneStr) return '';
-    if (phoneStr.includes('@lid')) {
+    const clean = phoneStr.replace(/[^0-9]/g, '');
+    if (phoneStr.includes('@lid') || clean.length >= 14) {
       return 'WhatsApp Contact';
     }
     if (phoneStr.includes('@broadcast')) {
@@ -551,9 +552,12 @@ export default function WhatsAppPage() {
     const isSelfName = contactNameLower &&
       (chanNames.includes(contactNameLower) || contactNameLower === 'you' || contactNameLower.includes('@lid'));
 
-    // If contact_name is missing or reflects the advisor/channel self, fallback to formatted phone
-    if (!c.contact_name || isSelfPhone || isSelfName) {
-      return formatPhoneOrId(c.phone) || 'WhatsApp Contact';
+    const isFakeLid = contactNameClean && contactNameClean.length >= 14;
+
+    // If contact_name is missing, reflects advisor self, or is a fake LID number:
+    if (!c.contact_name || isSelfPhone || isSelfName || isFakeLid) {
+      const formatted = formatPhoneOrId(c.phone);
+      return formatted || 'WhatsApp Contact';
     }
 
     return c.contact_name;
