@@ -46,3 +46,4 @@ whatsapp-gateway/node_modules/
 whatsapp-gateway/auth_sessions/
 whatsapp-gateway/.wwebjs_cache/
 whatsapp-gateway/*.log
+whatsapp-gateway/contacts_map.json

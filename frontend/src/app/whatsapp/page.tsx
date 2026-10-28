@@ -513,6 +513,52 @@ export default function WhatsAppPage() {
     }
   };
 
+  const formatPhoneOrId = (phoneStr?: string) => {
+    if (!phoneStr) return '';
+    if (phoneStr.includes('@lid')) {
+      return 'WhatsApp Contact';
+    }
+    if (phoneStr.includes('@broadcast')) {
+      return 'Broadcast Group';
+    }
+    return phoneStr;
+  };
+
+  const getChatDisplayName = (c: any) => {
+    if (!c) return 'WhatsApp Contact';
+
+    // 1. If CRM matched contact name exists, it takes highest precedence
+    if (c.contact?.name) return c.contact.name;
+
+    // 2. Identify channel phone & advisor names to avoid self-attribution
+    const chan = c.channel || activeChannel;
+    const chanPhones: string[] = [
+      chan?.phone_number,
+      ...channels.map((ch: any) => ch.phone_number)
+    ].filter(Boolean).map((p: string) => p.replace(/[^0-9]/g, ''));
+
+    const chanNames: string[] = [
+      chan?.agent_name,
+      ...channels.map((ch: any) => ch.agent_name)
+    ].filter(Boolean).map((n: string) => n.toLowerCase().trim());
+
+    const contactNameClean = c.contact_name ? c.contact_name.replace(/[^0-9]/g, '') : '';
+    const contactNameLower = c.contact_name ? c.contact_name.toLowerCase().trim() : '';
+
+    const isSelfPhone = contactNameClean && contactNameClean.length >= 7 &&
+      chanPhones.some((cp) => cp && (contactNameClean.includes(cp.slice(-7)) || cp.includes(contactNameClean.slice(-7))));
+
+    const isSelfName = contactNameLower &&
+      (chanNames.includes(contactNameLower) || contactNameLower === 'you' || contactNameLower.includes('@lid'));
+
+    // If contact_name is missing or reflects the advisor/channel self, fallback to formatted phone
+    if (!c.contact_name || isSelfPhone || isSelfName) {
+      return formatPhoneOrId(c.phone) || 'WhatsApp Contact';
+    }
+
+    return c.contact_name;
+  };
+
   const loadChats = async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
     try {
@@ -595,7 +641,8 @@ export default function WhatsAppPage() {
       if (!searchQuery.trim()) return true;
 
       const q = searchQuery.toLowerCase().trim();
-      const nameMatch = (c.contact_name || '').toLowerCase().includes(q);
+      const displayName = getChatDisplayName(c).toLowerCase();
+      const nameMatch = displayName.includes(q);
       const phoneMatch = (c.phone || '').toLowerCase().includes(q);
       const msgMatch = (c.last_message || '').toLowerCase().includes(q);
       const crmNameMatch = (c.contact?.name || '').toLowerCase().includes(q);
@@ -1036,7 +1083,7 @@ export default function WhatsAppPage() {
         Swal.fire({
           icon: 'success',
           title: 'WhatsApp Chat Ready!',
-          text: `Opened conversation with ${createdChat.contact_name}`,
+          text: `Opened conversation with ${getChatDisplayName(createdChat)}`,
           timer: 1500,
           showConfirmButton: false,
         });
@@ -1261,17 +1308,6 @@ export default function WhatsAppPage() {
         Swal.fire('Error', 'Failed to disconnect channel.', 'error');
       }
     }
-  };
-
-  const formatPhoneOrId = (phoneStr?: string) => {
-    if (!phoneStr) return '';
-    if (phoneStr.includes('@lid')) {
-      return 'WhatsApp Contact';
-    }
-    if (phoneStr.includes('@broadcast')) {
-      return 'Broadcast Group';
-    }
-    return phoneStr;
   };
 
   const formatMessageTime = (dateStr: string) => {
@@ -1588,9 +1624,9 @@ export default function WhatsAppPage() {
                     <div className="relative shrink-0">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#081428] to-[#1E3A66] text-white flex items-center justify-center font-bold text-xs shadow-xs border border-[#C8A147]/30 overflow-hidden">
                         {chat.avatar_url && chat.avatar_url !== 'none' ? (
-                          <img src={chat.avatar_url} alt={chat.contact_name} className="w-full h-full object-cover" />
+                          <img src={chat.avatar_url} alt={getChatDisplayName(chat)} className="w-full h-full object-cover" />
                         ) : (
-                          chat.contact_name ? chat.contact_name.substring(0, 2).toUpperCase() : 'WA'
+                          getChatDisplayName(chat) ? getChatDisplayName(chat).substring(0, 2).toUpperCase() : 'WA'
                         )}
                       </div>
                       <div className="w-3.5 h-3.5 rounded-full bg-[#25D366] border-2 border-white absolute -bottom-0.5 -right-0.5 flex items-center justify-center text-[7px] text-white">
@@ -1602,7 +1638,7 @@ export default function WhatsAppPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1 mb-0.5">
                         <h3 className="font-bold text-xs text-[#081428] truncate">
-                          {chat.contact_name || chat.phone}
+                          {getChatDisplayName(chat)}
                         </h3>
                         <span className="text-[10px] font-mono text-slate-400 shrink-0">
                           {formatChatDate(chat.last_message_at)}
@@ -1647,15 +1683,15 @@ export default function WhatsAppPage() {
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-full bg-[#081428] text-[#C8A147] flex items-center justify-center font-bold text-sm border border-[#C8A147]/40 shadow-xs shrink-0 overflow-hidden">
                     {selectedChat.avatar_url && selectedChat.avatar_url !== 'none' ? (
-                      <img src={selectedChat.avatar_url} alt={selectedChat.contact_name} className="w-full h-full object-cover" />
+                      <img src={selectedChat.avatar_url} alt={getChatDisplayName(selectedChat)} className="w-full h-full object-cover" />
                     ) : (
-                      selectedChat.contact_name ? selectedChat.contact_name.substring(0, 2).toUpperCase() : 'WA'
+                      getChatDisplayName(selectedChat) ? getChatDisplayName(selectedChat).substring(0, 2).toUpperCase() : 'WA'
                     )}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h2 className="font-bold text-sm text-[#081428] truncate">
-                        {selectedChat.contact_name || formatPhoneOrId(selectedChat.phone)}
+                        {getChatDisplayName(selectedChat)}
                       </h2>
                       {gatewayStatus === 'connected' ? (
                         <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-[#25D366]/20 text-emerald-800 border border-[#25D366]/30 flex items-center gap-1">
@@ -1750,7 +1786,7 @@ export default function WhatsAppPage() {
                               <div className="text-[10px] font-bold text-[#C8A147] mb-0.5">
                                 {msg.sender_name && !msg.sender_name.includes('@lid')
                                   ? msg.sender_name
-                                  : (selectedChat.contact?.name || selectedChat.contact_name || 'Contact')}
+                                  : getChatDisplayName(selectedChat)}
                               </div>
                             )}
 
@@ -2109,7 +2145,7 @@ export default function WhatsAppPage() {
               <div className="p-3 bg-[#FAF8F5] border border-[#E8E4DC] rounded-lg space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-sm text-[#081428]">
-                    {activeContact?.name || selectedChat.contact_name}
+                    {activeContact?.name || getChatDisplayName(selectedChat)}
                   </div>
                   <button
                     onClick={() => {

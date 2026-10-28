@@ -297,6 +297,7 @@ async function initClient() {
   });
 
   // Incoming message (received from client)
+  // Incoming message (received from client)
   client.on('message', async (msg) => {
     if (msg.isStatus || msg.isGroupMsg) return;
     try {
@@ -308,10 +309,10 @@ async function initClient() {
         phone = `+${rawJid.split('@')[0].replace(/[^0-9]/g, '')}`;
       }
 
-      // Check contact to resolve real phone number (especially for @lid multi-device format!)
+      // Check contact to resolve real phone number & name
       try {
         const contact = await msg.getContact();
-        if (contact) {
+        if (contact && !contact.isMe) {
           if (!name) name = contact.name || contact.pushname || contact.formattedName || '';
           if (!phone) {
             const num = contact.number || contact.id?.user;
@@ -325,16 +326,25 @@ async function initClient() {
       // Check chat to resolve name and phone if still missing
       try {
         const chat = await msg.getChat();
-        if (!name) name = chat?.name || chat?.formattedTitle || '';
-        if (!phone && chat?.id?._serialized && chat.id._serialized.includes('@c.us')) {
-          phone = `+${chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '')}`;
+        if (chat) {
+          if (!name) name = chat?.name || chat?.formattedTitle || '';
+          if (!phone && chat?.id?._serialized && chat.id._serialized.includes('@c.us')) {
+            phone = `+${chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '')}`;
+          }
         }
       } catch (_) {}
 
-      if (rawJid && !phone && phoneToNameMap[rawJid]) {
+      // Strict protection: Never assign mirrored advisor's own phone or name to client
+      const myPhoneClean = connectedUser?.phone ? connectedUser.phone.replace(/[^0-9]/g, '') : '';
+      if (myPhoneClean) {
+        if (phone && phone.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7))) phone = '';
+        if (name && (name.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7)) || name === connectedUser?.name || name === 'You')) name = '';
+      }
+
+      if (rawJid && !phone && phoneToNameMap[rawJid] && phoneToNameMap[rawJid] !== connectedUser?.phone) {
         phone = phoneToNameMap[rawJid];
       }
-      if (rawJid && phone) {
+      if (rawJid && phone && phone !== connectedUser?.phone) {
         phoneToNameMap[rawJid] = phone;
         saveContacts();
       }
@@ -368,7 +378,7 @@ async function initClient() {
     } catch (e) { console.error('Incoming error:', e.message); }
   });
 
-  // Outgoing message (sent from mobile phone)
+  // Outgoing message (sent from mobile phone or CRM)
   client.on('message_create', async (msg) => {
     if (!msg.fromMe || msg.isStatus || msg.isGroupMsg) return;
     try {
@@ -380,33 +390,46 @@ async function initClient() {
         phone = `+${rawJid.split('@')[0].replace(/[^0-9]/g, '')}`;
       }
 
-      // Check contact to resolve real phone number (especially for @lid!)
+      // FOR OUTGOING MESSAGES: DO NOT call msg.getContact()!
+      // msg.getContact() on fromMe=true returns the SENDER (the advisor), which falsely
+      // overwrites the recipient client's name with the advisor's own phone number!
       try {
-        const contact = await msg.getContact();
-        if (contact) {
-          if (!name) name = contact.name || contact.pushname || contact.formattedName || '';
-          if (!phone) {
-            const num = contact.number || contact.id?.user;
-            if (num && !String(num).includes('lid')) {
-              phone = `+${String(num).replace(/[^0-9]/g, '')}`;
-            }
+        const chat = await msg.getChat();
+        if (chat) {
+          name = chat.name || chat.formattedTitle || '';
+          if (!phone && chat.id?._serialized && chat.id._serialized.includes('@c.us')) {
+            phone = `+${chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '')}`;
           }
         }
       } catch (_) {}
 
-      // Check chat to resolve name and phone if still missing
-      try {
-        const chat = await msg.getChat();
-        if (!name) name = chat?.name || chat?.formattedTitle || '';
-        if (!phone && chat?.id?._serialized && chat.id._serialized.includes('@c.us')) {
-          phone = `+${chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '')}`;
-        }
-      } catch (_) {}
+      // If name or phone still missing, resolve recipient contact directly by recipient JID:
+      if (!name || !phone) {
+        try {
+          const recipientContact = await client.getContactById(rawJid);
+          if (recipientContact && !recipientContact.isMe) {
+            if (!name) name = recipientContact.name || recipientContact.pushname || recipientContact.formattedName || '';
+            if (!phone) {
+              const num = recipientContact.number || recipientContact.id?.user;
+              if (num && !String(num).includes('lid')) {
+                phone = `+${String(num).replace(/[^0-9]/g, '')}`;
+              }
+            }
+          }
+        } catch (_) {}
+      }
 
-      if (rawJid && !phone && phoneToNameMap[rawJid]) {
+      // Strict protection: Never assign mirrored advisor's own phone or name to client
+      const myPhoneClean = connectedUser?.phone ? connectedUser.phone.replace(/[^0-9]/g, '') : '';
+      if (myPhoneClean) {
+        if (phone && phone.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7))) phone = '';
+        if (name && (name.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7)) || name === connectedUser?.name || name === 'You')) name = '';
+      }
+
+      if (rawJid && !phone && phoneToNameMap[rawJid] && phoneToNameMap[rawJid] !== connectedUser?.phone) {
         phone = phoneToNameMap[rawJid];
       }
-      if (rawJid && phone) {
+      if (rawJid && phone && phone !== connectedUser?.phone) {
         phoneToNameMap[rawJid] = phone;
         saveContacts();
       }

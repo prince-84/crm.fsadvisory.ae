@@ -905,6 +905,23 @@ class WhatsAppController extends Controller
                       ->take(250)
                       ->get();
 
+        // Auto-heal existing chats in database if contact_name was mistakenly set to channel phone/name or 'You'
+        foreach ($chats as $c) {
+            $chan = $c->channel;
+            $chanPhone = $chan ? preg_replace('/[^0-9]/', '', $chan->phone_number ?? '') : '';
+            $chanName = $chan ? strtolower(trim($chan->agent_name ?? '')) : '';
+            $contactClean = preg_replace('/[^0-9]/', '', $c->contact_name ?? '');
+
+            $isSelfPhone = (!empty($chanPhone) && !empty($contactClean) && strlen($contactClean) >= 7 && str_contains($contactClean, substr($chanPhone, -7)));
+            $isSelfName = (!empty($chanName) && strtolower(trim($c->contact_name ?? '')) === $chanName);
+
+            if ($isSelfPhone || $isSelfName || $c->contact_name === 'You') {
+                $healedName = $c->contact?->name ?: ($c->phone && !str_contains($c->phone, '@lid') ? $c->phone : 'WhatsApp Contact');
+                $c->update(['contact_name' => $healedName]);
+                $c->contact_name = $healedName;
+            }
+        }
+
         $totalUnread = WhatsAppChat::sum('unread_count');
 
         return response()->json([
@@ -1357,6 +1374,31 @@ class WhatsAppController extends Controller
             $cleanPhone = preg_replace('/[^0-9]/', '', explode('@', $remoteJid)[0] ?? '');
         }
 
+        $isFromMe = !empty($payload['from_me']);
+        $channelCleanPhone = $resolvedChannel ? preg_replace('/[^0-9]/', '', $resolvedChannel->phone_number ?? '') : '';
+        $channelName = $resolvedChannel ? strtolower(trim($resolvedChannel->agent_name ?? '')) : '';
+
+        // Discard pushName if it matches the mirrored advisor's own phone, name, or 'You'
+        if (!empty($pushName)) {
+            $pushClean = preg_replace('/[^0-9]/', '', $pushName);
+            if (($channelCleanPhone && strlen($pushClean) >= 7 && str_contains($channelCleanPhone, substr($pushClean, -7))) ||
+                ($channelName && strtolower(trim($pushName)) === $channelName) ||
+                strtolower(trim($pushName)) === 'you' ||
+                str_contains($pushName, '@lid')) {
+                $pushName = null;
+            }
+        }
+
+        // On outbound messages from advisor, never use pushName to rename the client
+        if ($isFromMe) {
+            $pushName = null;
+        }
+
+        // Discard cleanPhone if it matches the advisor's own phone
+        if ($channelCleanPhone && $cleanPhone && strlen($cleanPhone) >= 7 && str_contains($channelCleanPhone, substr($cleanPhone, -7))) {
+            $cleanPhone = '';
+        }
+
         // 1. Find existing chat by remote_jid OR phone number (GLOBALLY across channels)
         $chat = null;
         if ($remoteJid) {
@@ -1422,7 +1464,17 @@ class WhatsAppController extends Controller
             $chat->update(['contact_name' => $pushName]);
         }
 
-        $isFromMe = !empty($payload['from_me']);
+        // Self-name correction: If chat->contact_name currently matches channel phone/name or 'You', heal it!
+        $contactClean = preg_replace('/[^0-9]/', '', $chat->contact_name ?? '');
+        $isSelfPhone = (!empty($channelCleanPhone) && !empty($contactClean) && strlen($contactClean) >= 7 && str_contains($contactClean, substr($channelCleanPhone, -7)));
+        $isSelfName = (!empty($channelName) && strtolower(trim($chat->contact_name ?? '')) === $channelName);
+
+        if ($isSelfPhone || $isSelfName || $chat->contact_name === 'You') {
+            $healedName = $chat->contact?->name ?: ($chat->phone && !str_contains($chat->phone, '@lid') ? $chat->phone : 'WhatsApp Contact');
+            $chat->update(['contact_name' => $healedName]);
+            $chat->contact_name = $healedName;
+        }
+
         $msgId = $payload['id'] ?? ('WA-' . Str::random(12));
         
         // Prevent duplicate outgoing messages sent from CRM UI
