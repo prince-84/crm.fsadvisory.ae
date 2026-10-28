@@ -626,66 +626,70 @@ class WhatsAppController extends Controller
         $imported = 0;
         foreach ($chats as $chatData) {
             $rawJid = $chatData['id'] ?? '';
-            // Skip broadcast, status channels, newsletters and group chats
-            if (str_contains($rawJid, 'status@broadcast') || str_contains($rawJid, 'newsletter') || str_contains($rawJid, '@g.us')) {
+            // Skip broadcast, status channels, newsletters (groups are now supported!)
+            if (str_contains($rawJid, 'status@broadcast') || str_contains($rawJid, 'newsletter')) {
                 continue;
             }
 
-            // Resolve phone number
-            $resolvedPhone = null;
+            $isGroup = !empty($chatData['is_group']) || str_contains($rawJid, '@g.us') || ($chatData['phone'] ?? '') === 'Group Chat';
 
-            if (!empty($chatData['phone']) && !str_contains($chatData['phone'], '@lid') && strlen(preg_replace('/[^0-9]/', '', $chatData['phone'])) <= 13) {
-                $resolvedPhone = preg_replace('/[^0-9]/', '', $chatData['phone']);
-            } elseif (str_contains($rawJid, '@c.us') || str_contains($rawJid, '@s.whatsapp.net')) {
-                $digits = preg_replace('/[^0-9]/', '', explode('@', $rawJid)[0] ?? '');
-                if (strlen($digits) >= 7 && strlen($digits) <= 13) {
-                    $resolvedPhone = $digits;
-                }
-            } elseif (str_contains($rawJid, '@lid')) {
-                $cleanLid = str_replace('@lid', '', $rawJid);
-                $fromMap = $lidPhoneMap[$rawJid] ?? $lidPhoneMap[$cleanLid] ?? null;
-                if ($fromMap && !str_contains($fromMap, '@lid')) {
-                    $cleanFromMap = preg_replace('/[^0-9]/', '', $fromMap);
-                    if (strlen($cleanFromMap) >= 7 && strlen($cleanFromMap) <= 13) {
-                        $resolvedPhone = $cleanFromMap;
+            $resolvedPhone = null;
+            if ($isGroup) {
+                $phoneToStore = 'Group Chat';
+                $savedName = $chatData['name'] ?? ($chatData['formattedTitle'] ?? 'WhatsApp Group');
+            } else {
+                if (!empty($chatData['phone']) && !str_contains($chatData['phone'], '@lid') && strlen(preg_replace('/[^0-9]/', '', $chatData['phone'])) <= 13) {
+                    $resolvedPhone = preg_replace('/[^0-9]/', '', $chatData['phone']);
+                } elseif (str_contains($rawJid, '@c.us') || str_contains($rawJid, '@s.whatsapp.net')) {
+                    $digits = preg_replace('/[^0-9]/', '', explode('@', $rawJid)[0] ?? '');
+                    if (strlen($digits) >= 7 && strlen($digits) <= 13) {
+                        $resolvedPhone = $digits;
+                    }
+                } elseif (str_contains($rawJid, '@lid')) {
+                    $cleanLid = str_replace('@lid', '', $rawJid);
+                    $fromMap = $lidPhoneMap[$rawJid] ?? $lidPhoneMap[$cleanLid] ?? null;
+                    if ($fromMap && !str_contains($fromMap, '@lid')) {
+                        $cleanFromMap = preg_replace('/[^0-9]/', '', $fromMap);
+                        if (strlen($cleanFromMap) >= 7 && strlen($cleanFromMap) <= 13) {
+                            $resolvedPhone = $cleanFromMap;
+                        }
                     }
                 }
-            }
 
-            // Fallback: Check if formattedTitle or name has real phone digits (between 7 and 13 digits)
-            if (empty($resolvedPhone) && !str_contains($rawJid, '@lid')) {
-                $titleCandidate = $chatData['formattedTitle'] ?? ($chatData['name'] ?? '');
-                $extracted = preg_replace('/[^0-9]/', '', $titleCandidate);
-                if (strlen($extracted) >= 9 && strlen($extracted) <= 13) {
-                    $resolvedPhone = $extracted;
+                // Fallback: Check if formattedTitle or name has real phone digits (between 7 and 13 digits)
+                if (empty($resolvedPhone) && !str_contains($rawJid, '@lid')) {
+                    $titleCandidate = $chatData['formattedTitle'] ?? ($chatData['name'] ?? '');
+                    $extracted = preg_replace('/[^0-9]/', '', $titleCandidate);
+                    if (strlen($extracted) >= 9 && strlen($extracted) <= 13) {
+                        $resolvedPhone = $extracted;
+                    }
                 }
-            }
 
-            // If still no real phone resolved (e.g. LID JID):
-            $phoneToStore = $resolvedPhone ? ('+' . $resolvedPhone) : $rawJid;
+                $phoneToStore = $resolvedPhone ? ('+' . $resolvedPhone) : $rawJid;
 
-            // Resolve display name
-            $savedName = $chatData['name'] 
-                ?? ($chatData['formattedTitle'] ?? null)
-                ?? ($contactNames[$rawJid] ?? null)
-                ?? ($lidNameMap[$rawJid] ?? null)
-                ?? ($lidNameMap[str_replace('@lid', '', $rawJid)] ?? null);
+                // Resolve display name: Prioritize phone address book name from chatData['name']
+                $savedName = $chatData['name'] 
+                    ?? ($chatData['formattedTitle'] ?? null)
+                    ?? ($contactNames[$rawJid] ?? null)
+                    ?? ($lidNameMap[$rawJid] ?? null)
+                    ?? ($lidNameMap[str_replace('@lid', '', $rawJid)] ?? null);
 
-            // Sanitize name: If it's a 14+ digit number or matches an LID, discard it
-            if ($savedName) {
-                $nameClean = preg_replace('/[^0-9]/', '', $savedName);
-                if (strlen($nameClean) >= 14 || str_contains($savedName, '@lid')) {
-                    $savedName = null;
+                // Sanitize name: If it's a 14+ digit number or matches an LID, discard it
+                if ($savedName) {
+                    $nameClean = preg_replace('/[^0-9]/', '', $savedName);
+                    if (strlen($nameClean) >= 14 || str_contains($savedName, '@lid')) {
+                        $savedName = null;
+                    }
                 }
-            }
 
-            if (empty($savedName) || $savedName === $rawJid) {
-                $savedName = $resolvedPhone ? ('+' . $resolvedPhone) : 'WhatsApp Contact';
+                if (empty($savedName) || $savedName === $rawJid) {
+                    $savedName = $resolvedPhone ? ('+' . $resolvedPhone) : 'WhatsApp Contact';
+                }
             }
 
             $last7 = $resolvedPhone ? substr($resolvedPhone, -7) : null;
             $crmContact = null;
-            if ($last7) {
+            if ($last7 && !$isGroup) {
                 $crmContact = Contact::where('phone', 'like', "%{$last7}%")
                     ->orWhere('secondary_phone', 'like', "%{$last7}%")
                     ->first();
@@ -697,16 +701,18 @@ class WhatsAppController extends Controller
                 : now();
 
             $chat = WhatsAppChat::where('remote_jid', $rawJid)->first();
-            if (!$chat && $resolvedPhone) {
+            if (!$chat && !$isGroup && $resolvedPhone) {
                 $chat = WhatsAppChat::where('phone', '+' . $resolvedPhone)->first();
             }
+
+            $finalName = $crmContact ? $crmContact->name : ($savedName ?: ($chat ? $chat->contact_name : ($isGroup ? 'WhatsApp Group' : 'WhatsApp Contact')));
 
             if ($chat) {
                 $chat->update([
                     'channel_id' => $channelId,
-                    'phone' => $resolvedPhone ? ('+' . $resolvedPhone) : $chat->phone,
+                    'phone' => $isGroup ? 'Group Chat' : ($resolvedPhone ? ('+' . $resolvedPhone) : $chat->phone),
                     'contact_id' => $crmContact ? $crmContact->id : $chat->contact_id,
-                    'contact_name' => $crmContact ? $crmContact->name : ($savedName ?: $chat->contact_name),
+                    'contact_name' => $finalName,
                     'last_message' => $lastMsg,
                     'last_message_at' => $timestamp,
                 ]);
@@ -716,7 +722,7 @@ class WhatsAppController extends Controller
                     'phone' => $phoneToStore,
                     'remote_jid' => $rawJid,
                     'contact_id' => $crmContact ? $crmContact->id : null,
-                    'contact_name' => $crmContact ? $crmContact->name : $savedName,
+                    'contact_name' => $finalName,
                     'last_message' => $lastMsg,
                     'last_message_at' => $timestamp,
                     'unread_count' => intval($chatData['unread_count'] ?? 0),
@@ -735,8 +741,11 @@ class WhatsAppController extends Controller
                     // Save incoming base64 media if provided from session
                     if ($mMediaBase64 && str_contains($mMediaBase64, ';base64,')) {
                         try {
-                            $dir = public_path('storage/whatsapp_media');
-                            if (!file_exists($dir)) mkdir($dir, 0777, true);
+                            $publicDir = public_path('storage/whatsapp_media');
+                            $storageDir = storage_path('app/public/whatsapp_media');
+                            if (!file_exists($publicDir)) @mkdir($publicDir, 0777, true);
+                            if (!file_exists($storageDir)) @mkdir($storageDir, 0777, true);
+
                             $parts = explode(';base64,', $mMediaBase64);
                             $mime = str_replace('data:', '', $parts[0]);
                             $rawBin = base64_decode($parts[1]);
@@ -745,8 +754,9 @@ class WhatsAppController extends Controller
                             elseif (str_contains($mime, 'png')) $ext = 'png';
                             elseif (str_contains($mime, 'webp')) $ext = 'webp';
                             $fname = time() . '_' . Str::random(6) . '.' . $ext;
-                            file_put_contents($dir . '/' . $fname, $rawBin);
-                            $mMediaUrl = '/storage/whatsapp_media/' . $fname;
+                            @file_put_contents($publicDir . '/' . $fname, $rawBin);
+                            @file_put_contents($storageDir . '/' . $fname, $rawBin);
+                            $mMediaUrl = '/whatsapp/media/' . $fname;
                         } catch (\Exception $e) {}
                     }
 
@@ -828,44 +838,6 @@ class WhatsAppController extends Controller
      */
     public function chats(Request $request)
     {
-        // Auto-heal: If any orphaned @lid duplicate chats exist, merge their messages into the real contact chat
-        try {
-            $lidChats = WhatsAppChat::where(function($q) {
-                $q->where('phone', 'like', '%@lid%')
-                  ->orWhere('contact_name', 'like', '%@lid%')
-                  ->orWhere('remote_jid', 'like', '%@lid%');
-            })->where('phone', 'not like', '+%')->get();
-
-            foreach ($lidChats as $lidChat) {
-                // Find candidate real chat in the database (matching channel or most recent real chat)
-                $realChat = WhatsAppChat::where('id', '!=', $lidChat->id)
-                    ->where('phone', 'like', '+%')
-                    ->where('channel_id', $lidChat->channel_id)
-                    ->latest('last_message_at')
-                    ->first();
-
-                if (!$realChat) {
-                    $realChat = WhatsAppChat::where('id', '!=', $lidChat->id)
-                        ->where('phone', 'like', '+%')
-                        ->latest('last_message_at')
-                        ->first();
-                }
-
-                if ($realChat) {
-                    WhatsAppMessage::where('chat_id', $lidChat->id)
-                        ->update(['chat_id' => $realChat->id]);
-
-                    if ($lidChat->last_message) {
-                        $realChat->update([
-                            'last_message' => $lidChat->last_message,
-                            'last_message_at' => now(),
-                        ]);
-                    }
-                    $lidChat->delete();
-                }
-            }
-        } catch (\Exception $e) {}
-
         $query = WhatsAppChat::with([
             'channel',
             'contact.opportunity.buyerQualification',
@@ -1404,13 +1376,19 @@ class WhatsAppController extends Controller
             else return response()->json(['status' => 'SKIPPED_EMPTY'], 200);
         }
 
+        $chatTitle = $payload['name'] ?? ($payload['group_title'] ?? null);
+        $isGroup = !empty($payload['is_group']) 
+            || str_contains($remoteJid ?? '', '@g.us') 
+            || ($payload['phone'] ?? '') === 'Group Chat';
+
         // Save incoming media base64 if present
         if ($mediaBase64 && str_contains($mediaBase64, ';base64,')) {
             try {
-                $dir = public_path('storage/whatsapp_media');
-                if (!file_exists($dir)) {
-                    mkdir($dir, 0777, true);
-                }
+                $publicDir = public_path('storage/whatsapp_media');
+                $storageDir = storage_path('app/public/whatsapp_media');
+                if (!file_exists($publicDir)) @mkdir($publicDir, 0777, true);
+                if (!file_exists($storageDir)) @mkdir($storageDir, 0777, true);
+
                 $parts = explode(';base64,', $mediaBase64);
                 $mime = str_replace('data:', '', $parts[0]);
                 $rawBinary = base64_decode($parts[1]);
@@ -1428,23 +1406,11 @@ class WhatsAppController extends Controller
 
                 $origName = $payload['filename'] ?? ('in_' . time() . '_' . Str::random(6) . '.' . $ext);
                 $safeName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $origName);
-                file_put_contents($dir . '/' . $safeName, $rawBinary);
-                $mediaUrl = '/storage/whatsapp_media/' . $safeName;
+                @file_put_contents($publicDir . '/' . $safeName, $rawBinary);
+                @file_put_contents($storageDir . '/' . $safeName, $rawBinary);
+                $mediaUrl = '/whatsapp/media/' . $safeName;
             } catch (\Exception $e) {
                 \Log::warning('Inbound media save warning: ' . $e->getMessage());
-            }
-        }
-
-        $cleanPhone = $remotePhone ? preg_replace('/[^0-9]/', '', $remotePhone) : '';
-        if (!$cleanPhone && $remoteJid && !str_contains($remoteJid, '@lid')) {
-            $cleanPhone = preg_replace('/[^0-9]/', '', explode('@', $remoteJid)[0] ?? '');
-        }
-
-        // Never treat a 14+ digit LID as a phone number
-        if ($cleanPhone && (strlen($cleanPhone) >= 14 || str_contains($remoteJid ?? '', '@lid'))) {
-            $lidDigits = preg_replace('/[^0-9]/', '', explode('@', $remoteJid)[0] ?? '');
-            if ($cleanPhone === $lidDigits || strlen($cleanPhone) >= 14) {
-                $cleanPhone = '';
             }
         }
 
@@ -1452,102 +1418,159 @@ class WhatsAppController extends Controller
         $channelCleanPhone = $resolvedChannel ? preg_replace('/[^0-9]/', '', $resolvedChannel->phone_number ?? '') : '';
         $channelName = $resolvedChannel ? strtolower(trim($resolvedChannel->agent_name ?? '')) : '';
 
-        // Discard pushName if it matches the mirrored advisor's own phone, name, or 'You', or is a 14+ digit LID
-        if (!empty($pushName)) {
-            $pushClean = preg_replace('/[^0-9]/', '', $pushName);
-            if (($channelCleanPhone && strlen($pushClean) >= 7 && str_contains($channelCleanPhone, substr($pushClean, -7))) ||
-                ($channelName && strtolower(trim($pushName)) === $channelName) ||
-                strtolower(trim($pushName)) === 'you' ||
-                str_contains($pushName, '@lid') ||
-                strlen($pushClean) >= 14) {
-                $pushName = null;
+        if ($isGroup) {
+            $groupName = $payload['group_title'] ?: ($payload['name'] ?: 'WhatsApp Group');
+            $chat = null;
+            if ($remoteJid) {
+                $chat = WhatsAppChat::where('remote_jid', $remoteJid)->first();
             }
-        }
-
-        // On outbound messages from advisor, never use pushName to rename the client
-        if ($isFromMe) {
-            $pushName = null;
-        }
-
-        // Discard cleanPhone if it matches the advisor's own phone
-        if ($channelCleanPhone && $cleanPhone && strlen($cleanPhone) >= 7 && str_contains($channelCleanPhone, substr($cleanPhone, -7))) {
-            $cleanPhone = '';
-        }
-
-        // 1. Find existing chat by remote_jid OR phone number (GLOBALLY across channels)
-        $chat = null;
-        if ($remoteJid) {
-            $chat = WhatsAppChat::where('remote_jid', $remoteJid)->first();
-        }
-
-        if (!$chat && $cleanPhone && strlen($cleanPhone) >= 7) {
-            $last7 = substr($cleanPhone, -7);
-            $chat = WhatsAppChat::where(function ($q) use ($last7, $cleanPhone) {
-                $q->where('phone', 'like', "%{$last7}%")
-                  ->orWhere('phone', "+{$cleanPhone}")
-                  ->orWhere('phone', $cleanPhone);
-            })->first();
-        }
-
-        if (!$chat && $pushName && strlen($pushName) >= 3 && !str_contains($pushName, '@lid')) {
-            $chat = WhatsAppChat::where('contact_name', $pushName)->first();
-        }
-
-        // If existing chat was found, preserve its existing channel_id!
-        if ($chat) {
-            $channelId = $chat->channel_id;
-            $updates = [];
-            if ($remoteJid && empty($chat->remote_jid)) {
-                $updates['remote_jid'] = $remoteJid;
-            }
-            if ($cleanPhone && (empty($chat->phone) || str_contains($chat->phone, '@lid'))) {
-                $updates['phone'] = "+{$cleanPhone}";
-            }
-            if ($pushName && (empty($chat->contact_name) || str_contains($chat->contact_name, '@lid'))) {
-                $updates['contact_name'] = $pushName;
-            }
-            if (!empty($updates)) {
-                $chat->update($updates);
+            if ($chat) {
+                $chat->update([
+                    'channel_id' => $channelId ?: $chat->channel_id,
+                    'phone' => 'Group Chat',
+                    'contact_name' => $groupName,
+                    'last_message' => $messageText,
+                    'last_message_at' => now(),
+                ]);
+            } else {
+                $chat = WhatsAppChat::create([
+                    'channel_id' => $channelId,
+                    'phone' => 'Group Chat',
+                    'remote_jid' => $remoteJid,
+                    'contact_id' => null,
+                    'contact_name' => $groupName,
+                    'last_message' => $messageText,
+                    'last_message_at' => now(),
+                    'unread_count' => 0,
+                ]);
             }
         } else {
-            // Create new chat
-            $displayName = $pushName ?: ($cleanPhone ? "+{$cleanPhone}" : ($remoteJid ?: 'WhatsApp Contact'));
-            $contact = null;
-            $last7 = $cleanPhone ? substr($cleanPhone, -7) : null;
-            if ($last7 && !str_contains($remoteJid, '@lid')) {
-                $contact = Contact::where('phone', 'like', "%{$last7}%")
-                    ->orWhere('secondary_phone', 'like', "%{$last7}%")
-                    ->first();
-            }
-            if ($contact && empty($pushName)) {
-                $displayName = $contact->name;
+            $cleanPhone = $remotePhone ? preg_replace('/[^0-9]/', '', $remotePhone) : '';
+            if (!$cleanPhone && $remoteJid && !str_contains($remoteJid, '@lid')) {
+                $cleanPhone = preg_replace('/[^0-9]/', '', explode('@', $remoteJid)[0] ?? '');
             }
 
-            $chat = WhatsAppChat::create([
-                'channel_id' => $channelId,
-                'phone' => $cleanPhone ? "+{$cleanPhone}" : ($remoteJid ?: '+000000000'),
-                'remote_jid' => $remoteJid,
-                'contact_id' => $contact ? $contact->id : null,
-                'contact_name' => $displayName,
-                'last_message' => $messageText,
-                'last_message_at' => now(),
-                'unread_count' => 0,
-            ]);
-        }
+            // Never treat a 14+ digit LID as a phone number
+            if ($cleanPhone && (strlen($cleanPhone) >= 14 || str_contains($remoteJid ?? '', '@lid'))) {
+                $lidDigits = preg_replace('/[^0-9]/', '', explode('@', $remoteJid)[0] ?? '');
+                if ($cleanPhone === $lidDigits || strlen($cleanPhone) >= 14) {
+                    $cleanPhone = '';
+                }
+            }
 
-        if ($pushName && (str_contains($chat->contact_name, 'WhatsApp Client') || str_contains($chat->contact_name, '@lid') || str_contains($chat->contact_name, '+218098'))) {
-            $chat->update(['contact_name' => $pushName]);
-        }
+            // Discard pushName / chatTitle if it matches the mirrored advisor's own credentials
+            if (!empty($pushName)) {
+                $pushClean = preg_replace('/[^0-9]/', '', $pushName);
+                if (($channelCleanPhone && strlen($pushClean) >= 7 && str_contains($channelCleanPhone, substr($pushClean, -7))) ||
+                    ($channelName && strtolower(trim($pushName)) === $channelName) ||
+                    strtolower(trim($pushName)) === 'you' ||
+                    str_contains($pushName, '@lid') ||
+                    strlen($pushClean) >= 14) {
+                    $pushName = null;
+                }
+            }
 
-        // Self-name correction: If chat->contact_name currently matches channel phone/name or 'You', heal it!
-        $contactClean = preg_replace('/[^0-9]/', '', $chat->contact_name ?? '');
-        $isSelfPhone = (!empty($channelCleanPhone) && !empty($contactClean) && strlen($contactClean) >= 7 && str_contains($contactClean, substr($channelCleanPhone, -7)));
-        $isSelfName = (!empty($channelName) && strtolower(trim($chat->contact_name ?? '')) === $channelName);
+            if (!empty($chatTitle)) {
+                $titleClean = preg_replace('/[^0-9]/', '', $chatTitle);
+                if (($channelCleanPhone && strlen($titleClean) >= 7 && str_contains($channelCleanPhone, substr($titleClean, -7))) ||
+                    ($channelName && strtolower(trim($chatTitle)) === $channelName) ||
+                    strtolower(trim($chatTitle)) === 'you' ||
+                    str_contains($chatTitle, '@lid') ||
+                    strlen($titleClean) >= 14) {
+                    $chatTitle = null;
+                }
+            }
 
-        if ($isSelfPhone || $isSelfName || $chat->contact_name === 'You') {
-            $healedName = $chat->contact?->name ?: ($chat->phone && !str_contains($chat->phone, '@lid') ? $chat->phone : 'WhatsApp Contact');
-            $chat->update(['contact_name' => $healedName]);
-            $chat->contact_name = $healedName;
+            // On outbound messages from advisor, never use pushName to rename the client
+            if ($isFromMe) {
+                $pushName = null;
+            }
+
+            // Discard cleanPhone if it matches the advisor's own phone
+            if ($channelCleanPhone && $cleanPhone && strlen($cleanPhone) >= 7 && str_contains($channelCleanPhone, substr($cleanPhone, -7))) {
+                $cleanPhone = '';
+            }
+
+            // Find existing chat by remote_jid OR phone number (GLOBALLY across channels)
+            $chat = null;
+            if ($remoteJid) {
+                $chat = WhatsAppChat::where('remote_jid', $remoteJid)->first();
+            }
+
+            if (!$chat && $cleanPhone && strlen($cleanPhone) >= 7) {
+                $last7 = substr($cleanPhone, -7);
+                $chat = WhatsAppChat::where(function ($q) use ($last7, $cleanPhone) {
+                    $q->where('phone', 'like', "%{$last7}%")
+                      ->orWhere('phone', "+{$cleanPhone}")
+                      ->orWhere('phone', $cleanPhone);
+                })->first();
+            }
+
+            if (!$chat && $pushName && strlen($pushName) >= 3 && !str_contains($pushName, '@lid')) {
+                $chat = WhatsAppChat::where('contact_name', $pushName)->first();
+            }
+
+            $resolvedName = $chatTitle ?: $pushName;
+
+            // If existing chat was found, preserve its existing channel_id!
+            if ($chat) {
+                $channelId = $chat->channel_id;
+                $updates = [];
+                if ($remoteJid && empty($chat->remote_jid)) {
+                    $updates['remote_jid'] = $remoteJid;
+                }
+                if ($cleanPhone && (empty($chat->phone) || str_contains($chat->phone, '@lid') || $chat->phone === 'Group Chat')) {
+                    $updates['phone'] = "+{$cleanPhone}";
+                }
+                // If phone address book contact name (e.g. Babar Bhai 360i) was provided from gateway, update contact_name!
+                if ($resolvedName && !str_contains($resolvedName, '@lid') && !str_starts_with($resolvedName, '+') && $resolvedName !== 'You') {
+                    $updates['contact_name'] = $resolvedName;
+                } elseif ($pushName && (empty($chat->contact_name) || str_contains($chat->contact_name, '@lid') || str_starts_with($chat->contact_name, '+'))) {
+                    $updates['contact_name'] = $pushName;
+                }
+                if (!empty($updates)) {
+                    $chat->update($updates);
+                }
+            } else {
+                // Create new chat
+                $displayName = $resolvedName ?: ($cleanPhone ? "+{$cleanPhone}" : ($remoteJid ?: 'WhatsApp Contact'));
+                $contact = null;
+                $last7 = $cleanPhone ? substr($cleanPhone, -7) : null;
+                if ($last7 && !str_contains($remoteJid, '@lid')) {
+                    $contact = Contact::where('phone', 'like', "%{$last7}%")
+                        ->orWhere('secondary_phone', 'like', "%{$last7}%")
+                        ->first();
+                }
+                if ($contact && empty($resolvedName)) {
+                    $displayName = $contact->name;
+                }
+
+                $chat = WhatsAppChat::create([
+                    'channel_id' => $channelId,
+                    'phone' => $cleanPhone ? "+{$cleanPhone}" : ($remoteJid ?: '+000000000'),
+                    'remote_jid' => $remoteJid,
+                    'contact_id' => $contact ? $contact->id : null,
+                    'contact_name' => $displayName,
+                    'last_message' => $messageText,
+                    'last_message_at' => now(),
+                    'unread_count' => 0,
+                ]);
+            }
+
+            if ($pushName && (str_contains($chat->contact_name, 'WhatsApp Client') || str_contains($chat->contact_name, '@lid') || str_contains($chat->contact_name, '+218098'))) {
+                $chat->update(['contact_name' => $pushName]);
+            }
+
+            // Self-name correction: If chat->contact_name currently matches channel phone/name or 'You', heal it!
+            $contactClean = preg_replace('/[^0-9]/', '', $chat->contact_name ?? '');
+            $isSelfPhone = (!empty($channelCleanPhone) && !empty($contactClean) && strlen($contactClean) >= 7 && str_contains($contactClean, substr($channelCleanPhone, -7)));
+            $isSelfName = (!empty($channelName) && strtolower(trim($chat->contact_name ?? '')) === $channelName);
+
+            if ($isSelfPhone || $isSelfName || $chat->contact_name === 'You') {
+                $healedName = $chat->contact?->name ?: ($chat->phone && !str_contains($chat->phone, '@lid') && $chat->phone !== 'Group Chat' ? $chat->phone : 'WhatsApp Contact');
+                $chat->update(['contact_name' => $healedName]);
+                $chat->contact_name = $healedName;
+            }
         }
 
         $msgId = $payload['id'] ?? ('WA-' . Str::random(12));
@@ -1702,22 +1725,32 @@ class WhatsAppController extends Controller
     public function serveMedia($filename)
     {
         $safeName = basename($filename);
-        $path = public_path('storage/whatsapp_media/' . $safeName);
+        $candidates = [
+            public_path('storage/whatsapp_media/' . $safeName),
+            storage_path('app/public/whatsapp_media/' . $safeName),
+            storage_path('app/whatsapp_media/' . $safeName),
+            public_path('whatsapp_media/' . $safeName),
+        ];
 
-        if (!file_exists($path)) {
-            $altPath = storage_path('app/public/whatsapp_media/' . $safeName);
-            if (file_exists($altPath)) {
-                $path = $altPath;
-            } else {
-                return response()->json(['error' => 'Media file not found'], 404);
+        $found = null;
+        foreach ($candidates as $candidate) {
+            if (file_exists($candidate)) {
+                $found = $candidate;
+                break;
             }
         }
 
-        $mime = mime_content_type($path) ?: 'application/octet-stream';
+        if (!$found) {
+            return response()->json(['error' => 'Media file not found'], 404);
+        }
 
-        return response()->file($path, [
+        $mime = mime_content_type($found) ?: 'application/octet-stream';
+
+        return response()->file($found, [
             'Content-Type' => $mime,
             'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers' => '*',
             'Cache-Control' => 'public, max-age=86400',
         ]);
     }

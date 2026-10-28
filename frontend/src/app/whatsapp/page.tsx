@@ -21,6 +21,7 @@ import {
   RefreshCw, 
   Briefcase, 
   User, 
+  Users, 
   Calendar, 
   MoreVertical, 
   SlidersHorizontal, 
@@ -505,6 +506,9 @@ export default function WhatsAppPage() {
 
   const formatPhoneOrId = (phoneStr?: string) => {
     if (!phoneStr) return '';
+    if (phoneStr === 'Group Chat' || phoneStr.includes('@g.us')) {
+      return 'Group Chat';
+    }
     const clean = phoneStr.replace(/[^0-9]/g, '');
     if (phoneStr.includes('@lid') || clean.length >= 14) {
       return 'WhatsApp Contact';
@@ -517,6 +521,12 @@ export default function WhatsAppPage() {
 
   const getChatDisplayName = (c: any) => {
     if (!c) return 'WhatsApp Contact';
+
+    // 0. If this is a WhatsApp group, display group title directly!
+    const isGroup = c.is_group || c.remote_jid?.includes('@g.us') || c.phone === 'Group Chat';
+    if (isGroup) {
+      return c.contact_name || c.name || c.formattedTitle || 'WhatsApp Group';
+    }
 
     // 1. If CRM matched contact name exists, it takes highest precedence
     if (c.contact?.name) return c.contact.name;
@@ -557,21 +567,41 @@ export default function WhatsAppPage() {
     if (!url) return '';
     if (url.startsWith('data:') || url.startsWith('blob:')) return url;
 
-    let storagePath = url;
-    if (storagePath.includes('/storage/')) {
-      storagePath = storagePath.substring(storagePath.indexOf('/storage/'));
-    } else if (storagePath.startsWith('storage/')) {
-      storagePath = `/${storagePath}`;
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api').replace(/\/+$/, '');
+
+    // If url contains whatsapp_media or /storage/, route through the CORS-enabled API streaming endpoint to bypass webserver 403 Forbidden
+    if (url.includes('whatsapp_media') || url.includes('/storage/')) {
+      const cleanUrl = url.split('?')[0];
+      const parts = cleanUrl.split('/');
+      const filename = parts[parts.length - 1];
+      if (filename) {
+        return `${apiBase}/whatsapp/media/${encodeURIComponent(filename)}`;
+      }
     }
 
-    if (storagePath.startsWith('/storage/')) {
-      const backendBase = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api')
-        .replace(/\/+$/, '')
-        .replace(/\/api$/, '');
-      return `${backendBase}${storagePath}`;
+    if (url.startsWith('/whatsapp/media/')) {
+      const filename = url.replace('/whatsapp/media/', '').split('?')[0];
+      if (filename) {
+        return `${apiBase}/whatsapp/media/${encodeURIComponent(filename)}`;
+      }
     }
 
-    return url;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      if (url.includes('/storage/whatsapp_media/')) {
+        const parts = url.split('/storage/whatsapp_media/');
+        const filename = parts[parts.length - 1].split('?')[0];
+        if (filename) {
+          return `${apiBase}/whatsapp/media/${encodeURIComponent(filename)}`;
+        }
+      }
+      return url;
+    }
+
+    if (url.startsWith('/')) {
+      return `${apiBase}${url}`;
+    }
+
+    return `${apiBase}/${url}`;
   };
 
   const loadChats = async (showSpinner = false) => {
@@ -1623,7 +1653,9 @@ export default function WhatsAppPage() {
                     {/* Avatar with Channel Badge */}
                     <div className="relative shrink-0">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#081428] to-[#1E3A66] text-white flex items-center justify-center font-bold text-xs shadow-xs border border-[#C8A147]/30 overflow-hidden">
-                        {chat.avatar_url && chat.avatar_url !== 'none' ? (
+                        {(chat.is_group || chat.remote_jid?.includes('@g.us') || chat.phone === 'Group Chat') ? (
+                          <Users className="w-5 h-5 text-amber-300" />
+                        ) : chat.avatar_url && chat.avatar_url !== 'none' ? (
                           <img src={chat.avatar_url} alt={getChatDisplayName(chat)} className="w-full h-full object-cover" />
                         ) : (
                           getChatDisplayName(chat) ? getChatDisplayName(chat).substring(0, 2).toUpperCase() : 'WA'
@@ -1682,7 +1714,9 @@ export default function WhatsAppPage() {
               <div className="bg-[#FAF8F5] border-b border-[#E8E4DC] px-5 py-3 shrink-0 flex items-center justify-between gap-4 shadow-2xs z-10">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-full bg-[#081428] text-[#C8A147] flex items-center justify-center font-bold text-sm border border-[#C8A147]/40 shadow-xs shrink-0 overflow-hidden">
-                    {selectedChat.avatar_url && selectedChat.avatar_url !== 'none' ? (
+                    {(selectedChat.is_group || selectedChat.remote_jid?.includes('@g.us') || selectedChat.phone === 'Group Chat') ? (
+                      <Users className="w-5 h-5 text-[#C8A147]" />
+                    ) : selectedChat.avatar_url && selectedChat.avatar_url !== 'none' ? (
                       <img src={selectedChat.avatar_url} alt={getChatDisplayName(selectedChat)} className="w-full h-full object-cover" />
                     ) : (
                       getChatDisplayName(selectedChat) ? getChatDisplayName(selectedChat).substring(0, 2).toUpperCase() : 'WA'
@@ -1782,7 +1816,7 @@ export default function WhatsAppPage() {
                             }`}
                           >
                             {/* Sender name only for group chats (matching official WhatsApp Web) */}
-                            {!isFromMe && selectedChat?.is_group && (
+                            {!isFromMe && (selectedChat?.is_group || selectedChat?.phone === 'Group Chat' || selectedChat?.remote_jid?.includes('@g.us')) && (
                               <div className="text-[10px] font-bold text-[#C8A147] mb-0.5">
                                 {msg.sender_name && !msg.sender_name.includes('@lid')
                                   ? msg.sender_name
@@ -1797,7 +1831,7 @@ export default function WhatsAppPage() {
                                 isFromMe={isFromMe}
                                 durationText={msg.text}
                               />
-                            ) : msg.media_type === 'image' || (msg.media_url && (msg.media_url.match(/\.(jpg|jpeg|png|webp|gif)$/i) || msg.media_url.startsWith('data:image'))) ? (
+                            ) : msg.media_type === 'image' || (msg.media_url && (msg.media_url.match(/\.(jpg|jpeg|png|webp|gif)$/i) || msg.media_url.startsWith('data:image'))) || (msg.text && (msg.text === '📷 Photo' || msg.text.startsWith('📷 Photo'))) ? (
                               <div className="space-y-1.5">
                                 {getMediaUrl(msg.media_url) ? (
                                   <div 
@@ -1810,9 +1844,16 @@ export default function WhatsAppPage() {
                                       className="max-h-64 sm:max-h-72 w-auto object-cover rounded-lg group-hover:opacity-95 transition-opacity"
                                       loading="lazy"
                                       onError={(e) => {
-                                        (e.target as HTMLElement).style.display = 'none';
+                                        const imgEl = e.currentTarget;
+                                        imgEl.style.display = 'none';
+                                        const fb = imgEl.parentElement?.querySelector('.img-fallback') as HTMLElement;
+                                        if (fb) fb.style.display = 'flex';
                                       }}
                                     />
+                                    <div className="img-fallback hidden items-center gap-2 p-2.5 text-xs text-slate-600">
+                                      <ImageIcon className="w-4 h-4 text-[#C8A147] shrink-0" />
+                                      <span className="font-medium">Photo (Tap to view)</span>
+                                    </div>
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                                       <span className="px-2.5 py-1 bg-black/75 text-white text-[11px] font-semibold rounded-md shadow-xs flex items-center gap-1.5">
                                         <ExternalLink className="w-3.5 h-3.5" /> View Full

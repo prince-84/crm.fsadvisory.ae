@@ -397,91 +397,96 @@ async function initClient() {
     initClient();
   });
 
-  // Incoming message (received from client)
-  // Incoming message (received from client)
+  // Incoming message (received from client or group)
   client.on('message', async (msg) => {
-    if (msg.isStatus || msg.isGroupMsg) return;
+    if (msg.isStatus || (msg.from && (msg.from.includes('status@broadcast') || msg.from.includes('@newsletter')))) return;
     try {
       const rawJid = msg.from || '';
+      const isGroup = !!msg.isGroupMsg || rawJid.includes('@g.us');
       let phone = '';
       let name = '';
+      let senderName = '';
 
-      // Resolve phone & name via resolveLid (handles both @c.us and @lid)
-      const resLid = await resolveLid(rawJid);
-      if (resLid.phone) phone = resLid.phone;
-      if (resLid.name) name = resLid.name;
+      const chat = await msg.getChat().catch(() => null);
+      const contact = await msg.getContact().catch(() => null);
 
-      // Check contact to resolve name if still missing
-      try {
-        const contact = await msg.getContact();
-        if (contact && !contact.isMe) {
-          if (!name) name = contact.name || contact.pushname || contact.formattedName || '';
-          if (!phone && !rawJid.includes('@lid')) {
-            const num = contact.number || contact.id?.user;
-            if (num && !String(num).includes('lid')) {
-              const clean = String(num).replace(/[^0-9]/g, '');
-              if (clean.length >= 7 && clean.length <= 13) {
-                phone = `+${clean}`;
-              }
-            }
+      if (isGroup) {
+        // WhatsApp Group: Exact group subject title matching mobile phone
+        name = chat?.formattedTitle || chat?.name || 'WhatsApp Group';
+        phone = 'Group Chat';
+        senderName = contact?.name || contact?.pushname || contact?.formattedName || 'Participant';
+      } else {
+        // 1-on-1 Contact: Address book name from mobile phone takes top priority
+        if (contact && contact.name && contact.name.trim()) {
+          name = contact.name.trim();
+        } else if (chat && chat.formattedTitle && chat.formattedTitle.trim()) {
+          name = chat.formattedTitle.trim();
+        } else if (contact && contact.formattedName && contact.formattedName.trim()) {
+          name = contact.formattedName.trim();
+        } else if (contact && contact.pushname && contact.pushname.trim()) {
+          name = contact.pushname.trim();
+        } else if (chat && chat.name && chat.name.trim()) {
+          name = chat.name.trim();
+        }
+
+        // Resolve phone & LID
+        const resLid = await resolveLid(rawJid);
+        if (resLid.phone) phone = resLid.phone;
+        if (!name && resLid.name) name = resLid.name;
+
+        if (!phone && !rawJid.includes('@lid')) {
+          const num = contact?.number || contact?.id?.user;
+          const clean = num ? String(num).replace(/[^0-9]/g, '') : rawJid.split('@')[0].replace(/[^0-9]/g, '');
+          if (clean.length >= 7 && clean.length <= 13) {
+            phone = `+${clean}`;
           }
         }
-      } catch (_) {}
 
-      // Check chat to resolve name and phone if still missing
-      try {
-        const chat = await msg.getChat();
-        if (chat) {
-          if (!name) name = chat?.name || chat?.formattedTitle || '';
-          if (!phone && chat?.id?._serialized && chat.id._serialized.includes('@c.us')) {
-            const clean = chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '');
-            if (clean.length >= 7 && clean.length <= 13) {
-              phone = `+${clean}`;
-            }
-          }
+        // Strict protection: Never assign mirrored advisor's own phone or name to client
+        const myPhoneClean = connectedUser?.phone ? connectedUser.phone.replace(/[^0-9]/g, '') : '';
+        if (myPhoneClean) {
+          if (phone && phone.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7))) phone = '';
+          if (name && (name.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7)) || name === connectedUser?.name || name === 'You')) name = '';
         }
-      } catch (_) {}
 
-      // Strict protection: Never assign mirrored advisor's own phone or name to client
-      const myPhoneClean = connectedUser?.phone ? connectedUser.phone.replace(/[^0-9]/g, '') : '';
-      if (myPhoneClean) {
-        if (phone && phone.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7))) phone = '';
-        if (name && (name.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7)) || name === connectedUser?.name || name === 'You')) name = '';
+        if (phone && phone.replace(/[^0-9]/g, '').length >= 14) phone = '';
+
+        if (rawJid && !phone && phoneToNameMap[rawJid] && phoneToNameMap[rawJid] !== connectedUser?.phone) {
+          const cached = phoneToNameMap[rawJid].replace(/[^0-9]/g, '');
+          if (cached.length <= 13) phone = phoneToNameMap[rawJid];
+        }
+        if (rawJid && phone && phone !== connectedUser?.phone) {
+          phoneToNameMap[rawJid] = phone;
+          saveContacts();
+        }
       }
 
-      // If phone is an LID or invalid (14+ digits), discard it
-      if (phone && phone.replace(/[^0-9]/g, '').length >= 14) {
-        phone = '';
-      }
-
-      if (rawJid && !phone && phoneToNameMap[rawJid] && phoneToNameMap[rawJid] !== connectedUser?.phone) {
-        const cached = phoneToNameMap[rawJid].replace(/[^0-9]/g, '');
-        if (cached.length <= 13) phone = phoneToNameMap[rawJid];
-      }
-      if (rawJid && phone && phone !== connectedUser?.phone) {
-        phoneToNameMap[rawJid] = phone;
-        saveContacts();
-      }
-
+      // Download incoming media with 3 retry attempts (allows Puppeteer to decrypt WhatsApp CDN blob)
       let mediaBase64 = null;
       let mediaFilename = '';
       if (msg.hasMedia) {
-        try {
-          const downloaded = await msg.downloadMedia();
-          if (downloaded) {
-            mediaBase64 = `data:${downloaded.mimetype};base64,${downloaded.data}`;
-            mediaFilename = downloaded.filename || '';
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const downloaded = await msg.downloadMedia();
+            if (downloaded && downloaded.data) {
+              mediaBase64 = `data:${downloaded.mimetype};base64,${downloaded.data}`;
+              mediaFilename = downloaded.filename || '';
+              break;
+            }
+          } catch (mediaErr) {
+            console.warn(`Media download attempt ${attempt + 1} retry:`, mediaErr.message);
+            await sleep(600);
           }
-        } catch (mediaErr) {
-          console.warn('Could not download incoming media:', mediaErr.message);
         }
       }
 
-      console.log(`📨 IN: [${rawJid}] ${phone || name}: "${(msg.body || `[${msg.type}]`).substring(0, 60)}"`);
+      console.log(`📨 IN: [${rawJid}] ${phone || name}: "${(msg.body || `[${msg.type}]`).substring(0, 60)}" (media: ${!!mediaBase64})`);
       await postWebhook({
         remote_jid: rawJid,
         phone,
         name,
+        sender_name: senderName,
+        is_group: isGroup,
         id: msg.id._serialized,
         text: msg.body,
         type: msg.type,
@@ -494,90 +499,84 @@ async function initClient() {
 
   // Outgoing message (sent from mobile phone or CRM)
   client.on('message_create', async (msg) => {
-    if (!msg.fromMe || msg.isStatus || msg.isGroupMsg) return;
+    if (!msg.fromMe || msg.isStatus || (msg.to && (msg.to.includes('status@broadcast') || msg.to.includes('@newsletter')))) return;
     try {
       const rawJid = msg.to || msg.id?.remote || '';
+      const isGroup = !!msg.isGroupMsg || rawJid.includes('@g.us');
       let phone = '';
       let name = '';
 
-      // Resolve phone & name via resolveLid (handles both @c.us and @lid)
-      const resLid = await resolveLid(rawJid);
-      if (resLid.phone) phone = resLid.phone;
-      if (resLid.name) name = resLid.name;
+      const chat = await msg.getChat().catch(() => null);
 
-      // FOR OUTGOING MESSAGES: DO NOT call msg.getContact()!
-      // msg.getContact() on fromMe=true returns the SENDER (the advisor), which falsely
-      // overwrites the recipient client's name with the advisor's own phone number!
-      try {
-        const chat = await msg.getChat();
-        if (chat) {
-          if (!name) name = chat.name || chat.formattedTitle || '';
-          if (!phone && chat.id?._serialized && chat.id._serialized.includes('@c.us')) {
-            const clean = chat.id._serialized.split('@')[0].replace(/[^0-9]/g, '');
-            if (clean.length >= 7 && clean.length <= 13) {
-              phone = `+${clean}`;
-            }
+      if (isGroup) {
+        name = chat?.formattedTitle || chat?.name || 'WhatsApp Group';
+        phone = 'Group Chat';
+      } else {
+        const contact = await client.getContactById(rawJid).catch(() => null);
+        if (contact && contact.name && contact.name.trim()) {
+          name = contact.name.trim();
+        } else if (chat && chat.formattedTitle && chat.formattedTitle.trim()) {
+          name = chat.formattedTitle.trim();
+        } else if (contact && contact.formattedName && contact.formattedName.trim()) {
+          name = contact.formattedName.trim();
+        } else if (contact && contact.pushname && contact.pushname.trim()) {
+          name = contact.pushname.trim();
+        } else if (chat && chat.name && chat.name.trim()) {
+          name = chat.name.trim();
+        }
+
+        const resLid = await resolveLid(rawJid);
+        if (resLid.phone) phone = resLid.phone;
+        if (!name && resLid.name) name = resLid.name;
+
+        if (!phone && !rawJid.includes('@lid')) {
+          const clean = rawJid.split('@')[0].replace(/[^0-9]/g, '');
+          if (clean.length >= 7 && clean.length <= 13) {
+            phone = `+${clean}`;
           }
         }
-      } catch (_) {}
 
-      // If name or phone still missing, resolve recipient contact directly by recipient JID:
-      if (!name || !phone) {
-        try {
-          const recipientContact = await client.getContactById(rawJid);
-          if (recipientContact && !recipientContact.isMe) {
-            if (!name) name = recipientContact.name || recipientContact.pushname || recipientContact.formattedName || '';
-            if (!phone && !rawJid.includes('@lid')) {
-              const num = recipientContact.number || recipientContact.id?.user;
-              if (num && !String(num).includes('lid')) {
-                const clean = String(num).replace(/[^0-9]/g, '');
-                if (clean.length >= 7 && clean.length <= 13) {
-                  phone = `+${clean}`;
-                }
-              }
-            }
-          }
-        } catch (_) {}
-      }
+        const myPhoneClean = connectedUser?.phone ? connectedUser.phone.replace(/[^0-9]/g, '') : '';
+        if (myPhoneClean) {
+          if (phone && phone.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7))) phone = '';
+          if (name && (name.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7)) || name === connectedUser?.name || name === 'You')) name = '';
+        }
 
-      // Strict protection: Never assign mirrored advisor's own phone or name to client
-      const myPhoneClean = connectedUser?.phone ? connectedUser.phone.replace(/[^0-9]/g, '') : '';
-      if (myPhoneClean) {
-        if (phone && phone.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7))) phone = '';
-        if (name && (name.replace(/[^0-9]/g, '').includes(myPhoneClean.slice(-7)) || name === connectedUser?.name || name === 'You')) name = '';
-      }
+        if (phone && phone.replace(/[^0-9]/g, '').length >= 14) phone = '';
 
-      // If phone is an LID or invalid (14+ digits), discard it
-      if (phone && phone.replace(/[^0-9]/g, '').length >= 14) {
-        phone = '';
-      }
-
-      if (rawJid && !phone && phoneToNameMap[rawJid] && phoneToNameMap[rawJid] !== connectedUser?.phone) {
-        const cached = phoneToNameMap[rawJid].replace(/[^0-9]/g, '');
-        if (cached.length <= 13) phone = phoneToNameMap[rawJid];
-      }
-      if (rawJid && phone && phone !== connectedUser?.phone) {
-        phoneToNameMap[rawJid] = phone;
-        saveContacts();
+        if (rawJid && !phone && phoneToNameMap[rawJid] && phoneToNameMap[rawJid] !== connectedUser?.phone) {
+          const cached = phoneToNameMap[rawJid].replace(/[^0-9]/g, '');
+          if (cached.length <= 13) phone = phoneToNameMap[rawJid];
+        }
+        if (rawJid && phone && phone !== connectedUser?.phone) {
+          phoneToNameMap[rawJid] = phone;
+          saveContacts();
+        }
       }
 
       let mediaBase64 = null;
       let mediaFilename = '';
       if (msg.hasMedia) {
-        try {
-          const downloaded = await msg.downloadMedia();
-          if (downloaded) {
-            mediaBase64 = `data:${downloaded.mimetype};base64,${downloaded.data}`;
-            mediaFilename = downloaded.filename || '';
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const downloaded = await msg.downloadMedia();
+            if (downloaded && downloaded.data) {
+              mediaBase64 = `data:${downloaded.mimetype};base64,${downloaded.data}`;
+              mediaFilename = downloaded.filename || '';
+              break;
+            }
+          } catch (_) {
+            await sleep(600);
           }
-        } catch (_) {}
+        }
       }
 
-      console.log(`📤 OUT (Mobile): [${rawJid}] ${phone || name}: "${(msg.body || `[${msg.type}]`).substring(0, 60)}"`);
+      console.log(`📤 OUT (Mobile): [${rawJid}] ${phone || name}: "${(msg.body || `[${msg.type}]`).substring(0, 60)}" (media: ${!!mediaBase64})`);
       await postWebhook({
         remote_jid: rawJid,
         phone,
         name,
+        is_group: isGroup,
         id: msg.id._serialized,
         text: msg.body,
         type: msg.type,
@@ -672,36 +671,69 @@ async function syncHistoryToLaravel() {
         if (Array.isArray(rawChats) && rawChats.length > 0) {
           for (const c of rawChats) {
             const rawId = c.id?._serialized || '';
-            // Skip groups, status broadcast, newsletter channels
-            if (c.isGroup || rawId.includes('@g.us') || rawId.includes('@newsletter') || rawId.includes('status@broadcast')) {
+            // Only skip status broadcast and newsletter channels
+            if (rawId.includes('@newsletter') || rawId.includes('status@broadcast')) {
               continue;
             }
 
+            const isGroup = !!c.isGroup || rawId.includes('@g.us');
             let isLid = rawId.includes('@lid');
             let cleanPhone = '';
+            let name = '';
 
-            if (!isLid && (rawId.includes('@c.us') || rawId.includes('@s.whatsapp.net'))) {
-              const digits = rawId.split('@')[0].replace(/[^0-9]/g, '');
-              if (digits.length >= 7 && digits.length <= 13) {
-                cleanPhone = digits;
+            if (isGroup) {
+              name = c.name || c.formattedTitle || 'WhatsApp Group';
+              cleanPhone = 'Group Chat';
+            } else {
+              // 1-on-1 Contact: Fetch contact to retrieve address book name saved on mobile phone
+              let contact = null;
+              try {
+                contact = await c.getContact();
+              } catch (_) {}
+
+              // Strict name resolution priority:
+              // 1. Phone Address Book Name (contact.name - e.g. "Babar Bhai 360i")
+              // 2. Chat UI title (c.formattedTitle - e.g. "Babar Bhai 360i")
+              // 3. Contact formattedName
+              // 4. Contact pushname (public username)
+              // 5. Chat name
+              if (contact && contact.name && contact.name.trim()) {
+                name = contact.name.trim();
+              } else if (c.formattedTitle && c.formattedTitle.trim()) {
+                name = c.formattedTitle.trim();
+              } else if (contact && contact.formattedName && contact.formattedName.trim()) {
+                name = contact.formattedName.trim();
+              } else if (contact && contact.pushname && contact.pushname.trim()) {
+                name = contact.pushname.trim();
+              } else if (c.name && c.name.trim()) {
+                name = c.name.trim();
               }
-            } else if (isLid) {
-              const resLid = await resolveLid(rawId);
-              if (resLid.phone) {
-                cleanPhone = resLid.phone.replace(/[^0-9]/g, '');
+
+              // Sanitize name: if it's a 14+ digit string (raw LID), don't treat as name
+              if (name && name.replace(/[^0-9]/g, '').length >= 14) {
+                name = '';
               }
-            }
 
-            let name = c.name || c.formattedTitle || '';
-            // Sanitize name: if it's a 14+ digit string (raw LID), don't treat as name
-            if (name && name.replace(/[^0-9]/g, '').length >= 14) {
-              name = '';
-            }
+              if (!isLid && (rawId.includes('@c.us') || rawId.includes('@s.whatsapp.net'))) {
+                const digits = rawId.split('@')[0].replace(/[^0-9]/g, '');
+                if (digits.length >= 7 && digits.length <= 13) {
+                  cleanPhone = digits;
+                }
+              } else if (isLid) {
+                const resLid = await resolveLid(rawId);
+                if (resLid.phone) {
+                  cleanPhone = resLid.phone.replace(/[^0-9]/g, '');
+                }
+                if (!name && resLid.name) {
+                  name = resLid.name;
+                }
+              }
 
-            if (!name && cleanPhone) {
-              name = `+${cleanPhone}`;
-            } else if (!name) {
-              name = 'WhatsApp Contact';
+              if (!name && cleanPhone) {
+                name = `+${cleanPhone}`;
+              } else if (!name) {
+                name = 'WhatsApp Contact';
+              }
             }
 
             let lastMsg = 'Active chat';
@@ -711,12 +743,17 @@ async function syncHistoryToLaravel() {
               const lm = c.lastMessage;
               let mediaBase64 = null;
               if (lm.hasMedia && typeof lm.downloadMedia === 'function') {
-                try {
-                  const dl = await lm.downloadMedia();
-                  if (dl && dl.data) {
-                    mediaBase64 = `data:${dl.mimetype};base64,${dl.data}`;
+                for (let a = 0; a < 2; a++) {
+                  try {
+                    const dl = await lm.downloadMedia();
+                    if (dl && dl.data) {
+                      mediaBase64 = `data:${dl.mimetype};base64,${dl.data}`;
+                      break;
+                    }
+                  } catch (_) {
+                    await sleep(300);
                   }
-                } catch (_) {}
+                }
               }
 
               lastMsg = lm.body || lm.caption || (lm.type !== 'chat' ? `[${lm.type || 'Media'}]` : 'Active chat');
@@ -743,9 +780,10 @@ async function syncHistoryToLaravel() {
 
             chatsList.push({
               id: rawId,
-              phone: cleanPhone ? `+${cleanPhone}` : '',
-              formattedTitle: c.name || '',
+              phone: isGroup ? 'Group Chat' : (cleanPhone ? `+${cleanPhone}` : ''),
+              formattedTitle: c.formattedTitle || c.name || name,
               name: name,
+              is_group: isGroup,
               last_message: lastMsg,
               timestamp: ts,
               unread_count: c.unreadCount || 0,
@@ -788,14 +826,16 @@ async function syncHistoryToLaravel() {
           extractionMethod = 'pupPage Store/WWebJS fallback';
           evalResult.forEach(c => {
             const rawId = c.id || '';
-            if (c.isGroup || rawId.includes('@g.us') || rawId.includes('@newsletter') || rawId.includes('status@broadcast')) return;
-            const cleanPhone = rawId.replace('@c.us', '').replace(/[^0-9]/g, '');
-            const name = c.name || c.formattedTitle || (cleanPhone ? `+${cleanPhone}` : 'WhatsApp Contact');
+            if (rawId.includes('@newsletter') || rawId.includes('status@broadcast')) return;
+            const isGroup = !!c.isGroup || rawId.includes('@g.us');
+            const cleanPhone = isGroup ? 'Group Chat' : rawId.replace('@c.us', '').replace(/[^0-9]/g, '');
+            const name = c.name || c.formattedTitle || (isGroup ? 'WhatsApp Group' : (cleanPhone ? `+${cleanPhone}` : 'WhatsApp Contact'));
             chatsList.push({
               id: rawId,
-              phone: cleanPhone ? `+${cleanPhone}` : '',
-              formattedTitle: c.formattedTitle || '',
+              phone: isGroup ? 'Group Chat' : (cleanPhone ? `+${cleanPhone}` : ''),
+              formattedTitle: c.formattedTitle || name,
               name: name,
+              is_group: isGroup,
               last_message: c.lastMsgBody || 'Active chat',
               timestamp: c.timestamp,
               unread_count: c.unreadCount || 0,
@@ -817,7 +857,7 @@ async function syncHistoryToLaravel() {
     }
 
     if (chatsList.length === 0) {
-      console.warn('⚠️ No 1-on-1 chats found to sync.');
+      console.warn('⚠️ No chats found to sync.');
       return;
     }
 
