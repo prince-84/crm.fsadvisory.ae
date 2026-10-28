@@ -461,22 +461,23 @@ async function initClient() {
         }
       }
 
-      // Download incoming media with 3 retry attempts (allows Puppeteer to decrypt WhatsApp CDN blob)
+      // Download incoming media with robust retry attempts and blob decryption delay
       let mediaBase64 = null;
       let mediaFilename = '';
-      if (msg.hasMedia) {
-        for (let attempt = 0; attempt < 3; attempt++) {
+      if (msg.hasMedia || ['image', 'document', 'audio', 'video', 'ptt'].includes(msg.type)) {
+        await sleep(400); // Give Puppeteer/WhatsApp Web initial time to decrypt media blob
+        for (let attempt = 0; attempt < 4; attempt++) {
           try {
             const downloaded = await msg.downloadMedia();
             if (downloaded && downloaded.data) {
               mediaBase64 = `data:${downloaded.mimetype};base64,${downloaded.data}`;
-              mediaFilename = downloaded.filename || '';
+              mediaFilename = downloaded.filename || msg._data?.filename || (msg.body && msg.body.includes('.') ? msg.body : '');
               break;
             }
           } catch (mediaErr) {
             console.warn(`Media download attempt ${attempt + 1} retry:`, mediaErr.message);
-            await sleep(600);
           }
+          await sleep(800);
         }
       }
 
@@ -556,18 +557,18 @@ async function initClient() {
 
       let mediaBase64 = null;
       let mediaFilename = '';
-      if (msg.hasMedia) {
-        for (let attempt = 0; attempt < 3; attempt++) {
+      if (msg.hasMedia || ['image', 'document', 'audio', 'video', 'ptt'].includes(msg.type)) {
+        await sleep(400);
+        for (let attempt = 0; attempt < 4; attempt++) {
           try {
             const downloaded = await msg.downloadMedia();
             if (downloaded && downloaded.data) {
               mediaBase64 = `data:${downloaded.mimetype};base64,${downloaded.data}`;
-              mediaFilename = downloaded.filename || '';
+              mediaFilename = downloaded.filename || msg._data?.filename || (msg.body && msg.body.includes('.') ? msg.body : '');
               break;
             }
-          } catch (_) {
-            await sleep(600);
-          }
+          } catch (_) {}
+          await sleep(800);
         }
       }
 
@@ -1161,6 +1162,77 @@ app.get('/api/avatar/:phone', async (req, res) => {
     return url ? res.json({ success: true, url }) : res.status(404).json({ success: false });
   } catch (e) {
     return res.status(404).json({ success: false });
+  }
+});
+
+// Real-time On-demand WhatsApp Media Extraction by Message ID
+app.get('/api/media/:msgId', async (req, res) => {
+  if (connectionStatus !== 'connected' || !client) {
+    return res.status(503).json({ success: false, error: 'WhatsApp not connected' });
+  }
+
+  const rawMsgId = decodeURIComponent(req.params.msgId);
+  try {
+    let msg = null;
+    try {
+      if (typeof client.getMessageById === 'function') {
+        msg = await client.getMessageById(rawMsgId);
+      }
+    } catch (_) {}
+
+    // Fallback: Check in browser Store directly
+    if (!msg && client.pupPage) {
+      try {
+        const found = await client.pupPage.evaluate(async (mid) => {
+          try {
+            const m = window.Store.Msg.get(mid);
+            if (!m) return null;
+            if (window.WWebJS && typeof window.WWebJS.downloadMedia === 'function') {
+              const dl = await window.WWebJS.downloadMedia(mid);
+              if (dl && dl.data) {
+                return {
+                  data: dl.data,
+                  mimetype: dl.mimetype,
+                  filename: dl.filename || m.filename || m.caption || ''
+                };
+              }
+            }
+          } catch (_) {}
+          return null;
+        }, rawMsgId);
+
+        if (found && found.data) {
+          return res.json({
+            success: true,
+            media_base64: `data:${found.mimetype};base64,${found.data}`,
+            filename: found.filename || '',
+            media_type: found.mimetype?.startsWith('image/') ? 'image' : (found.mimetype?.includes('pdf') || found.mimetype?.includes('document') ? 'document' : 'text'),
+          });
+        }
+      } catch (_) {}
+    }
+
+    if (msg) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const downloaded = await msg.downloadMedia();
+          if (downloaded && downloaded.data) {
+            return res.json({
+              success: true,
+              media_base64: `data:${downloaded.mimetype};base64,${downloaded.data}`,
+              filename: downloaded.filename || msg._data?.filename || (msg.body && msg.body.includes('.') ? msg.body : ''),
+              media_type: downloaded.mimetype?.startsWith('image/') ? 'image' : (downloaded.mimetype?.includes('pdf') || downloaded.mimetype?.includes('document') ? 'document' : 'text'),
+            });
+          }
+        } catch (_) {
+          await sleep(500);
+        }
+      }
+    }
+
+    return res.status(404).json({ success: false, error: 'Media not found on WhatsApp session' });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

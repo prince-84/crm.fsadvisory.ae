@@ -1,4 +1,17 @@
-export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api').replace(/\/+$/, '');
+export const getApiBaseUrl = (): string => {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host.includes('fsadvisory.ae')) {
+      return 'https://api.fsadvisory.ae/api';
+    }
+  }
+  return 'https://api.fsadvisory.ae/api';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export async function fetchApi(endpoint: string, options: RequestInit = {}): Promise<any> {
   let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;

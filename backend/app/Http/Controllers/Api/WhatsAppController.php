@@ -749,11 +749,23 @@ class WhatsAppController extends Controller
                             $parts = explode(';base64,', $mMediaBase64);
                             $mime = str_replace('data:', '', $parts[0]);
                             $rawBin = base64_decode($parts[1]);
-                            $ext = 'jpg';
+                            $ext = 'bin';
                             if (str_contains($mime, 'pdf')) $ext = 'pdf';
+                            elseif (str_contains($mime, 'jpeg') || str_contains($mime, 'jpg')) $ext = 'jpg';
                             elseif (str_contains($mime, 'png')) $ext = 'png';
                             elseif (str_contains($mime, 'webp')) $ext = 'webp';
-                            $fname = time() . '_' . Str::random(6) . '.' . $ext;
+                            elseif (str_contains($mime, 'word') || str_contains($mime, 'doc') || str_contains($mime, 'officedocument')) $ext = 'docx';
+                            elseif (str_contains($mime, 'sheet') || str_contains($mime, 'excel') || str_contains($mime, 'spreadsheet') || str_contains($mime, 'xls')) $ext = 'xlsx';
+
+                            $mOrigName = !empty($m['filename']) 
+                                ? $m['filename'] 
+                                : (!empty($mText) && preg_match('/\.[a-zA-Z0-9]{2,5}$/', trim($mText)) 
+                                    ? trim($mText) 
+                                    : ('sync_' . time() . '_' . Str::random(6) . '.' . $ext));
+                            if (!str_contains($mOrigName, '.')) {
+                                $mOrigName .= '.' . $ext;
+                            }
+                            $fname = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $mOrigName);
                             @file_put_contents($publicDir . '/' . $fname, $rawBin);
                             @file_put_contents($storageDir . '/' . $fname, $rawBin);
                             $mMediaUrl = '/whatsapp/media/' . $fname;
@@ -1110,6 +1122,32 @@ class WhatsAppController extends Controller
             ->orderBy('timestamp', 'asc')
             ->get();
 
+        // Auto-heal missing media_url for documents, images, voice notes
+        foreach ($messages as $m) {
+            if (empty($m->media_url) && ($m->media_type !== 'text' || preg_match('/\.(docx?|pdf|xlsx?|jpg|jpeg|png|webp|mp3|ogg|zip)$/i', $m->text ?? ''))) {
+                $targetFile = $m->text ? trim($m->text) : '';
+                if ($targetFile) {
+                    $cleanTarget = preg_replace('/[^a-zA-Z0-9\.]/', '', strtolower($targetFile));
+                    $publicDir = public_path('storage/whatsapp_media');
+                    if (is_dir($publicDir)) {
+                        $files = scandir($publicDir);
+                        foreach ($files as $f) {
+                            if ($f === '.' || $f === '..') continue;
+                            $cleanF = preg_replace('/[^a-zA-Z0-9\.]/', '', strtolower($f));
+                            if (str_ends_with($cleanF, $cleanTarget) || str_contains($cleanF, $cleanTarget)) {
+                                $m->media_url = '/whatsapp/media/' . $f;
+                                $m->update(['media_url' => $m->media_url]);
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (empty($m->media_url)) {
+                    $m->media_url = '/whatsapp/messages/' . $m->id . '/media';
+                }
+            }
+        }
+
         return response()->json([
             'chat' => $chat,
             'messages' => $messages,
@@ -1362,10 +1400,18 @@ class WhatsAppController extends Controller
         }
         $channelId = $resolvedChannel ? $resolvedChannel->id : 1;
 
-        $rawMediaType = $payload['media_type'] ?? 'text';
+        $rawMediaType = $payload['media_type'] ?? ($payload['type'] ?? 'text');
         $mediaType = in_array($rawMediaType, ['image', 'document', 'audio', 'video', 'location']) ? $rawMediaType : ($rawMediaType === 'ptt' ? 'audio' : 'text');
         $mediaBase64 = $payload['media_base64'] ?? null;
         $mediaUrl = $payload['media_url'] ?? null;
+
+        if ($mediaType === 'text') {
+            if (preg_match('/\.(jpg|jpeg|png|webp|gif)$/i', $messageText)) {
+                $mediaType = 'image';
+            } elseif (preg_match('/\.(pdf|docx?|xlsx?|txt|zip|csv)$/i', $messageText)) {
+                $mediaType = 'document';
+            }
+        }
 
         if (empty($messageText)) {
             if ($mediaType === 'image') $messageText = '📷 Photo';
@@ -1398,13 +1444,25 @@ class WhatsAppController extends Controller
                 elseif (str_contains($mime, 'jpeg') || str_contains($mime, 'jpg')) $ext = 'jpg';
                 elseif (str_contains($mime, 'png')) $ext = 'png';
                 elseif (str_contains($mime, 'webp')) $ext = 'webp';
-                elseif (str_contains($mime, 'word') || str_contains($mime, 'doc')) $ext = 'docx';
-                elseif (str_contains($mime, 'sheet') || str_contains($mime, 'xls')) $ext = 'xlsx';
+                elseif (str_contains($mime, 'word') || str_contains($mime, 'doc') || str_contains($mime, 'officedocument')) $ext = 'docx';
+                elseif (str_contains($mime, 'sheet') || str_contains($mime, 'excel') || str_contains($mime, 'spreadsheet') || str_contains($mime, 'xls')) $ext = 'xlsx';
                 elseif (str_contains($mime, 'webm')) $ext = 'webm';
-                elseif (str_contains($mime, 'mp3')) $ext = 'mp3';
+                elseif (str_contains($mime, 'mp3') || str_contains($mime, 'audio/mpeg')) $ext = 'mp3';
                 elseif (str_contains($mime, 'ogg')) $ext = 'ogg';
 
-                $origName = $payload['filename'] ?? ('in_' . time() . '_' . Str::random(6) . '.' . $ext);
+                $origName = '';
+                if (!empty($payload['filename'])) {
+                    $origName = $payload['filename'];
+                } elseif (!empty($messageText) && preg_match('/\.[a-zA-Z0-9]{2,5}$/', trim($messageText))) {
+                    $origName = trim($messageText);
+                } else {
+                    $origName = 'in_' . time() . '_' . Str::random(6) . '.' . $ext;
+                }
+
+                if (!str_contains($origName, '.')) {
+                    $origName .= '.' . $ext;
+                }
+
                 $safeName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $origName);
                 @file_put_contents($publicDir . '/' . $safeName, $rawBinary);
                 @file_put_contents($storageDir . '/' . $safeName, $rawBinary);
@@ -1615,6 +1673,17 @@ class WhatsAppController extends Controller
                 'status' => $isFromMe ? 'sent' : 'read',
                 'timestamp' => now(),
             ]);
+        } else {
+            $msgUpdates = [];
+            if ($mediaUrl && empty($existingMsg->media_url)) {
+                $msgUpdates['media_url'] = $mediaUrl;
+            }
+            if ($mediaType !== 'text' && ($existingMsg->media_type === 'text' || empty($existingMsg->media_type))) {
+                $msgUpdates['media_type'] = $mediaType;
+            }
+            if (!empty($msgUpdates)) {
+                $existingMsg->update($msgUpdates);
+            }
         }
 
         $chat->update([
@@ -1720,9 +1789,65 @@ class WhatsAppController extends Controller
     }
 
     /**
+     * Helper to store raw Base64 media data into public & storage WhatsApp media directories
+     */
+    public function saveBase64Media($mediaBase64, $origName = null)
+    {
+        if (empty($mediaBase64) || !str_contains($mediaBase64, ';base64,')) {
+            return null;
+        }
+
+        try {
+            $publicDir = public_path('storage/whatsapp_media');
+            $storageDir = storage_path('app/public/whatsapp_media');
+            if (!file_exists($publicDir)) @mkdir($publicDir, 0777, true);
+            if (!file_exists($storageDir)) @mkdir($storageDir, 0777, true);
+
+            $parts = explode(';base64,', $mediaBase64);
+            $mime = str_replace('data:', '', $parts[0]);
+            $rawBinary = base64_decode($parts[1]);
+
+            $ext = 'bin';
+            if (str_contains($mime, 'pdf')) $ext = 'pdf';
+            elseif (str_contains($mime, 'jpeg') || str_contains($mime, 'jpg')) $ext = 'jpg';
+            elseif (str_contains($mime, 'png')) $ext = 'png';
+            elseif (str_contains($mime, 'webp')) $ext = 'webp';
+            elseif (str_contains($mime, 'word') || str_contains($mime, 'doc') || str_contains($mime, 'officedocument')) $ext = 'docx';
+            elseif (str_contains($mime, 'sheet') || str_contains($mime, 'excel') || str_contains($mime, 'spreadsheet') || str_contains($mime, 'xls')) $ext = 'xlsx';
+            elseif (str_contains($mime, 'webm')) $ext = 'webm';
+            elseif (str_contains($mime, 'mp3') || str_contains($mime, 'audio/mpeg')) $ext = 'mp3';
+            elseif (str_contains($mime, 'ogg')) $ext = 'ogg';
+
+            $safeOrig = !empty($origName) ? trim($origName) : '';
+            if (!empty($safeOrig) && !str_contains($safeOrig, '.')) {
+                $safeOrig .= '.' . $ext;
+            }
+            if (empty($safeOrig)) {
+                $safeOrig = 'wa_' . time() . '_' . Str::random(6) . '.' . $ext;
+            }
+
+            $cleanName = preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $safeOrig);
+            $safeName = time() . '_' . $cleanName;
+
+            @file_put_contents($publicDir . '/' . $safeName, $rawBinary);
+            @file_put_contents($storageDir . '/' . $safeName, $rawBinary);
+
+            return [
+                'path' => $publicDir . '/' . $safeName,
+                'filename' => $safeName,
+                'media_url' => '/whatsapp/media/' . $safeName,
+                'mime' => $mime,
+            ];
+        } catch (\Exception $e) {
+            \Log::warning('saveBase64Media error: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Direct streaming of WhatsApp media attachments with CORS headers
      */
-    public function serveMedia($filename)
+    public function serveMedia(Request $request, $filename)
     {
         $safeName = basename($filename);
         $candidates = [
@@ -1740,19 +1865,235 @@ class WhatsAppController extends Controller
             }
         }
 
+        // Partial match / suffix match if exact name with timestamp not found
+        if (!$found) {
+            $dirs = [
+                public_path('storage/whatsapp_media'),
+                storage_path('app/public/whatsapp_media'),
+                storage_path('app/whatsapp_media'),
+            ];
+            $cleanQuery = preg_replace('/[^a-zA-Z0-9\.]/', '', strtolower($safeName));
+            $cleanBase = preg_replace('/^\d+_/', '', $cleanQuery);
+
+            foreach ($dirs as $dir) {
+                if (!is_dir($dir)) continue;
+                $allFiles = scandir($dir);
+                foreach ($allFiles as $f) {
+                    if ($f === '.' || $f === '..') continue;
+                    $cleanF = preg_replace('/[^a-zA-Z0-9\.]/', '', strtolower($f));
+                    if ($cleanF === $cleanQuery || (!empty($cleanBase) && str_ends_with($cleanF, $cleanBase)) || (!empty($cleanBase) && str_contains($cleanF, $cleanBase))) {
+                        $found = $dir . '/' . $f;
+                        $safeName = $f;
+                        break 2;
+                    }
+                }
+            }
+        }
+
         if (!$found) {
             return response()->json(['error' => 'Media file not found'], 404);
         }
 
-        $mime = mime_content_type($found) ?: 'application/octet-stream';
+        $ext = strtolower(pathinfo($found, PATHINFO_EXTENSION));
+        $mimeTypes = [
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'doc'  => 'application/msword',
+            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'xls'  => 'application/vnd.ms-excel',
+            'pdf'  => 'application/pdf',
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'webp' => 'image/webp',
+            'gif'  => 'image/gif',
+            'mp3'  => 'audio/mpeg',
+            'ogg'  => 'audio/ogg',
+            'wav'  => 'audio/wav',
+            'zip'  => 'application/zip',
+            'txt'  => 'text/plain',
+            'csv'  => 'text/csv',
+        ];
+        $mime = $mimeTypes[$ext] ?? (mime_content_type($found) ?: 'application/octet-stream');
+
+        $isDoc = in_array($ext, ['docx', 'doc', 'xlsx', 'xls', 'zip', 'csv', 'pdf']);
+        $disposition = ($isDoc || $request->has('download')) ? 'attachment' : 'inline';
 
         return response()->file($found, [
             'Content-Type' => $mime,
+            'Content-Disposition' => $disposition . '; filename="' . $safeName . '"',
             'Access-Control-Allow-Origin' => '*',
             'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
             'Access-Control-Allow-Headers' => '*',
             'Cache-Control' => 'public, max-age=86400',
         ]);
+    }
+
+    /**
+     * Stream WhatsApp media by message ID (fetches on-demand from Gateway if not yet cached on disk)
+     */
+    public function streamMessageMedia(Request $request, $id)
+    {
+        $msg = WhatsAppMessage::findOrFail($id);
+
+        $found = null;
+        $safeName = null;
+
+        // 1. If media_url is present, try resolving file from disk
+        if (!empty($msg->media_url) && !str_starts_with($msg->media_url, '/whatsapp/messages/')) {
+            $filename = basename(explode('?', $msg->media_url)[0]);
+            $candidates = [
+                public_path('storage/whatsapp_media/' . $filename),
+                storage_path('app/public/whatsapp_media/' . $filename),
+                storage_path('app/whatsapp_media/' . $filename),
+                public_path('whatsapp_media/' . $filename),
+            ];
+            foreach ($candidates as $c) {
+                if (file_exists($c)) {
+                    $found = $c;
+                    $safeName = $filename;
+                    break;
+                }
+            }
+        }
+
+        // 2. If not found on disk, try finding by text filename on disk
+        if (!$found && !empty($msg->text)) {
+            $cleanTarget = preg_replace('/[^a-zA-Z0-9\.]/', '', strtolower(trim($msg->text)));
+            $dirs = [
+                public_path('storage/whatsapp_media'),
+                storage_path('app/public/whatsapp_media'),
+            ];
+            foreach ($dirs as $dir) {
+                if (!is_dir($dir)) continue;
+                $files = scandir($dir);
+                foreach ($files as $f) {
+                    if ($f === '.' || $f === '..') continue;
+                    $cleanF = preg_replace('/[^a-zA-Z0-9\.]/', '', strtolower($f));
+                    if (str_ends_with($cleanF, $cleanTarget) || str_contains($cleanF, $cleanTarget)) {
+                        $found = $dir . '/' . $f;
+                        $safeName = $f;
+                        $msg->update(['media_url' => '/whatsapp/media/' . $f]);
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        // 3. If still not found, request on-demand download from active WhatsApp gateway
+        if (!$found && !empty($msg->message_id)) {
+            try {
+                $gwUrl = $this->gatewayUrl();
+                $gwRes = \Illuminate\Support\Facades\Http::timeout(15)->get($gwUrl . '/api/media/' . urlencode($msg->message_id));
+                if ($gwRes->successful()) {
+                    $gwData = $gwRes->json();
+                    if (!empty($gwData['media_base64'])) {
+                        $saved = $this->saveBase64Media($gwData['media_base64'], $gwData['filename'] ?: $msg->text);
+                        if ($saved) {
+                            $found = $saved['path'];
+                            $safeName = $saved['filename'];
+                            $msg->update([
+                                'media_url' => $saved['media_url'],
+                                'media_type' => $gwData['media_type'] ?? $msg->media_type,
+                            ]);
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning('On-demand media fetch from gateway failed: ' . $e->getMessage());
+            }
+        }
+
+        if (!$found || !file_exists($found)) {
+            return response()->json([
+                'error' => 'Media file not found on server or WhatsApp device',
+                'message_id' => $msg->message_id,
+            ], 404);
+        }
+
+        $ext = strtolower(pathinfo($found, PATHINFO_EXTENSION));
+        $mimeTypes = [
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'doc'  => 'application/msword',
+            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'xls'  => 'application/vnd.ms-excel',
+            'pdf'  => 'application/pdf',
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'webp' => 'image/webp',
+            'gif'  => 'image/gif',
+            'mp3'  => 'audio/mpeg',
+            'ogg'  => 'audio/ogg',
+            'wav'  => 'audio/wav',
+            'zip'  => 'application/zip',
+            'txt'  => 'text/plain',
+            'csv'  => 'text/csv',
+        ];
+        $mime = $mimeTypes[$ext] ?? (mime_content_type($found) ?: 'application/octet-stream');
+
+        $isDoc = in_array($ext, ['docx', 'doc', 'xlsx', 'xls', 'zip', 'csv', 'pdf']);
+        $disposition = ($isDoc || $request->has('download')) ? 'attachment' : 'inline';
+        $downloadName = $msg->text && preg_match('/\.[a-zA-Z0-9]{2,5}$/', trim($msg->text)) ? trim($msg->text) : $safeName;
+
+        return response()->file($found, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => $disposition . '; filename="' . $downloadName . '"',
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers' => '*',
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
+    }
+
+    /**
+     * Cache/fetch media for a specific message on-demand and return json response
+     */
+    public function fetchMessageMedia($id)
+    {
+        $msg = WhatsAppMessage::findOrFail($id);
+
+        if (!empty($msg->media_url) && !str_starts_with($msg->media_url, '/whatsapp/messages/')) {
+            $fname = basename(explode('?', $msg->media_url)[0]);
+            if (file_exists(public_path('storage/whatsapp_media/' . $fname))) {
+                return response()->json([
+                    'success' => true,
+                    'media_url' => $msg->media_url,
+                    'media_type' => $msg->media_type,
+                ]);
+            }
+        }
+
+        // Request from WhatsApp Gateway
+        if (!empty($msg->message_id)) {
+            try {
+                $gwUrl = $this->gatewayUrl();
+                $gwRes = \Illuminate\Support\Facades\Http::timeout(15)->get($gwUrl . '/api/media/' . urlencode($msg->message_id));
+                if ($gwRes->successful()) {
+                    $gwData = $gwRes->json();
+                    if (!empty($gwData['media_base64'])) {
+                        $saved = $this->saveBase64Media($gwData['media_base64'], $gwData['filename'] ?: $msg->text);
+                        if ($saved) {
+                            $msg->update([
+                                'media_url' => $saved['media_url'],
+                                'media_type' => $gwData['media_type'] ?? $msg->media_type,
+                            ]);
+                            return response()->json([
+                                'success' => true,
+                                'media_url' => $saved['media_url'],
+                                'media_type' => $msg->media_type,
+                            ]);
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                \Log::warning('fetchMessageMedia error: ' . $e->getMessage());
+            }
+        }
+
+        return response()->json([
+            'success' => false,
+            'error' => 'Could not retrieve media from WhatsApp gateway',
+        ], 404);
     }
 }
 

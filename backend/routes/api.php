@@ -41,7 +41,9 @@ Route::post('/whatsapp/sync-phone-data', [WhatsAppController::class, 'syncPhoneD
 Route::post('/whatsapp/sync-qr', [WhatsAppController::class, 'syncQr']);
 Route::post('/whatsapp/channels/{id}/pair-confirm', [WhatsAppController::class, 'pairConfirm']);
 Route::post('/whatsapp/channels/{id}/disconnect', [WhatsAppController::class, 'disconnect']);
-Route::get('/whatsapp/media/{filename}', [WhatsAppController::class, 'serveMedia']);
+Route::get('/whatsapp/media/{filename}', [WhatsAppController::class, 'serveMedia'])->where('filename', '.*');
+Route::get('/whatsapp/messages/{id}/media', [WhatsAppController::class, 'streamMessageMedia']);
+Route::post('/whatsapp/messages/{id}/fetch-media', [WhatsAppController::class, 'fetchMessageMedia']);
 // Global Table Column Persistence Settings (Cross-User & Cross-Browser)
 Route::get('/table-columns/{table}', [TableColumnSettingController::class, 'getSettings']);
 Route::post('/table-columns/{table}', [TableColumnSettingController::class, 'saveSettings']);

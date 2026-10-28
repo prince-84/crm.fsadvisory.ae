@@ -351,6 +351,11 @@ export default function WhatsAppPage() {
     }
   }, []);
 
+  // Reload chats immediately when account channel is changed
+  useEffect(() => {
+    loadChats(false, selectedChannelId);
+  }, [selectedChannelId, unreadOnly]);
+
   // Poll chats & active messages in background without resetting UI
   useEffect(() => {
     const interval = setInterval(() => {
@@ -563,11 +568,16 @@ export default function WhatsAppPage() {
     return c.contact_name;
   };
 
-  const getMediaUrl = (url?: string | null): string => {
+  const getMediaUrl = (url?: string | null, msgId?: number): string => {
+    if (!url && msgId) {
+      return `${API_BASE_URL}/whatsapp/messages/${msgId}/media`;
+    }
     if (!url) return '';
     if (url.startsWith('data:') || url.startsWith('blob:')) return url;
 
-    const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api').replace(/\/+$/, '');
+    if (url.startsWith('/whatsapp/messages/')) {
+      return `${API_BASE_URL}${url}`;
+    }
 
     // If url contains whatsapp_media or /storage/, route through the CORS-enabled API streaming endpoint to bypass webserver 403 Forbidden
     if (url.includes('whatsapp_media') || url.includes('/storage/')) {
@@ -575,14 +585,14 @@ export default function WhatsAppPage() {
       const parts = cleanUrl.split('/');
       const filename = parts[parts.length - 1];
       if (filename) {
-        return `${apiBase}/whatsapp/media/${encodeURIComponent(filename)}`;
+        return `${API_BASE_URL}/whatsapp/media/${encodeURIComponent(filename)}`;
       }
     }
 
     if (url.startsWith('/whatsapp/media/')) {
       const filename = url.replace('/whatsapp/media/', '').split('?')[0];
       if (filename) {
-        return `${apiBase}/whatsapp/media/${encodeURIComponent(filename)}`;
+        return `${API_BASE_URL}/whatsapp/media/${encodeURIComponent(filename)}`;
       }
     }
 
@@ -591,23 +601,65 @@ export default function WhatsAppPage() {
         const parts = url.split('/storage/whatsapp_media/');
         const filename = parts[parts.length - 1].split('?')[0];
         if (filename) {
-          return `${apiBase}/whatsapp/media/${encodeURIComponent(filename)}`;
+          return `${API_BASE_URL}/whatsapp/media/${encodeURIComponent(filename)}`;
         }
       }
       return url;
     }
 
     if (url.startsWith('/')) {
-      return `${apiBase}${url}`;
+      return `${API_BASE_URL}${url}`;
     }
 
-    return `${apiBase}/${url}`;
+    return `${API_BASE_URL}/${url}`;
   };
 
-  const loadChats = async (showSpinner = false) => {
+  const handleDownloadMedia = (e: React.MouseEvent, url?: string | null, filename?: string, msgId?: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    let downloadUrl = '';
+    const cleanFilename = filename || (url ? url.split('/').pop()?.split('?')[0] : 'document') || 'download';
+
+    if (url) {
+      const resolved = getMediaUrl(url, msgId);
+      if (resolved) {
+        downloadUrl = resolved.includes('?') ? `${resolved}&download=1` : `${resolved}?download=1`;
+      }
+    }
+
+    if (!downloadUrl && msgId) {
+      downloadUrl = `${API_BASE_URL}/whatsapp/messages/${msgId}/media?download=1`;
+    }
+
+    if (!downloadUrl) {
+      Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'warning',
+        title: 'Document file not cached',
+        text: 'This file might have been received before media mirroring was enabled.',
+        timer: 4000,
+        showConfirmButton: false,
+      });
+      return;
+    }
+
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = cleanFilename;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const loadChats = async (showSpinner = false, channelIdOverride?: string) => {
     if (showSpinner) setLoading(true);
     try {
-      let endpoint = `/whatsapp/chats?channel_id=${selectedChannelId}`;
+      const activeChId = channelIdOverride !== undefined ? channelIdOverride : selectedChannelId;
+      let endpoint = `/whatsapp/chats?channel_id=${activeChId}`;
       if (unreadOnly) endpoint += '&unread_only=true';
 
       const data = await fetchApi(endpoint);
@@ -1447,7 +1499,7 @@ export default function WhatsAppPage() {
                           handleOpenQrModal(targetCh.id);
                         }
                       }
-                      setTimeout(() => loadChats(), 50);
+                      loadChats(true, val);
                     }}
                     className="bg-transparent text-white text-[11px] font-bold focus:outline-none cursor-pointer pr-1"
                   >
@@ -1827,19 +1879,19 @@ export default function WhatsAppPage() {
                             {/* Message Content: Audio Voice Note OR Image OR Document OR Text */}
                             {msg.media_type === 'audio' || (msg.media_url && msg.media_url.startsWith('data:audio')) || (msg.text && msg.text.startsWith('🎤 Voice')) ? (
                               <WhatsAppAudioPlayer
-                                audioUrl={getMediaUrl(msg.media_url)}
+                                audioUrl={getMediaUrl(msg.media_url, msg.id)}
                                 isFromMe={isFromMe}
                                 durationText={msg.text}
                               />
                             ) : msg.media_type === 'image' || (msg.media_url && (msg.media_url.match(/\.(jpg|jpeg|png|webp|gif)$/i) || msg.media_url.startsWith('data:image'))) || (msg.text && (msg.text === '📷 Photo' || msg.text.startsWith('📷 Photo'))) ? (
                               <div className="space-y-1.5">
-                                {getMediaUrl(msg.media_url) ? (
+                                {getMediaUrl(msg.media_url, msg.id) ? (
                                   <div 
-                                    onClick={() => setPreviewImageModal(getMediaUrl(msg.media_url))}
+                                    onClick={() => setPreviewImageModal(getMediaUrl(msg.media_url, msg.id))}
                                     className="cursor-pointer group relative overflow-hidden rounded-lg border border-black/10 bg-black/5"
                                   >
                                     <img
-                                      src={getMediaUrl(msg.media_url)}
+                                      src={getMediaUrl(msg.media_url, msg.id)}
                                       alt="WhatsApp Image"
                                       className="max-h-64 sm:max-h-72 w-auto object-cover rounded-lg group-hover:opacity-95 transition-opacity"
                                       loading="lazy"
@@ -1872,13 +1924,12 @@ export default function WhatsAppPage() {
                                   </p>
                                 )}
                               </div>
-                            ) : (msg.media_type === 'document' || msg.media_type === 'pdf' || (msg.media_url && msg.media_url.match(/\.(pdf|docx?|xlsx?|txt)$/i))) ? (
+                            ) : (msg.media_type === 'document' || msg.media_type === 'pdf' || (msg.media_url && msg.media_url.match(/\.(pdf|docx?|xlsx?|txt|zip|csv)$/i)) || (msg.text && (msg.text.includes('.docx') || msg.text.includes('.pdf') || msg.text.includes('.xlsx') || msg.text.includes('.doc') || msg.text.includes('.zip')))) ? (
                               <div className="space-y-1.5">
-                                <a
-                                  href={getMediaUrl(msg.media_url)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-2.5 p-2.5 rounded-lg bg-black/5 hover:bg-black/10 border border-black/10 transition-colors group text-decoration-none"
+                                <div
+                                  onClick={(e) => handleDownloadMedia(e, msg.media_url, msg.text?.replace(/^📄\s*/, ''), msg.id)}
+                                  className="cursor-pointer flex items-center gap-2.5 p-2.5 rounded-lg bg-black/5 hover:bg-black/10 border border-black/10 transition-colors group select-none"
+                                  title="Click to view / download document"
                                 >
                                   <div className="w-9 h-9 rounded bg-white shadow-2xs border border-slate-200 flex items-center justify-center text-[#C8A147] shrink-0">
                                     <FileText className="w-5 h-5" />
@@ -1892,7 +1943,7 @@ export default function WhatsAppPage() {
                                       <Download className="w-3 h-3 text-slate-400 group-hover:text-[#081428]" />
                                     </p>
                                   </div>
-                                </a>
+                                </div>
                               </div>
                             ) : (
                               <p className="text-xs sm:text-[13px] leading-relaxed whitespace-pre-wrap">
