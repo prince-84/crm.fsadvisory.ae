@@ -10,11 +10,21 @@ use App\Models\PropertyType;
 use App\Models\User;
 use App\Services\LeadDistributionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class OwnerDataController extends Controller
 {
+    /**
+     * Clear cached stats and filter options when data changes.
+     */
+    public static function clearOwnerCache()
+    {
+        Cache::forget('owner_data_kpi_stats');
+        Cache::forget('owner_data_filter_options');
+    }
+
     /**
      * Find closest matching string from a catalog list using fuzzy / normalized scoring.
      */
@@ -218,46 +228,67 @@ class OwnerDataController extends Controller
             });
         }
 
-        // KPI Summary Statistics
-        $totalAll = OwnerRecord::count();
-        $totalAssigned = OwnerRecord::whereNotNull('assigned_to')->where('assigned_to', '!=', '')->count();
-        $totalUnassigned = OwnerRecord::where(function ($q) {
-            $q->whereNull('assigned_to')->orWhere('assigned_to', '');
-        })->count();
-        $totalAreas = OwnerRecord::distinct('area')->whereNotNull('area')->where('area', '!=', '')->count('area');
-        $totalDeleted = OwnerRecord::onlyTrashed()->count();
+        // KPI Summary Statistics (Cached for fast page flipping)
+        $kpiStats = Cache::remember('owner_data_kpi_stats', 60, function () {
+            return [
+                'totalAll' => OwnerRecord::count(),
+                'totalAssigned' => OwnerRecord::whereNotNull('assigned_to')->where('assigned_to', '!=', '')->count(),
+                'totalUnassigned' => OwnerRecord::where(function ($q) {
+                    $q->whereNull('assigned_to')->orWhere('assigned_to', '');
+                })->count(),
+                'totalAreas' => OwnerRecord::distinct('area')->whereNotNull('area')->where('area', '!=', '')->count('area'),
+                'totalDeleted' => OwnerRecord::onlyTrashed()->count(),
+            ];
+        });
+        $totalAll = $kpiStats['totalAll'];
+        $totalAssigned = $kpiStats['totalAssigned'];
+        $totalUnassigned = $kpiStats['totalUnassigned'];
+        $totalAreas = $kpiStats['totalAreas'];
+        $totalDeleted = $kpiStats['totalDeleted'];
 
-        // Distinct filter options
-        $distinctAreas = OwnerRecord::select('area')
-            ->whereNotNull('area')
-            ->where('area', '!=', '')
-            ->distinct()
-            ->orderBy('area')
-            ->pluck('area');
+        // Distinct filter options (Cached for 5 minutes so paginated page queries are instantaneous)
+        $filterOptions = Cache::remember('owner_data_filter_options', 300, function () {
+            $defaultTypes = ['Apartment', 'Villa', 'Townhouse', 'Penthouse', 'Duplex', 'Commercial', 'Plot'];
+            $defaultBedrooms = ['Studio', '1 Bedroom', '2 Bedrooms', '3 Bedrooms', '4 Bedrooms', '5+ Bedrooms'];
 
-        $defaultTypes = ['Apartment', 'Villa', 'Townhouse', 'Penthouse', 'Duplex', 'Commercial', 'Plot'];
-        $defaultBedrooms = ['Studio', '1 Bedroom', '2 Bedrooms', '3 Bedrooms', '4 Bedrooms', '5+ Bedrooms'];
+            $distinctAreas = OwnerRecord::select('area')
+                ->whereNotNull('area')
+                ->where('area', '!=', '')
+                ->distinct()
+                ->orderBy('area')
+                ->pluck('area');
 
-        $distinctPropertyTypes = OwnerRecord::select('property_type')
-            ->whereNotNull('property_type')
-            ->where('property_type', '!=', '')
-            ->distinct()
-            ->orderBy('property_type')
-            ->pluck('property_type')
-            ->merge($defaultTypes)
-            ->unique()
-            ->values();
+            $distinctPropertyTypes = OwnerRecord::select('property_type')
+                ->whereNotNull('property_type')
+                ->where('property_type', '!=', '')
+                ->distinct()
+                ->orderBy('property_type')
+                ->pluck('property_type')
+                ->merge($defaultTypes)
+                ->unique()
+                ->values();
 
-        $distinctBedrooms = OwnerRecord::select('bedrooms')
-            ->whereNotNull('bedrooms')
-            ->where('bedrooms', '!=', '')
-            ->whereNotIn('bedrooms', ['Apartment', 'Villa', 'Townhouse', 'Penthouse', 'Duplex', 'Plot'])
-            ->distinct()
-            ->orderBy('bedrooms')
-            ->pluck('bedrooms')
-            ->merge($defaultBedrooms)
-            ->unique()
-            ->values();
+            $distinctBedrooms = OwnerRecord::select('bedrooms')
+                ->whereNotNull('bedrooms')
+                ->where('bedrooms', '!=', '')
+                ->whereNotIn('bedrooms', ['Apartment', 'Villa', 'Townhouse', 'Penthouse', 'Duplex', 'Plot'])
+                ->distinct()
+                ->orderBy('bedrooms')
+                ->pluck('bedrooms')
+                ->merge($defaultBedrooms)
+                ->unique()
+                ->values();
+
+            return [
+                'areas' => $distinctAreas,
+                'property_types' => $distinctPropertyTypes,
+                'bedrooms' => $distinctBedrooms,
+            ];
+        });
+
+        $distinctAreas = $filterOptions['areas'];
+        $distinctPropertyTypes = $filterOptions['property_types'];
+        $distinctBedrooms = $filterOptions['bedrooms'];
 
         // Sorting
         $allowedSorts = [
@@ -345,6 +376,8 @@ class OwnerDataController extends Controller
             $record->refresh();
         }
 
+        static::clearOwnerCache();
+
         return response()->json([
             'success' => true,
             'message' => 'Owner property record created successfully!',
@@ -409,6 +442,7 @@ class OwnerDataController extends Controller
         }
 
         $record->update($data);
+        static::clearOwnerCache();
 
         return response()->json([
             'success' => true,
@@ -429,6 +463,7 @@ class OwnerDataController extends Controller
         }
 
         $record->delete();
+        static::clearOwnerCache();
 
         return response()->json([
             'success' => true,
@@ -448,6 +483,7 @@ class OwnerDataController extends Controller
         }
 
         $record->restore();
+        static::clearOwnerCache();
 
         return response()->json([
             'success' => true,
@@ -468,6 +504,7 @@ class OwnerDataController extends Controller
         }
 
         $deletedCount = OwnerRecord::whereIn('id', $ids)->delete();
+        static::clearOwnerCache();
 
         return response()->json([
             'success' => true,
@@ -493,6 +530,7 @@ class OwnerDataController extends Controller
         }
 
         $count = OwnerRecord::whereIn('id', $ids)->update(['assigned_to' => $assignedTo]);
+        static::clearOwnerCache();
 
         return response()->json([
             'success' => true,
@@ -1083,6 +1121,7 @@ class OwnerDataController extends Controller
                 $imported++;
             }
             DB::commit();
+            static::clearOwnerCache();
 
             return response()->json($this->cleanUtf8([
                 'success'  => true,
@@ -1131,6 +1170,7 @@ class OwnerDataController extends Controller
         $record->update([
             'assigned_to' => $agentName,
         ]);
+        static::clearOwnerCache();
 
         return response()->json([
             'success' => true,
@@ -1191,6 +1231,7 @@ class OwnerDataController extends Controller
             $record->update(['assigned_to' => $agentName]);
             $claimedCount++;
         }
+        static::clearOwnerCache();
 
         $skippedCount = count($ids) - $claimedCount;
         $msg = "{$claimedCount} owner record(s) successfully claimed by {$agentName}!";

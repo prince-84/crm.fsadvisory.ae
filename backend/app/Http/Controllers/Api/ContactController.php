@@ -16,24 +16,25 @@ class ContactController extends Controller
 {
     public function index(Request $request)
     {
-        // Auto-heal: 1. Sync duplicate status for all contacts sharing identical phones
-        $duplicatePhones = Contact::select('phone')
-            ->whereNotNull('phone')
-            ->where('phone', '!=', '')
-            ->groupBy('phone')
-            ->havingRaw('count(*) > 1')
-            ->pluck('phone');
+        // Auto-heal on read only if explicitly requested, preventing heavy blocking queries on paginated requests
+        if ($request->boolean('heal_duplicates')) {
+            $duplicatePhones = Contact::select('phone')
+                ->whereNotNull('phone')
+                ->where('phone', '!=', '')
+                ->groupBy('phone')
+                ->havingRaw('count(*) > 1')
+                ->pluck('phone');
 
-        foreach ($duplicatePhones as $p) {
-            static::syncDuplicateStatesForPhone($p);
-        }
+            foreach ($duplicatePhones as $p) {
+                static::syncDuplicateStatesForPhone($p);
+            }
 
-        // Auto-heal: 2. Restore any orphaned duplicate contacts whose counterparts were deleted
-        $orphanedDuplicates = Contact::where('state', 'duplicate')->get();
-        foreach ($orphanedDuplicates as $dup) {
-            static::syncDuplicateStatesForPhone($dup->phone);
-            if (!empty($dup->secondary_phone)) {
-                static::syncDuplicateStatesForPhone($dup->secondary_phone);
+            $orphanedDuplicates = Contact::where('state', 'duplicate')->get();
+            foreach ($orphanedDuplicates as $dup) {
+                static::syncDuplicateStatesForPhone($dup->phone);
+                if (!empty($dup->secondary_phone)) {
+                    static::syncDuplicateStatesForPhone($dup->secondary_phone);
+                }
             }
         }
 

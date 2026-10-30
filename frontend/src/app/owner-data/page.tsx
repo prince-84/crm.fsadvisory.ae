@@ -343,6 +343,9 @@ export default function OwnerDataPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [perPage, setPerPage] = useState(25);
+  const [fromCount, setFromCount] = useState(0);
+  const [toCount, setToCount] = useState(0);
 
   // Multi-Selection State & Floating Action Bar
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -460,12 +463,12 @@ export default function OwnerDataPage() {
   const [viewRecord, setViewRecord] = useState<OwnerRecord | null>(null);
 
   // Fetch Owner Data
-  const loadRecords = async (page = 1) => {
+  const loadRecords = async (page = currentPage, limit = perPage) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
         page: String(page),
-        per_page: '25',
+        per_page: String(limit),
         sort_by: sortBy,
         sort_order: sortOrder,
       });
@@ -481,9 +484,15 @@ export default function OwnerDataPage() {
 
       if (result.success) {
         setRecords(result.data || []);
-        setCurrentPage(result.current_page || 1);
-        setLastPage(result.last_page || 1);
-        setTotalCount(result.total || 0);
+        const cur = result.current_page || page;
+        const last = result.last_page || 1;
+        const total = result.total || 0;
+        const count = result.data?.length || 0;
+        setCurrentPage(cur);
+        setLastPage(last);
+        setTotalCount(total);
+        setFromCount(result.from ?? (total > 0 ? (cur - 1) * limit + 1 : 0));
+        setToCount(result.to ?? ((cur - 1) * limit + count));
         if (result.stats) setStats(result.stats);
         if (result.filters) setFilterOptions(result.filters);
       }
@@ -495,16 +504,45 @@ export default function OwnerDataPage() {
   };
 
   useEffect(() => {
-    loadRecords(1);
+    loadRecords(1, perPage);
   }, [selectedAreas, selectedPropertyTypes, selectedBedrooms, dateRange, sortBy, sortOrder]);
 
-  // Debounced search trigger
+  // Debounced search trigger (avoids duplicate initial mount call)
+  const isSearchMounted = useRef(false);
   useEffect(() => {
+    if (!isSearchMounted.current) {
+      isSearchMounted.current = true;
+      return;
+    }
     const handler = setTimeout(() => {
-      loadRecords(1);
+      setCurrentPage(1);
+      loadRecords(1, perPage);
     }, 350);
     return () => clearTimeout(handler);
   }, [searchQuery]);
+
+  const handlePerPageChange = (newLimit: number) => {
+    setPerPage(newLimit);
+    setCurrentPage(1);
+    loadRecords(1, newLimit);
+  };
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxVisible = 5;
+    if (lastPage <= maxVisible + 2) {
+      for (let i = 1; i <= lastPage; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if (currentPage > 3) pages.push('...');
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(lastPage - 1, currentPage + 1);
+      for (let i = start; i <= end; i++) pages.push(i);
+      if (currentPage < lastPage - 2) pages.push('...');
+      pages.push(lastPage);
+    }
+    return pages;
+  };
 
   // Handle Sort Toggle
   const handleSort = (column: string) => {
@@ -524,6 +562,7 @@ export default function OwnerDataPage() {
     setDateRange({ from: '', to: '', preset: 'all' });
     setSearchQuery('');
     setCurrentPage(1);
+    loadRecords(1, perPage);
   };
 
   // Selection Handlers
@@ -1935,32 +1974,91 @@ export default function OwnerDataPage() {
           </table>
         </div>
 
-        {/* 5. Pagination Footer */}
-        <footer className="bg-white border-t border-[#E8E2D9] px-6 py-3 shrink-0 flex items-center justify-between text-xs text-slate-600">
+        {/* 5. SERVER-SIDE DATABASE PAGINATION FOOTER BAR */}
+        <footer className="bg-[#FAF8F5] border-t border-[#E8E2D9] px-6 py-3 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
           <div>
-            Showing <strong className="text-[#081428]">{records.length}</strong> of{' '}
-            <strong className="text-[#081428]">{totalCount}</strong> owner properties
+            Showing <strong className="text-[#081428]">{fromCount}</strong> to{' '}
+            <strong className="text-[#081428]">{toCount}</strong> of{' '}
+            <strong className="text-[#081428]">{Number(totalCount).toLocaleString()}</strong> owner properties
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-1">
+            {/* Prev Button */}
             <button
-              onClick={() => loadRecords(currentPage - 1)}
+              onClick={() => {
+                if (currentPage > 1) {
+                  setCurrentPage(currentPage - 1);
+                  loadRecords(currentPage - 1, perPage);
+                }
+              }}
               disabled={currentPage <= 1 || loading}
-              className="px-3 py-1.5 border border-[#E8E2D9] rounded-md text-xs font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
+              className="p-1.5 border border-[#E8E2D9] rounded hover:bg-white text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
+              title="Previous Page"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Prev</span>
+              <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="px-2 font-mono text-xs text-slate-500">
-              Page {currentPage} of {lastPage || 1}
-            </span>
+
+            {/* Dynamic Page Buttons */}
+            {getPageNumbers().map((p, idx) => {
+              if (typeof p === 'string') {
+                return (
+                  <span key={`dots-${idx}`} className="px-1 text-slate-400 font-semibold">
+                    ...
+                  </span>
+                );
+              }
+              const isCurrent = p === currentPage;
+              return (
+                <button
+                  key={`page-${p}`}
+                  onClick={() => {
+                    setCurrentPage(p as number);
+                    loadRecords(p as number, perPage);
+                  }}
+                  disabled={loading}
+                  className={`w-7 h-7 rounded text-xs transition-colors cursor-pointer ${
+                    isCurrent
+                      ? 'font-bold bg-[#C8A147] text-white shadow-xs'
+                      : 'font-medium border border-[#E8E2D9] hover:bg-white text-[#1A1A1A]'
+                  }`}
+                >
+                  {p}
+                </button>
+              );
+            })}
+
+            {/* Next Button */}
             <button
-              onClick={() => loadRecords(currentPage + 1)}
+              onClick={() => {
+                if (currentPage < lastPage) {
+                  setCurrentPage(currentPage + 1);
+                  loadRecords(currentPage + 1, perPage);
+                }
+              }}
               disabled={currentPage >= lastPage || loading}
-              className="px-3 py-1.5 border border-[#E8E2D9] rounded-md text-xs font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
+              className="p-1.5 border border-[#E8E2D9] rounded hover:bg-white text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent transition-colors cursor-pointer"
+              title="Next Page"
             >
-              <span>Next</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <ChevronRight className="w-4 h-4" />
             </button>
+          </div>
+
+          {/* Per Page Select Dropdown */}
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500 font-medium">Per Page:</span>
+            <select
+              value={perPage}
+              onChange={(e) => handlePerPageChange(Number(e.target.value))}
+              className="p-1.5 bg-white border border-[#E8E2D9] rounded text-xs text-[#1A1A1A] font-semibold cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#C8A147]"
+            >
+              <option value={10}>10 / page</option>
+              <option value={20}>20 / page</option>
+              <option value={25}>25 / page</option>
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+              <option value={200}>200 / page</option>
+              <option value={500}>500 / page</option>
+            </select>
           </div>
         </footer>
       </div>
