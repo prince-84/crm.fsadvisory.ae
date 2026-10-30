@@ -67,6 +67,7 @@ interface OwnerRecord {
   phone_number: string | null;
   mobile_number: string | null;
   email: string | null;
+  category?: string | null;
   notes: string | null;
   status: string;
   assigned_to?: string | null;
@@ -87,6 +88,7 @@ const ALL_OWNER_COLUMNS: ColumnConfig[] = [
   { key: 'property_number', label: 'Unit / Prop #', category: 'Property Details' },
   { key: 'building_name', label: 'Building & Area', category: 'Property Details' },
   { key: 'bedrooms', label: 'Type & Bedrooms', category: 'Property Details' },
+  { key: 'category', label: 'Category', category: 'Record Details' },
   { key: 'mobile_number', label: 'Primary Phone', category: 'Contact Details' },
   { key: 'phone_number', label: 'Secondary Phone', category: 'Contact Details' },
   { key: 'email', label: 'Email Address', category: 'Contact Details' },
@@ -101,6 +103,7 @@ const DEFAULT_OWNER_COLUMN_VISIBILITY: Record<string, boolean> = {
   property_number: true,
   building_name: true,
   bedrooms: true,
+  category: true,
   mobile_number: true,
   phone_number: false,
   email: true,
@@ -269,14 +272,21 @@ export default function OwnerDataPage() {
     areas: string[];
     property_types: string[];
     bedrooms: string[];
+    categories?: string[];
   }>({
     areas: [],
     property_types: [],
     bedrooms: [],
+    categories: ['Business Executives'],
   });
 
   // Filter & Search State (Placed on Left together with Search)
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [availableCategories, setAvailableCategories] = useState<string[]>(['Business Executives']);
+  const [selectedImportCategory, setSelectedImportCategory] = useState<string>('Business Executives');
+  const [showNewCategoryModal, setShowNewCategoryModal] = useState<boolean>(false);
+  const [newCategoryInput, setNewCategoryInput] = useState<string>('');
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [selectedPropertyTypes, setSelectedPropertyTypes] = useState<string[]>([]);
   const [selectedBedrooms, setSelectedBedrooms] = useState<string[]>([]);
@@ -408,6 +418,7 @@ export default function OwnerDataPage() {
     phone_number: '',
     mobile_number: '',
     email: '',
+    category: 'Business Executives',
     notes: '',
     assigned_to: '',
     status: 'active',
@@ -462,6 +473,45 @@ export default function OwnerDataPage() {
   // Quick View Drawer State
   const [viewRecord, setViewRecord] = useState<OwnerRecord | null>(null);
 
+  // Fetch Categories from Backend API (extensible for future)
+  const loadCategories = async () => {
+    try {
+      const res = await fetchApi('/owner-data/categories');
+      if (res && res.success && Array.isArray(res.categories)) {
+        setAvailableCategories(Array.from(new Set(['Business Executives', ...res.categories])));
+      }
+    } catch (e) {
+      console.error('Failed to load owner categories', e);
+    }
+  };
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const handleAddNewCategory = async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    try {
+      const res = await fetchApi('/owner-data/categories', {
+        method: 'POST',
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (res && res.success) {
+        setAvailableCategories((prev) => Array.from(new Set([...prev, trimmed])));
+        setSelectedImportCategory(trimmed);
+        setNewCategoryInput('');
+        setShowNewCategoryModal(false);
+      }
+    } catch (e) {
+      console.error('Failed to create new category', e);
+      setAvailableCategories((prev) => Array.from(new Set([...prev, trimmed])));
+      setSelectedImportCategory(trimmed);
+      setNewCategoryInput('');
+      setShowNewCategoryModal(false);
+    }
+  };
+
   // Fetch Owner Data
   const loadRecords = async (page = currentPage, limit = perPage) => {
     setLoading(true);
@@ -474,6 +524,7 @@ export default function OwnerDataPage() {
       });
 
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (selectedCategory && selectedCategory !== 'all') params.append('category', selectedCategory);
       if (selectedAreas.length > 0) params.append('area', selectedAreas.join(','));
       if (selectedPropertyTypes.length > 0) params.append('property_type', selectedPropertyTypes.join(','));
       if (selectedBedrooms.length > 0) params.append('bedrooms', selectedBedrooms.join(','));
@@ -494,7 +545,12 @@ export default function OwnerDataPage() {
         setFromCount(result.from ?? (total > 0 ? (cur - 1) * limit + 1 : 0));
         setToCount(result.to ?? ((cur - 1) * limit + count));
         if (result.stats) setStats(result.stats);
-        if (result.filters) setFilterOptions(result.filters);
+        if (result.filters) {
+          setFilterOptions(result.filters);
+          if (Array.isArray(result.filters.categories)) {
+            setAvailableCategories((prev) => Array.from(new Set(['Business Executives', ...prev, ...result.filters.categories])));
+          }
+        }
       }
     } catch (e) {
       console.error('Failed to load owner data', e);
@@ -505,7 +561,7 @@ export default function OwnerDataPage() {
 
   useEffect(() => {
     loadRecords(1, perPage);
-  }, [selectedAreas, selectedPropertyTypes, selectedBedrooms, dateRange, sortBy, sortOrder]);
+  }, [selectedCategory, selectedAreas, selectedPropertyTypes, selectedBedrooms, dateRange, sortBy, sortOrder]);
 
   // Debounced search trigger (avoids duplicate initial mount call)
   const isSearchMounted = useRef(false);
@@ -556,6 +612,7 @@ export default function OwnerDataPage() {
 
   // Reset Filters Handler (Same as Lead Pool)
   const handleResetFilters = () => {
+    setSelectedCategory('all');
     setSelectedAreas([]);
     setSelectedPropertyTypes([]);
     setSelectedBedrooms([]);
@@ -685,6 +742,7 @@ export default function OwnerDataPage() {
       phone_number: '',
       mobile_number: '',
       email: '',
+      category: 'Business Executives',
       notes: '',
       assigned_to: '',
       status: 'active',
@@ -712,6 +770,7 @@ export default function OwnerDataPage() {
       phone_number: formatPhoneForInput(rec.phone_number),
       mobile_number: formatPhoneForInput(rec.mobile_number),
       email: rec.email || '',
+      category: rec.category || 'Business Executives',
       notes: rec.notes || '',
       assigned_to: rec.assigned_to || '',
       status: rec.status || 'active',
@@ -736,6 +795,7 @@ export default function OwnerDataPage() {
           phone_number: formatPhoneForInput(full.phone_number),
           mobile_number: formatPhoneForInput(full.mobile_number),
           email: full.email || '',
+          category: full.category || rec.category || 'Business Executives',
           notes: full.notes || '',
           assigned_to: full.assigned_to || '',
           status: full.status || 'active',
@@ -1274,6 +1334,7 @@ export default function OwnerDataPage() {
           value_mappings: mappings,
           new_catalog_items: newItems,
           duplicate_mode: duplicateMode,
+          category: selectedImportCategory || 'Business Executives',
         }),
       });
 
@@ -1290,8 +1351,9 @@ export default function OwnerDataPage() {
         Swal.fire({
           icon: 'success',
           title: 'Import Successful!',
-          text: `Imported ${data.imported} property records${data.skipped ? `, ${data.skipped} skipped` : ''}${data.updated ? `, ${data.updated} updated` : ''}.`,
+          text: `Imported ${data.imported} property records under '${selectedImportCategory || 'Business Executives'}'${data.skipped ? `, ${data.skipped} skipped` : ''}${data.updated ? `, ${data.updated} updated` : ''}.`,
         });
+        loadCategories();
         loadRecords(1);
       } else {
         Swal.fire({ icon: 'error', title: 'Import Failed', text: data.message });
@@ -1532,6 +1594,34 @@ export default function OwnerDataPage() {
               }}
             />
 
+            {/* Category Filter Dropdown (Future-Proof & Dynamic) */}
+            <div className="relative shrink-0">
+              <select
+                value={selectedCategory}
+                onChange={(e) => {
+                  setSelectedCategory(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className={`text-xs font-semibold py-1.5 px-3 rounded-md border transition-colors cursor-pointer appearance-none pr-7 bg-no-repeat bg-[right_8px_center] ${
+                  selectedCategory !== 'all'
+                    ? 'bg-[#C9A84C]/15 border-[#C9A84C] text-[#081428] font-bold'
+                    : 'bg-[#FAF8F5] border-[#E8E2D9] text-slate-700 hover:border-[#C9A84C]'
+                }`}
+                style={{
+                  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C9A84C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                  backgroundSize: '12px',
+                }}
+                title="Filter by Category"
+              >
+                <option value="all">All Categories</option>
+                {availableCategories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Reset Button (Always visible like Lead Pool) */}
             <button
               onClick={handleResetFilters}
@@ -1675,6 +1765,16 @@ export default function OwnerDataPage() {
                     <div className="flex items-center gap-1.5">
                       <span>Type / Beds</span>
                       {sortBy === 'bedrooms' ? (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-[#C9A84C]" /> : <ArrowDown className="w-3 h-3 text-[#C9A84C]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
+                    </div>
+                  </th>
+                )}
+
+                {/* Category Column */}
+                {columnVisibility.category && (
+                  <th className="py-3 px-4 cursor-pointer hover:text-[#081428]" onClick={() => handleSort('category')}>
+                    <div className="flex items-center gap-1.5">
+                      <span>Category</span>
+                      {sortBy === 'category' ? (sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-[#C9A84C]" /> : <ArrowDown className="w-3 h-3 text-[#C9A84C]" />) : <ArrowUpDown className="w-3 h-3 text-slate-300" />}
                     </div>
                   </th>
                 )}
@@ -1833,6 +1933,15 @@ export default function OwnerDataPage() {
                               {r.property_type || '—'}
                             </span>
                           </div>
+                        </td>
+                      )}
+
+                      {/* Category Column */}
+                      {columnVisibility.category && (
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-900 border border-amber-200">
+                            💼 {r.category || 'Business Executives'}
+                          </span>
                         </td>
                       )}
 
@@ -2334,7 +2443,7 @@ export default function OwnerDataPage() {
                   </span>
                 </h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
                       Assigned Agent / Owner <span className="text-slate-400 font-normal">(Sales Advisor)</span>
@@ -2350,6 +2459,26 @@ export default function OwnerDataPage() {
                       <span>
                         Choose advisor or <strong>"Auto-Distribute"</strong> for rotation.
                       </span>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Category <span className="text-[#C9A84C] font-bold">*</span>
+                    </label>
+                    <select
+                      value={formData.category || 'Business Executives'}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      className="w-full p-2.5 bg-[#FAF8F5] border border-[#E8E4DC] rounded-md text-xs text-[#1A1A1A] font-medium focus:outline-none focus:border-[#C8A147] focus:bg-white transition-colors cursor-pointer"
+                    >
+                      {availableCategories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-slate-500 mt-1.5">
+                      Contact category classification.
                     </p>
                   </div>
 
@@ -2451,6 +2580,53 @@ export default function OwnerDataPage() {
                   </button>
                 </div>
 
+                {/* Category Selection Dropdown (Defaults to Business Executives, Extensible) */}
+                <div className="p-3.5 bg-gradient-to-r from-[#FAF8F5] to-amber-50/50 border border-[#E8E2D9] rounded-lg">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[11px] font-bold text-[#081428] uppercase tracking-wider flex items-center gap-1.5">
+                      <span>Target Category</span>
+                      <span className="text-[10px] text-amber-800 font-semibold bg-amber-100 px-1.5 py-0.2 rounded">Required</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowNewCategoryModal(true)}
+                      className="text-[11px] text-[#C9A84C] hover:text-[#081428] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add New Category</span>
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <select
+                      value={selectedImportCategory}
+                      onChange={(e) => {
+                        if (e.target.value === '__add_new__') {
+                          setShowNewCategoryModal(true);
+                        } else {
+                          setSelectedImportCategory(e.target.value);
+                        }
+                      }}
+                      className="w-full p-2.5 bg-white border border-[#E8E2D9] focus:border-[#C9A84C] rounded-lg text-xs font-semibold text-[#081428] shadow-2xs cursor-pointer appearance-none pr-8 bg-no-repeat bg-[right_10px_center]"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C9A84C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                        backgroundSize: '14px',
+                      }}
+                    >
+                      {availableCategories.map((cat) => (
+                        <option key={cat} value={cat}>
+                          💼 {cat}
+                        </option>
+                      ))}
+                      <option value="__add_new__" className="text-[#C9A84C] font-bold">
+                        ➕ + Create New Category...
+                      </option>
+                    </select>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    All imported properties will be tagged under category: <strong className="text-[#081428]">{selectedImportCategory}</strong>.
+                  </p>
+                </div>
+
                 <div className="border-2 border-dashed border-[#E8E2D9] rounded-xl p-8 text-center bg-[#FAF8F5] hover:bg-slate-50 transition-colors">
                   <Upload className="w-8 h-8 text-[#C9A84C] mx-auto mb-2" />
                   <p className="font-bold text-sm text-[#081428]">Select Excel (.xlsx, .xls) or CSV File</p>
@@ -2476,6 +2652,36 @@ export default function OwnerDataPage() {
             {/* STEP 2: PREVIEW, DUPLICATE AUDIT & CATALOG STANDARDIZATION */}
             {importStep === 'preview' && importPreviewData && (
               <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
+                {/* Target Category Confirmation in Preview */}
+                <div className="p-3 bg-gradient-to-r from-[#FAF8F5] to-amber-50/50 border border-[#E8E2D9] rounded-lg flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-[#081428] uppercase tracking-wider">Target Category:</span>
+                    <span className="px-2.5 py-1 bg-amber-100 text-amber-900 border border-amber-200 rounded-md font-bold text-xs">
+                      💼 {selectedImportCategory}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedImportCategory}
+                      onChange={(e) => {
+                        if (e.target.value === '__add_new__') {
+                          setShowNewCategoryModal(true);
+                        } else {
+                          setSelectedImportCategory(e.target.value);
+                        }
+                      }}
+                      className="px-2 py-1 bg-white border border-[#E8E2D9] rounded text-xs font-semibold text-[#081428] cursor-pointer"
+                    >
+                      {availableCategories.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                      <option value="__add_new__">+ Add New...</option>
+                    </select>
+                  </div>
+                </div>
+
                 {/* Auto-Mapped Notification Banner */}
                 {Boolean(importPreviewData?.auto_mapped_count && importPreviewData.auto_mapped_count > 0) && (
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
@@ -2943,6 +3149,14 @@ export default function OwnerDataPage() {
                     </span>
                     <span className="font-medium text-[#081428]">{viewRecord.email || '—'}</span>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-slate-500">
+                      <Sparkles className="w-3.5 h-3.5 text-[#C9A84C]" /> Category:
+                    </span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-900 border border-amber-200">
+                      💼 {viewRecord.category || 'Business Executives'}
+                    </span>
+                  </div>
                   <div className="flex items-center justify-between pt-1 border-t border-[#E8E2D9]">
                     <span className="flex items-center gap-1.5 text-slate-500">
                       <UserCheck className="w-3.5 h-3.5 text-[#C9A84C]" /> Assigned Advisor:
@@ -2986,6 +3200,61 @@ export default function OwnerDataPage() {
                   <span>Edit</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 8. QUICK NEW CATEGORY MODAL (For Real-Time Extensibility) */}
+      {showNewCategoryModal && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E8E2D9] max-w-sm w-full p-5 animate-fade-in">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-sm text-[#081428] flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-[#C9A84C]" />
+                <span>Create New Owner Category</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowNewCategoryModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-3">
+              Enter category name (e.g., VIP Investors, Commercial Owners). It will be saved permanently in the CRM for future imports and filtering.
+            </p>
+            <input
+              type="text"
+              autoFocus
+              placeholder="e.g. VIP Investors, Commercial Landlords..."
+              value={newCategoryInput}
+              onChange={(e) => setNewCategoryInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddNewCategory(newCategoryInput);
+                }
+              }}
+              className="w-full p-2.5 border border-[#E8E2D9] rounded-lg text-xs font-semibold text-[#081428] focus:border-[#C9A84C] focus:outline-none mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowNewCategoryModal(false)}
+                className="px-3 py-1.5 border border-[#E8E2D9] rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAddNewCategory(newCategoryInput)}
+                disabled={!newCategoryInput.trim()}
+                className="px-4 py-1.5 bg-[#081428] text-[#C9A84C] rounded-lg text-xs font-bold hover:bg-[#122444] transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Save & Select
+              </button>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\OwnerRecord;
+use App\Models\OwnerCategory;
 use App\Models\Community;
 use App\Models\Project;
 use App\Models\PropertyType;
@@ -17,12 +18,59 @@ use Illuminate\Support\Facades\Validator;
 class OwnerDataController extends Controller
 {
     /**
-     * Clear cached stats and filter options when data changes.
+     * Clear cached stats, filter options, and categories when data changes.
      */
     public static function clearOwnerCache()
     {
         Cache::forget('owner_data_kpi_stats');
         Cache::forget('owner_data_filter_options');
+        Cache::forget('owner_data_categories');
+    }
+
+    /**
+     * Get all available categories (including future dynamically added categories).
+     */
+    public function getCategories()
+    {
+        $cats = Cache::remember('owner_data_categories', 300, function () {
+            $dbCats = OwnerCategory::where('is_active', true)->orderBy('sort_order')->orderBy('name')->pluck('name');
+            $recordCats = OwnerRecord::select('category')
+                ->whereNotNull('category')
+                ->where('category', '!=', '')
+                ->distinct()
+                ->pluck('category');
+
+            return $dbCats->merge($recordCats)->push('Business Executives')->unique()->values();
+        });
+
+        return response()->json([
+            'success' => true,
+            'categories' => $cats,
+        ]);
+    }
+
+    /**
+     * Dynamically create a new owner category for future expansion.
+     */
+    public function storeCategory(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+        ]);
+
+        $catName = trim($request->name);
+        $category = OwnerCategory::firstOrCreate(
+            ['name' => $catName],
+            ['is_active' => true, 'sort_order' => 0]
+        );
+
+        static::clearOwnerCache();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Category '{$catName}' added successfully!",
+            'category' => $category,
+        ]);
     }
 
     /**
@@ -213,6 +261,15 @@ class OwnerDataController extends Controller
             }
         }
 
+        // Category Filter (Supports Multi or Single, e.g. 'Business Executives')
+        if ($request->has('category') && !empty($request->category) && $request->category !== 'all') {
+            $cats = is_array($request->category) ? $request->category : explode(',', $request->category);
+            $cats = array_filter(array_map('trim', $cats));
+            if (!empty($cats)) {
+                $query->whereIn('category', $cats);
+            }
+        }
+
         // Date Range Filter on created_at
         if ($request->filled('date_from')) {
             $query->whereDate('created_at', '>=', $request->date_from);
@@ -279,21 +336,35 @@ class OwnerDataController extends Controller
                 ->unique()
                 ->values();
 
+            $catList = OwnerCategory::where('is_active', true)->orderBy('sort_order')->orderBy('name')->pluck('name');
+            $distinctCategories = OwnerRecord::select('category')
+                ->whereNotNull('category')
+                ->where('category', '!=', '')
+                ->distinct()
+                ->orderBy('category')
+                ->pluck('category')
+                ->merge($catList)
+                ->push('Business Executives')
+                ->unique()
+                ->values();
+
             return [
                 'areas' => $distinctAreas,
                 'property_types' => $distinctPropertyTypes,
                 'bedrooms' => $distinctBedrooms,
+                'categories' => $distinctCategories,
             ];
         });
 
         $distinctAreas = $filterOptions['areas'];
         $distinctPropertyTypes = $filterOptions['property_types'];
         $distinctBedrooms = $filterOptions['bedrooms'];
+        $distinctCategories = $filterOptions['categories'];
 
         // Sorting
         $allowedSorts = [
             'id', 'property_name', 'area', 'property_number', 'building_name',
-            'bedrooms', 'property_type', 'owner_name', 'phone_number', 'mobile_number',
+            'bedrooms', 'property_type', 'category', 'owner_name', 'phone_number', 'mobile_number',
             'email', 'created_at', 'updated_at'
         ];
         $sortBy = in_array($request->get('sort_by'), $allowedSorts) ? $request->get('sort_by') : 'created_at';
@@ -321,6 +392,7 @@ class OwnerDataController extends Controller
                 'areas' => $distinctAreas,
                 'property_types' => $distinctPropertyTypes,
                 'bedrooms' => $distinctBedrooms,
+                'categories' => $distinctCategories,
             ],
         ]);
     }
@@ -343,6 +415,7 @@ class OwnerDataController extends Controller
             'email'           => 'nullable|email|max:255',
             'notes'           => 'nullable|string',
             'status'          => 'nullable|string|max:50',
+            'category'        => 'nullable|string|max:255',
             'assigned_to'     => 'nullable|string|max:100',
         ]);
 
@@ -367,6 +440,11 @@ class OwnerDataController extends Controller
         }
 
         $data['assigned_to'] = $matchedActiveUser ? $matchedActiveUser->name : null;
+
+        // Ensure category defaults to 'Business Executives' and is saved to owner_categories
+        $category = !empty($data['category']) ? trim((string)$data['category']) : 'Business Executives';
+        $data['category'] = $category;
+        OwnerCategory::firstOrCreate(['name' => $category], ['is_active' => true, 'sort_order' => 0]);
 
         $record = OwnerRecord::create($data);
 
@@ -426,6 +504,7 @@ class OwnerDataController extends Controller
             'email'           => 'nullable|email|max:255',
             'notes'           => 'nullable|string',
             'status'          => 'nullable|string|max:50',
+            'category'        => 'nullable|string|max:255',
             'assigned_to'     => 'nullable|string|max:100',
         ]);
 
@@ -439,6 +518,11 @@ class OwnerDataController extends Controller
         $data = $validator->validated();
         if (array_key_exists('assigned_to', $data) && $data['assigned_to'] === '') {
             $data['assigned_to'] = null;
+        }
+
+        if (array_key_exists('category', $data) && !empty($data['category'])) {
+            $data['category'] = trim((string)$data['category']);
+            OwnerCategory::firstOrCreate(['name' => $data['category']], ['is_active' => true, 'sort_order' => 0]);
         }
 
         $record->update($data);
@@ -865,6 +949,11 @@ class OwnerDataController extends Controller
         $valueMappings = $request->input('value_mappings', []);
         $newCatalogItems = $request->input('new_catalog_items', []);
         $duplicateMode = $request->input('duplicate_mode', 'skip'); // 'skip' or 'update'
+        $importCategory = trim((string)$request->input('category', 'Business Executives'));
+        if (empty($importCategory)) {
+            $importCategory = 'Business Executives';
+        }
+        OwnerCategory::firstOrCreate(['name' => $importCategory], ['is_active' => true, 'sort_order' => 0]);
 
         if (empty($rows) || !is_array($rows)) {
             return response()->json(['success' => false, 'message' => 'No import rows provided'], 400);
@@ -1005,6 +1094,8 @@ class OwnerDataController extends Controller
                     $isDuplicate = true;
                 }
 
+                $rowCategory = !empty($row['category']) ? trim((string)$row['category']) : $importCategory;
+
                 // Handle Duplicate Resolution
                 if ($isDuplicate) {
                     if ($duplicateMode === 'skip') {
@@ -1021,6 +1112,7 @@ class OwnerDataController extends Controller
                                 if (!empty($row['notes'])) $updateData['notes'] = $row['notes'];
                                 if (!empty($rawBedrooms)) $updateData['bedrooms'] = $rawBedrooms;
                                 if (!empty($rawPropType)) $updateData['property_type'] = $rawPropType;
+                                if (!empty($rowCategory)) $updateData['category'] = $rowCategory;
 
                                 if (!empty($updateData)) {
                                     $existing->update($updateData);
@@ -1109,6 +1201,7 @@ class OwnerDataController extends Controller
                     'email'           => $email ?: null,
                     'notes'           => $row['notes'] ?? null,
                     'status'          => $row['status'] ?? 'active',
+                    'category'        => $rowCategory,
                     'assigned_to'     => $assignedTo,
                 ]);
 

@@ -3075,10 +3075,34 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
   - **Backend Query Bottleneck Elimination (40x Speedup to Sub-400ms)**:
     - **Leads & Lead Pool (`ContactController.php`)**: Guarded whole-database duplicate re-syncing so it never blocks regular paginated read queries, dropping controller execution time from **17.03s to 0.39s**. Duplicate states remain automatically synced upon lead creation, webhook ingestion, imports, and manual updates.
     - **Owner Data (`OwnerDataController.php`)**: Implemented high-performance caching for KPI summary counts (`owner_data_kpi_stats`) and distinct filter dropdown options (`owner_data_filter_options`). Added automated cache eviction (`static::clearOwnerCache()`) on record creation, updates, deletes, assignments, imports, and claims, ensuring zero stale data while executing page requests in under 200ms.
-  - **Frontend Page-Wise Navigation & Pagination Harmonization (`owner-data/page.tsx`)**:
-    - Upgraded `/owner-data` with full server-side page size selector: `10`, `20`, `25`, `50`, `100`, `200`, `500` records per page.
-    - Added dynamic page button pagination bar (`getPageNumbers`) matching Leads Desk and Lead Pool.
-    - Resolved initial mount race condition by preventing duplicate debounced search calls on empty search query.
+- **223 — Owner Data Category Classification, Import Dropdown Tagging & Extensible Category Engine (`OwnerCategory.php`, `OwnerDataController.php`, `owner_records` migration, `owner-data/page.tsx`)**:
+  - **Feature Purpose & Strict Scope**:
+    - Strictly scoped to **Owner Data** (`/owner-data`), leaving all other CRM modules untouched.
+    - Added comprehensive Category classification across the Owner Data desk, enabling property owner records to be segregated and tagged by client segment (e.g. *"Business Executives"*).
+  - **Database Migration & Dynamic Schema Architecture**:
+    - Created `2026_10_30_160000_add_category_to_owner_records_table.php`:
+      - Added indexed `category` string column (default `'Business Executives'`) to `owner_records`.
+      - Created dedicated `owner_categories` table (`id`, `name` unique, `description`, `is_active`, `sort_order`, `timestamps`) seeded with the default `'Business Executives'` category.
+    - Created Eloquent model `app/Models/OwnerCategory.php` for dynamic category management.
+  - **Backend API & Real-Time Category Extensibility (`OwnerDataController.php`, `routes/api.php`)**:
+    - Registered `GET /api/owner-data/categories` and `POST /api/owner-data/categories`.
+    - Integrated category options into `index()` filters (`filters.categories`) combining database master categories with distinct records and guaranteed fallback.
+    - Added category query filtering in `index()`: `?category=Business+Executives` filters records with high-speed indexed search.
+    - Updated `import()` to extract the selected category from the import request (defaulting to `'Business Executives'`), automatically register it into `owner_categories`, and tag all created and updated property records.
+    - Updated `store()` and `update()` to validate and persist categories for manually created or edited records.
+  - **Frontend UI & Seamless User Experience (`owner-data/page.tsx`)**:
+    - **Import Modal Category Dropdown**:
+      - Added a target category selector directly inside the Import Modal (in both File Upload and Duplicate Preview steps).
+      - Pre-loads `"Business Executives"` by default, populated dynamically from available backend categories.
+      - Includes an inline **`+ Add New Category`** action that opens a modal to immediately add new categories for future expansion without developer intervention.
+    - **Owner Data Secondary Filter Bar**:
+      - Integrated a dedicated Category filter dropdown alongside Area, Property Type, and Bedrooms filters.
+      - Selecting a category immediately re-filters table records server-side and resets pagination to page 1.
+      - The `Reset` button clears the category filter back to `All Categories`.
+    - **Table Columns, Badges & Record Forms**:
+      - Added `category` column to `ALL_OWNER_COLUMNS` and `DEFAULT_OWNER_COLUMN_VISIBILITY`.
+      - Rendered a luxury badge (`💼 Business Executives`) in table rows.
+      - Added category dropdown to Create/Edit modal form and View Details drawer.
 
 ## ⚙️ Installation & Running Instructions
 
