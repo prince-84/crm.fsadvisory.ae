@@ -328,9 +328,52 @@ class ImportController extends Controller
             ], 422);
         }
 
-        // Duplicate check is scoped strictly within the uploaded file itself.
-        // Database duplicate checking is intentionally removed per requirement.
+        // 1. Fetch existing Lead Pool contacts from database for cross-matching
+        $existingContacts = Contact::withoutTrashed()
+            ->select('id', 'name', 'phone', 'secondary_phone', 'email', 'state')
+            ->get();
+
+        $dbPhoneMap = [];
+        $dbEmailMap = [];
+
+        foreach ($existingContacts as $c) {
+            $normP = $this->normalizePhone($c->phone);
+            if (!empty($normP) && !isset($dbPhoneMap[$normP])) {
+                $dbPhoneMap[$normP] = [
+                    'id' => $c->id,
+                    'name' => $c->name,
+                    'phone' => $c->phone,
+                    'email' => $c->email,
+                    'state' => $c->state,
+                ];
+            }
+            $normS = $this->normalizePhone($c->secondary_phone);
+            if (!empty($normS) && !isset($dbPhoneMap[$normS])) {
+                $dbPhoneMap[$normS] = [
+                    'id' => $c->id,
+                    'name' => $c->name,
+                    'phone' => $c->secondary_phone,
+                    'email' => $c->email,
+                    'state' => $c->state,
+                ];
+            }
+            if (!empty($c->email)) {
+                $emailKey = mb_strtolower(trim($c->email), 'UTF-8');
+                if (!isset($dbEmailMap[$emailKey])) {
+                    $dbEmailMap[$emailKey] = [
+                        'id' => $c->id,
+                        'name' => $c->name,
+                        'phone' => $c->phone,
+                        'email' => $c->email,
+                        'state' => $c->state,
+                    ];
+                }
+            }
+        }
+
+        // 2. Intra-file tracking maps
         $filePhoneMap = [];
+        $fileEmailMap = [];
 
         // Fetch Master Catalogs for Value Mapping and Standardization
         $catalogDevelopers = Developer::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
@@ -349,6 +392,8 @@ class ImportController extends Controller
         $duplicatesList = [];
         $newCount = 0;
         $duplicateCount = 0;
+        $dbDuplicateCount = 0;
+        $fileDuplicateCount = 0;
 
         foreach ($records as $index => $row) {
             $name = $this->getFieldValue($row, ['name', 'Name', 'Lead Name', 'Full Name', 'Client Name', 'Contact Name'], 'Lead #' . ($index + 1));
@@ -409,16 +454,49 @@ class ImportController extends Controller
 
             $normP = $this->normalizePhone($phone);
             $normS = $this->normalizePhone($secPhone);
+            $normEmail = (!empty($email) && str_contains($email, '@')) ? mb_strtolower(trim($email), 'UTF-8') : null;
 
             $isDuplicate = false;
-            $matchedContactInfo = null;
+            $duplicateSource = null; // 'database' or 'file'
+            $matchedContactId = null;
+            $matchedInfo = null;
 
-            if (!empty($normP) && isset($filePhoneMap[$normP])) {
+            // Check 1: Prioritize matching against existing Lead Pool database
+            if (!empty($normP) && isset($dbPhoneMap[$normP])) {
                 $isDuplicate = true;
-                $matchedContactInfo = $filePhoneMap[$normP];
+                $duplicateSource = 'database';
+                $dbHit = $dbPhoneMap[$normP];
+                $matchedContactId = $dbHit['id'];
+                $matchedInfo = "Already in Lead Pool: {$dbHit['name']} (#{$dbHit['id']}) [Phone: {$dbHit['phone']}]";
+            } elseif (!empty($normS) && isset($dbPhoneMap[$normS])) {
+                $isDuplicate = true;
+                $duplicateSource = 'database';
+                $dbHit = $dbPhoneMap[$normS];
+                $matchedContactId = $dbHit['id'];
+                $matchedInfo = "Already in Lead Pool: {$dbHit['name']} (#{$dbHit['id']}) [Sec Phone: {$dbHit['phone']}]";
+            } elseif (!empty($normEmail) && isset($dbEmailMap[$normEmail])) {
+                $isDuplicate = true;
+                $duplicateSource = 'database';
+                $dbHit = $dbEmailMap[$normEmail];
+                $matchedContactId = $dbHit['id'];
+                $matchedInfo = "Already in Lead Pool: {$dbHit['name']} (#{$dbHit['id']}) [Email: {$dbHit['email']}]";
+            }
+            // Check 2: Check matching duplicates within uploaded file
+            elseif (!empty($normP) && isset($filePhoneMap[$normP])) {
+                $isDuplicate = true;
+                $duplicateSource = 'file';
+                $fHit = $filePhoneMap[$normP];
+                $matchedInfo = "Duplicate in File: Row #{$fHit['row']} ({$fHit['name']})";
             } elseif (!empty($normS) && isset($filePhoneMap[$normS])) {
                 $isDuplicate = true;
-                $matchedContactInfo = $filePhoneMap[$normS];
+                $duplicateSource = 'file';
+                $fHit = $filePhoneMap[$normS];
+                $matchedInfo = "Duplicate in File: Row #{$fHit['row']} ({$fHit['name']})";
+            } elseif (!empty($normEmail) && isset($fileEmailMap[$normEmail])) {
+                $isDuplicate = true;
+                $duplicateSource = 'file';
+                $fHit = $fileEmailMap[$normEmail];
+                $matchedInfo = "Duplicate in File: Row #{$fHit['row']} ({$fHit['name']})";
             }
 
             $recordData = [
@@ -446,20 +524,29 @@ class ImportController extends Controller
                 'next_action' => $nextAction,
                 'next_action_due_at' => $nextActionDue,
                 'is_duplicate' => $isDuplicate,
-                'matched_with' => $matchedContactInfo ? $matchedContactInfo['name'] . ' [' . $matchedContactInfo['matched_field'] . ']' : null,
-                'matched_contact_id' => null,
+                'duplicate_source' => $duplicateSource,
+                'matched_with' => $matchedInfo,
+                'matched_contact_id' => $matchedContactId,
             ];
 
             if ($isDuplicate) {
                 $duplicateCount++;
+                if ($duplicateSource === 'database') {
+                    $dbDuplicateCount++;
+                } else {
+                    $fileDuplicateCount++;
+                }
                 $duplicatesList[] = $recordData;
             } else {
                 $newCount++;
                 if (!empty($normP)) {
-                    $filePhoneMap[$normP] = ['id' => null, 'name' => $name, 'matched_field' => 'Row #' . ($index + 1) . ' in File'];
+                    $filePhoneMap[$normP] = ['row' => $index + 1, 'name' => $name];
                 }
                 if (!empty($normS)) {
-                    $filePhoneMap[$normS] = ['id' => null, 'name' => $name, 'matched_field' => 'Row #' . ($index + 1) . ' in File'];
+                    $filePhoneMap[$normS] = ['row' => $index + 1, 'name' => $name];
+                }
+                if (!empty($normEmail)) {
+                    $fileEmailMap[$normEmail] = ['row' => $index + 1, 'name' => $name];
                 }
             }
 
@@ -570,6 +657,8 @@ class ImportController extends Controller
             'total_records' => count($records),
             'new_count' => $newCount,
             'duplicate_count' => $duplicateCount,
+            'db_duplicate_count' => $dbDuplicateCount,
+            'file_duplicate_count' => $fileDuplicateCount,
             'duplicates' => $duplicatesList,
             'analyzed_records' => $analyzedRecords,
             'has_unmatched' => $hasUnmatched,
@@ -653,32 +742,37 @@ class ImportController extends Controller
                     if ($duplicateMode === 'skip') {
                         $skippedCount++;
                         continue;
-                    } elseif ($duplicateMode === 'update' && $matchedContactId) {
-                        // Update existing contact details
-                        $contact = Contact::find($matchedContactId);
-                        if ($contact) {
-                            $updateData = [];
-                            if (!empty($row['email'])) $updateData['email'] = mb_substr($row['email'], 0, 250, 'UTF-8');
-                            if (!empty($row['secondary_phone'])) {
-                                $updateData['secondary_phone'] = mb_substr($row['secondary_phone'], 0, 250, 'UTF-8');
-                            } elseif (!empty($row['mobile_phone'])) {
-                                $updateData['secondary_phone'] = mb_substr($row['mobile_phone'], 0, 250, 'UTF-8');
+                    } elseif ($duplicateMode === 'update') {
+                        if ($matchedContactId) {
+                            // Update existing contact details in database
+                            $contact = Contact::find($matchedContactId);
+                            if ($contact) {
+                                $updateData = [];
+                                if (!empty($row['email'])) $updateData['email'] = mb_substr($row['email'], 0, 250, 'UTF-8');
+                                if (!empty($row['secondary_phone'])) {
+                                    $updateData['secondary_phone'] = mb_substr($row['secondary_phone'], 0, 250, 'UTF-8');
+                                } elseif (!empty($row['mobile_phone'])) {
+                                    $updateData['secondary_phone'] = mb_substr($row['mobile_phone'], 0, 250, 'UTF-8');
+                                }
+                                if (!empty($row['nationality'])) $updateData['nationality'] = mb_substr($row['nationality'], 0, 100, 'UTF-8');
+                                
+                                if (!empty($updateData)) {
+                                    $contact->update($updateData);
+                                }
+                                
+                                Activity::create([
+                                    'contact_id' => $contact->id,
+                                    'user_name' => 'Excel Importer',
+                                    'type' => 'note',
+                                    'description' => "Updated contact info from import batch.",
+                                ]);
+                                $updatedCount++;
+                                continue;
                             }
-                            if (!empty($row['nationality'])) $updateData['nationality'] = mb_substr($row['nationality'], 0, 100, 'UTF-8');
-                            
-                            if (!empty($updateData)) {
-                                $contact->update($updateData);
-                            }
-                            
-                            Activity::create([
-                                'contact_id' => $contact->id,
-                                'user_name' => 'Excel Importer',
-                                'type' => 'note',
-                                'description' => "Updated contact info from import batch.",
-                            ]);
-                            $updatedCount++;
-                            continue;
                         }
+                        // If in update mode but duplicate only within file (no DB contact to update), skip to prevent duplicate creation
+                        $skippedCount++;
+                        continue;
                     }
                 }
 

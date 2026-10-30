@@ -236,6 +236,8 @@ class RoleController extends Controller
                     ['key' => 'owner_data.view', 'label' => 'View Owner Data', 'desc' => 'Search and browse Dubai property title registry'],
                     ['key' => 'owner_data.create', 'label' => 'Add Owner Property', 'desc' => 'Register new property unit and owner info'],
                     ['key' => 'owner_data.edit', 'label' => 'Edit Owner Record', 'desc' => 'Update property details, price, status and contacts'],
+                    ['key' => 'owner_data.claim', 'label' => 'Claim Owner Records (Self-Assign)', 'desc' => 'Allow agents to claim and assign unassigned owner records to themselves'],
+                    ['key' => 'owner_data.assign', 'label' => 'Bulk Assign Owner Records', 'desc' => 'Allocate and assign batch owner records to advisors'],
                     ['key' => 'owner_data.delete', 'label' => 'Delete Owner Record', 'desc' => 'Remove records from owner database'],
                     ['key' => 'owner_data.export', 'label' => 'Export Owner Data (CSV)', 'desc' => 'Download property bank spreadsheets'],
                     ['key' => 'owner_data.import', 'label' => 'Import Owner Data (CSV)', 'desc' => 'Bulk upload owner property records'],

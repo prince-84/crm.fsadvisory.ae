@@ -26,6 +26,8 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
     total_records: number;
     new_count: number;
     duplicate_count: number;
+    db_duplicate_count?: number;
+    file_duplicate_count?: number;
     duplicates: any[];
     analyzed_records: any[];
     has_unmatched?: boolean;
@@ -742,10 +744,24 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
                 }`}>
                   <div className={`text-[10px] font-bold uppercase tracking-wider ${
                     previewData.duplicate_count > 0 ? 'text-amber-800' : 'text-slate-600'
-                  }`}>Duplicates (In File)</div>
+                  }`}>Duplicates Detected</div>
                   <div className={`text-xl font-extrabold mt-0.5 ${
                     previewData.duplicate_count > 0 ? 'text-amber-900' : 'text-slate-700'
                   }`}>{previewData.duplicate_count}</div>
+                  {previewData.duplicate_count > 0 && (
+                    <div className="text-[10px] font-semibold mt-1 flex items-center justify-center gap-1.5 flex-wrap">
+                      {(previewData.db_duplicate_count ?? 0) > 0 && (
+                        <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
+                          {previewData.db_duplicate_count} in Lead Pool
+                        </span>
+                      )}
+                      {(previewData.file_duplicate_count ?? 0) > 0 && (
+                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200">
+                          {previewData.file_duplicate_count} in File
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -785,7 +801,7 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
                           <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] rounded font-bold">Safe</span>
                         </div>
                         <p className="text-[11px] text-[#6E6E6E] mt-0.5">
-                          Import only the <strong className="text-[#081428]">{previewData.new_count} unique leads</strong>. The {previewData.duplicate_count} duplicate contacts will be skipped.
+                          Import only the <strong className="text-[#081428]">{previewData.new_count} unique leads</strong>. All {previewData.duplicate_count} duplicates ({previewData.db_duplicate_count || 0} already in Lead Pool, {previewData.file_duplicate_count || 0} repeated in file) will be skipped, ensuring zero duplicate contacts in your database.
                         </p>
                       </div>
                     </label>
@@ -805,7 +821,7 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
                       <div>
                         <div className="font-bold text-[#081428]">Import All & Route to Duplicate Tab</div>
                         <p className="text-[11px] text-[#6E6E6E] mt-0.5">
-                          Import all <strong className="text-[#081428]">{previewData.total_records} records</strong>. The {previewData.duplicate_count} duplicate leads in this file will be saved with <strong className="text-amber-800">&quot;Duplicate&quot;</strong> state and displayed in the Duplicate tab.
+                          Import all <strong className="text-[#081428]">{previewData.total_records} records</strong>. The {previewData.duplicate_count} duplicate leads will be saved with <strong className="text-amber-800">&quot;Duplicate&quot;</strong> state and displayed in the dedicated Duplicate tab.
                         </p>
                       </div>
                     </label>
@@ -825,7 +841,7 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
                       <div>
                         <div className="font-bold text-[#081428]">Update Existing Contact Records</div>
                         <p className="text-[11px] text-[#6E6E6E] mt-0.5">
-                          Import {previewData.new_count} new leads and update details (Email, Secondary Phone) for {previewData.duplicate_count} matching contacts.
+                          Import {previewData.new_count} new leads and update details (Email, Secondary Phone) for {previewData.db_duplicate_count || 0} matching contacts already in Lead Pool.
                         </p>
                       </div>
                     </label>
@@ -845,26 +861,48 @@ export default function ImportLeadsModal({ isOpen, onClose, onSuccess }: ImportL
 
               {/* Collapsible Duplicates Inspection Table */}
               {showDuplicatesTable && previewData.duplicates.length > 0 && (
-                <div className="space-y-2 bg-white border border-[#E8E4DC] p-3 rounded-lg max-h-52 overflow-y-auto">
-                  <div className="font-bold text-[#081428] text-[11px] uppercase tracking-wider">Duplicate Contacts List</div>
+                <div className="space-y-2 bg-white border border-[#E8E4DC] p-3 rounded-lg max-h-56 overflow-y-auto">
+                  <div className="font-bold text-[#081428] text-[11px] uppercase tracking-wider flex items-center justify-between">
+                    <span>Duplicate Contacts Audit & Cross-Match</span>
+                    <span className="text-[10px] text-[#6E6E6E] normal-case font-normal">
+                      Showing {previewData.duplicates.length} duplicate items
+                    </span>
+                  </div>
                   <table className="w-full text-left text-[11px] border-collapse">
                     <thead>
-                      <tr className="border-b border-[#E8E4DC] text-[#6E6E6E]">
-                        <th className="p-1.5">Row</th>
-                        <th className="p-1.5">CSV Lead Name</th>
-                        <th className="p-1.5">CSV Phone Numbers</th>
-                        <th className="p-1.5">Matches Within File</th>
+                      <tr className="border-b border-[#E8E4DC] text-[#6E6E6E] bg-slate-50/50">
+                        <th className="p-1.5 w-12">Row</th>
+                        <th className="p-1.5">Uploaded Lead</th>
+                        <th className="p-1.5">Phone / Email</th>
+                        <th className="p-1.5">Duplicate Type</th>
+                        <th className="p-1.5">Matched Reference / Lead Pool Info</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#E8E4DC]">
                       {previewData.duplicates.map((dup) => (
-                        <tr key={dup.row_index} className="hover:bg-slate-50">
-                          <td className="p-1.5 font-bold">#{dup.row_index}</td>
+                        <tr key={dup.row_index} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="p-1.5 font-bold text-slate-500">#{dup.row_index}</td>
                           <td className="p-1.5 font-semibold text-[#081428]">{dup.name}</td>
                           <td className="p-1.5 font-mono text-slate-700">
-                            {dup.phone} {dup.secondary_phone ? `/ ${dup.secondary_phone}` : ''}
+                            <div>{dup.phone || '-'}</div>
+                            {dup.email && <div className="text-[10px] text-slate-500">{dup.email}</div>}
                           </td>
-                          <td className="p-1.5 text-amber-800 font-medium">{dup.matched_with}</td>
+                          <td className="p-1.5">
+                            {dup.duplicate_source === 'database' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                                Already in Lead Pool
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                                Duplicate in File
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-1.5 text-[#081428] font-medium text-[11px]">
+                            {dup.matched_with}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

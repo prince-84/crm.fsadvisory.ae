@@ -46,7 +46,8 @@ import {
   ArrowRight
 } from 'lucide-react';
 import Link from 'next/link';
-import { hasPermission } from '@/lib/permissions';
+import { hasPermission, refreshCurrentUser, isSuperUser, getCurrentUser } from '@/lib/permissions';
+import * as XLSX from 'xlsx';
 import AccessDenied from '@/components/AccessDenied';
 import { fetchApi } from '@/lib/api';
 import DateRangePicker, { DateRangeValue } from '@/components/DateRangePicker';
@@ -228,12 +229,17 @@ const formatPhoneForInput = (val?: string | null): string => {
 
 export default function OwnerDataPage() {
   const [canViewOwnerData, setCanViewOwnerData] = useState<boolean | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [claimingId, setClaimingId] = useState<number | null>(null);
 
   useEffect(() => {
     const checkPerms = () => {
+      const u = getCurrentUser();
+      setCurrentUser(u);
       setCanViewOwnerData(hasPermission('owner_data.view'));
     };
     checkPerms();
+    refreshCurrentUser().then(checkPerms);
     window.addEventListener('crm_user_updated', checkPerms);
     window.addEventListener('storage', checkPerms);
     return () => {
@@ -241,6 +247,14 @@ export default function OwnerDataPage() {
       window.removeEventListener('storage', checkPerms);
     };
   }, []);
+
+  const canClaim = Boolean(
+    hasPermission('owner_data.claim') ||
+    hasPermission('owner_data.assign') ||
+    hasPermission('lead_pool.claim') ||
+    hasPermission('lead_pool.assign') ||
+    isSuperUser(currentUser)
+  );
   // State
   const [records, setRecords] = useState<OwnerRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -398,12 +412,29 @@ export default function OwnerDataPage() {
 
   // Import Modal State
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importStep, setImportStep] = useState<'upload' | 'mapping'>('upload');
+  const [importStep, setImportStep] = useState<'upload' | 'preview'>('upload');
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [parsedImportRows, setParsedImportRows] = useState<any[]>([]);
   const [importPreviewData, setImportPreviewData] = useState<{
     total_records: number;
+    new_count?: number;
+    duplicate_count?: number;
+    db_duplicate_count?: number;
+    file_duplicate_count?: number;
+    duplicates?: Array<{
+      row_index: number;
+      owner_name: string;
+      phone: string;
+      email: string;
+      property_number: string;
+      building_name: string;
+      area: string;
+      is_duplicate: boolean;
+      duplicate_source: 'database' | 'file';
+      matched_with: string;
+      matched_record_id?: number | null;
+    }>;
     has_unmatched?: boolean;
     unmatched?: Record<string, any[]>;
     auto_mapped?: Record<string, any[]>;
@@ -411,6 +442,10 @@ export default function OwnerDataPage() {
     auto_mapped_count?: number;
     catalogs?: Record<string, string[]>;
   } | null>(null);
+
+  const [ownerDuplicateMode, setOwnerDuplicateMode] = useState<'skip' | 'update'>('skip');
+  const [showDuplicatesTable, setShowDuplicatesTable] = useState(false);
+  const [showCatalogMappings, setShowCatalogMappings] = useState(false);
 
   const [ownerValueMappings, setOwnerValueMappings] = useState<Record<string, Record<string, string>>>({
     community: {},
@@ -779,6 +814,110 @@ export default function OwnerDataPage() {
     }
   };
 
+  // Claim Single Record
+  const handleClaimRecord = async (recordId: number, ownerName: string) => {
+    const userName = currentUser?.name || 'yourself';
+    const confirm = await Swal.fire({
+      title: 'Claim This Property Record?',
+      text: `Do you want to claim "${ownerName}" and assign it to ${userName}?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#059669',
+      cancelButtonColor: '#6B7280',
+      confirmButtonText: 'Yes, Claim Property',
+      cancelButtonText: 'Cancel',
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    setClaimingId(recordId);
+    try {
+      const res = await fetchApi(`/owner-data/${recordId}/claim`, {
+        method: 'POST',
+      });
+
+      if (res.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Record Claimed!',
+          text: `You have successfully claimed "${ownerName}".`,
+          timer: 1800,
+          showConfirmButton: false,
+        });
+        loadRecords(currentPage);
+      } else {
+        throw new Error(res.error || res.message || 'Failed to claim record');
+      }
+    } catch (err: any) {
+      Swal.fire('Error', err.message || 'Failed to claim record.', 'error');
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
+  // Bulk Claim Handler (Self-Assign)
+  const handleExecuteBulkClaim = async () => {
+    if (selectedIds.length === 0) return;
+
+    const userName = currentUser?.name || 'yourself';
+    const selectedOwnerRecords = records.filter((r) => selectedIds.includes(r.id));
+    const unassignedCount = selectedOwnerRecords.filter(
+      (r) => !r.assigned_to || r.assigned_to === 'Unassigned'
+    ).length;
+    const skippedCount = selectedOwnerRecords.length - unassignedCount;
+
+    if (unassignedCount === 0) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Already Assigned',
+        text: 'None of the selected property records can be claimed because they are already assigned to advisors.',
+      });
+      return;
+    }
+
+    const confirmText =
+      skippedCount > 0
+        ? `You selected ${selectedIds.length} property records, but ${skippedCount} are already assigned to other advisors. Do you want to claim the remaining ${unassignedCount} unassigned records to ${userName}?`
+        : `Are you sure you want to claim ${unassignedCount} unassigned property records and assign them to ${userName}?`;
+
+    const confirm = await Swal.fire({
+      title: `Claim ${unassignedCount} Unassigned Records?`,
+      text: confirmText,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#059669',
+      cancelButtonColor: '#6B7280',
+      confirmButtonText: 'Yes, Claim to Me',
+      cancelButtonText: 'Cancel',
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    setBulkLoading(true);
+    try {
+      const res = await fetchApi('/owner-data/bulk-claim', {
+        method: 'POST',
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+
+      if (res.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Records Claimed!',
+          text: res.message || `Successfully claimed ${res.claimed_count} property records!`,
+        });
+        setSelectedIds([]);
+        loadRecords(currentPage);
+      } else {
+        throw new Error(res.error || res.message || 'Failed to claim records');
+      }
+    } catch (err: any) {
+      Swal.fire('Error', err.message || 'Failed to claim selected records.', 'error');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   // Bulk Delete
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
@@ -886,82 +1025,141 @@ export default function OwnerDataPage() {
     document.body.removeChild(link);
   };
 
-  // Handle CSV File Upload & Parsing
+  // Handle File Upload & Parsing (Supports both .xlsx/.xls and .csv)
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
     const reader = new FileReader();
+
     reader.onload = async (evt) => {
-      const text = evt.target?.result as string;
-      if (!text) return;
+      let recordsToImport: any[] = [];
+      try {
+        if (isExcel) {
+          const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '', raw: false });
 
-      const lines = text.split(/\r\n|\n/).filter((l) => l.trim().length > 0);
-      if (lines.length <= 1) {
-        Swal.fire({ icon: 'warning', title: 'Empty CSV', text: 'The CSV file does not contain any data rows.' });
-        return;
-      }
-
-      // Parse CSV Header to detect column indices
-      const headerLine = lines[0];
-      const headerCols = headerLine.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((c) => c.replace(/^"|"$/g, '').trim().toLowerCase());
-
-      const findColIdx = (candidates: string[], fallbackIdx: number) => {
-        const found = headerCols.findIndex(h => candidates.some(cand => h.includes(cand)));
-        return found !== -1 ? found : fallbackIdx;
-      };
-
-      const idxPropName = findColIdx(['property name', 'prop name'], 0);
-      const idxArea = findColIdx(['area', 'community', 'location'], 1);
-      const idxPropNum = findColIdx(['property number', 'property #', 'unit', 'prop #'], 2);
-      const idxBuilding = findColIdx(['building name', 'building', 'project'], 3);
-      const idxBedrooms = findColIdx(['bedroom', 'bed'], 4);
-      const idxPropType = findColIdx(['property type', 'property types', 'type'], 5);
-      const idxOwner = findColIdx(['owner name', 'owner', 'client name'], 6);
-
-      // Primary Phone (mobile / primary / whatsapp) & Secondary Phone (secondary / landline / alt)
-      let idxPrimary = headerCols.findIndex(h => h.includes('primary') || h.includes('mobile') || h.includes('whatsapp'));
-      let idxSecondary = headerCols.findIndex(h => h.includes('secondary') || h.includes('landline') || (h.includes('phone') && !h.includes('primary') && !h.includes('mobile')));
-
-      if (idxPrimary === -1) {
-        const pIdx = headerCols.findIndex(h => h.includes('phone'));
-        idxPrimary = pIdx !== -1 ? pIdx : 7;
-      }
-      if (idxSecondary === -1) {
-        idxSecondary = (idxPrimary === 7) ? 8 : 7;
-      }
-      const idxEmail = findColIdx(['email', 'mail'], 9);
-      const idxAssigned = findColIdx(['assigned advisor', 'assigned to', 'assigned_to', 'advisor', 'sales advisor', 'agent'], -1);
-
-      // Parse CSV Rows
-      const recordsToImport: any[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i];
-        const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((c) => c.replace(/^"|"$/g, '').trim());
-
-        if (cols.length >= 6) {
-          let b = cols[idxBedrooms] || null;
-          let pt = cols[idxPropType] || null;
-          const typeKeywords = ['apartment', 'villa', 'townhouse', 'penthouse', 'duplex', 'commercial', 'office', 'plot', 'mansion'];
-          if (b && !pt && typeKeywords.some(kw => (b as string).toLowerCase().includes(kw))) {
-            pt = b;
-            b = null;
+          if (jsonRows.length === 0) {
+            Swal.fire({ icon: 'warning', title: 'Empty Excel File', text: 'The Excel file does not contain any data rows.' });
+            return;
           }
 
-          recordsToImport.push({
-            property_name: cols[idxPropName] || null,
-            area: cols[idxArea] || null,
-            property_number: cols[idxPropNum] || null,
-            building_name: cols[idxBuilding] || null,
-            bedrooms: b,
-            property_type: pt,
-            owner_name: cols[idxOwner] || 'Unknown Owner',
-            mobile_number: cols[idxPrimary] || null,
-            phone_number: cols[idxSecondary] || null,
-            email: cols[idxEmail] || null,
-            assigned_to: idxAssigned !== -1 && cols[idxAssigned] ? cols[idxAssigned] : null,
+          const firstRow = jsonRows[0];
+          const keys = Object.keys(firstRow);
+          const findKey = (candidates: string[]) => {
+            return keys.find(k => candidates.some(cand => k.toLowerCase().includes(cand))) || '';
+          };
+
+          const kPropName = findKey(['property name', 'prop name']);
+          const kArea = findKey(['area', 'community', 'location']);
+          const kPropNum = findKey(['property number', 'property #', 'unit', 'prop #']);
+          const kBuilding = findKey(['building name', 'building', 'project']);
+          const kBedrooms = findKey(['bedroom', 'bed']);
+          const kPropType = findKey(['property type', 'property types', 'type']);
+          const kOwner = findKey(['owner name', 'owner', 'client name', 'name']);
+          let kPrimary = findKey(['primary', 'mobile', 'whatsapp']);
+          let kSecondary = findKey(['secondary', 'landline']);
+          if (!kPrimary) kPrimary = findKey(['phone']);
+          const kEmail = findKey(['email', 'mail']);
+          const kAssigned = findKey(['assigned advisor', 'assigned to', 'assigned_to', 'advisor', 'agent']);
+
+          recordsToImport = jsonRows.map((r) => {
+            let b = r[kBedrooms] || null;
+            let pt = r[kPropType] || null;
+            const typeKeywords = ['apartment', 'villa', 'townhouse', 'penthouse', 'duplex', 'commercial', 'office', 'plot', 'mansion'];
+            if (b && !pt && typeKeywords.some(kw => String(b).toLowerCase().includes(kw))) {
+              pt = b;
+              b = null;
+            }
+            return {
+              property_name: r[kPropName] || null,
+              area: r[kArea] || null,
+              property_number: r[kPropNum] || null,
+              building_name: r[kBuilding] || null,
+              bedrooms: b,
+              property_type: pt,
+              owner_name: r[kOwner] || 'Unknown Owner',
+              mobile_number: r[kPrimary] || null,
+              phone_number: r[kSecondary] || null,
+              email: r[kEmail] || null,
+              assigned_to: kAssigned && r[kAssigned] ? r[kAssigned] : null,
+            };
           });
+        } else {
+          // CSV Parsing
+          const text = evt.target?.result as string;
+          if (!text) return;
+          const lines = text.split(/\r\n|\n/).filter((l) => l.trim().length > 0);
+          if (lines.length <= 1) {
+            Swal.fire({ icon: 'warning', title: 'Empty CSV', text: 'The CSV file does not contain any data rows.' });
+            return;
+          }
+
+          const headerLine = lines[0];
+          const headerCols = headerLine.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((c) => c.replace(/^"|"$/g, '').trim().toLowerCase());
+
+          const findColIdx = (candidates: string[], fallbackIdx: number) => {
+            const found = headerCols.findIndex(h => candidates.some(cand => h.includes(cand)));
+            return found !== -1 ? found : fallbackIdx;
+          };
+
+          const idxPropName = findColIdx(['property name', 'prop name'], 0);
+          const idxArea = findColIdx(['area', 'community', 'location'], 1);
+          const idxPropNum = findColIdx(['property number', 'property #', 'unit', 'prop #'], 2);
+          const idxBuilding = findColIdx(['building name', 'building', 'project'], 3);
+          const idxBedrooms = findColIdx(['bedroom', 'bed'], 4);
+          const idxPropType = findColIdx(['property type', 'property types', 'type'], 5);
+          const idxOwner = findColIdx(['owner name', 'owner', 'client name'], 6);
+
+          let idxPrimary = headerCols.findIndex(h => h.includes('primary') || h.includes('mobile') || h.includes('whatsapp'));
+          let idxSecondary = headerCols.findIndex(h => h.includes('secondary') || h.includes('landline') || (h.includes('phone') && !h.includes('primary') && !h.includes('mobile')));
+
+          if (idxPrimary === -1) {
+            const pIdx = headerCols.findIndex(h => h.includes('phone'));
+            idxPrimary = pIdx !== -1 ? pIdx : 7;
+          }
+          if (idxSecondary === -1) {
+            idxSecondary = (idxPrimary === 7) ? 8 : 7;
+          }
+          const idxEmail = findColIdx(['email', 'mail'], 9);
+          const idxAssigned = findColIdx(['assigned advisor', 'assigned to', 'assigned_to', 'advisor', 'sales advisor', 'agent'], -1);
+
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((c) => c.replace(/^"|"$/g, '').trim());
+
+            if (cols.length >= 6) {
+              let b = cols[idxBedrooms] || null;
+              let pt = cols[idxPropType] || null;
+              const typeKeywords = ['apartment', 'villa', 'townhouse', 'penthouse', 'duplex', 'commercial', 'office', 'plot', 'mansion'];
+              if (b && !pt && typeKeywords.some(kw => (b as string).toLowerCase().includes(kw))) {
+                pt = b;
+                b = null;
+              }
+
+              recordsToImport.push({
+                property_name: cols[idxPropName] || null,
+                area: cols[idxArea] || null,
+                property_number: cols[idxPropNum] || null,
+                building_name: cols[idxBuilding] || null,
+                bedrooms: b,
+                property_type: pt,
+                owner_name: cols[idxOwner] || 'Unknown Owner',
+                mobile_number: cols[idxPrimary] || null,
+                phone_number: cols[idxSecondary] || null,
+                email: cols[idxEmail] || null,
+                assigned_to: idxAssigned !== -1 && cols[idxAssigned] ? cols[idxAssigned] : null,
+              });
+            }
+          }
         }
+      } catch (err: any) {
+        Swal.fire({ icon: 'error', title: 'File Error', text: 'Failed to read file: ' + err.message });
+        return;
       }
 
       if (recordsToImport.length === 0) {
@@ -979,55 +1177,55 @@ export default function OwnerDataPage() {
         setParsedImportRows(recordsToImport);
         setImportPreviewData(previewRes);
 
-        if (previewRes.has_unmatched) {
-          const initialMappings: Record<string, Record<string, string>> = {
-            community: {},
-            project: {},
-            property_type: {},
-          };
-          const initialActions: Record<string, 'map' | 'new' | 'keep'> = {};
+        const initialMappings: Record<string, Record<string, string>> = {
+          community: {},
+          project: {},
+          property_type: {},
+        };
+        const initialActions: Record<string, 'map' | 'new' | 'keep'> = {};
 
-          // Pre-populate auto_mapped_lookup so it is preserved and submitted
-          if (previewRes.auto_mapped_lookup) {
-            ['community', 'project', 'property_type'].forEach((cat) => {
-              if (previewRes.auto_mapped_lookup[cat]) {
-                Object.entries(previewRes.auto_mapped_lookup[cat]).forEach(([rawVal, targetVal]) => {
-                  initialMappings[cat][rawVal] = targetVal as string;
-                });
-              }
-            });
-          }
-
+        // Pre-populate auto_mapped_lookup so it is preserved and submitted
+        if (previewRes.auto_mapped_lookup) {
           ['community', 'project', 'property_type'].forEach((cat) => {
-            (previewRes.unmatched?.[cat] || []).forEach((item: any) => {
-              const key = `${cat}::${item.file_value}`;
-              if (item.suggested_match && item.confidence >= 60) {
-                initialMappings[cat][item.file_value] = item.suggested_match;
-                initialActions[key] = 'map';
-              } else {
-                initialActions[key] = 'keep';
-              }
-            });
+            if (previewRes.auto_mapped_lookup[cat]) {
+              Object.entries(previewRes.auto_mapped_lookup[cat]).forEach(([rawVal, targetVal]) => {
+                initialMappings[cat][rawVal] = targetVal as string;
+              });
+            }
           });
-
-          setOwnerValueMappings(initialMappings);
-          setOwnerMappingActions(initialActions);
-          setImportStep('mapping');
-        } else {
-          // All values already matched / auto-standardized! Directly perform seamless import
-          await executeOwnerImport(recordsToImport, previewRes.auto_mapped_lookup || {}, []);
         }
+
+        ['community', 'project', 'property_type'].forEach((cat) => {
+          (previewRes.unmatched?.[cat] || []).forEach((item: any) => {
+            const key = `${cat}::${item.file_value}`;
+            if (item.suggested_match && item.confidence >= 60) {
+              initialMappings[cat][item.file_value] = item.suggested_match;
+              initialActions[key] = 'map';
+            } else {
+              initialActions[key] = 'keep';
+            }
+          });
+        });
+
+        setOwnerValueMappings(initialMappings);
+        setOwnerMappingActions(initialActions);
+        setImportStep('preview');
       } catch (err: any) {
         Swal.fire({ icon: 'error', title: 'Import Preview Failed', text: err.message });
       } finally {
         setImporting(false);
       }
     };
-    reader.readAsText(file);
+
+    if (isExcel) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
+    }
   };
 
   // Execute Final Owner Data Import with mappings and newly approved master catalog entries
-  const executeOwnerImport = async (records: any[], mappings: any, newItems: any[]) => {
+  const executeOwnerImport = async (records: any[], mappings: any, newItems: any[], duplicateMode = 'skip') => {
     setImporting(true);
     try {
       const data = await fetchApi('/owner-data/import', {
@@ -1036,6 +1234,7 @@ export default function OwnerDataPage() {
           records,
           value_mappings: mappings,
           new_catalog_items: newItems,
+          duplicate_mode: duplicateMode,
         }),
       });
 
@@ -1047,10 +1246,12 @@ export default function OwnerDataPage() {
         setOwnerValueMappings({ community: {}, project: {}, property_type: {} });
         setOwnerNewCatalogItems([]);
         setOwnerMappingActions({});
+        setShowDuplicatesTable(false);
+        setShowCatalogMappings(false);
         Swal.fire({
           icon: 'success',
           title: 'Import Successful!',
-          text: `Imported ${data.imported} owner property records with standardized values.`,
+          text: `Imported ${data.imported} property records${data.skipped ? `, ${data.skipped} skipped` : ''}${data.updated ? `, ${data.updated} updated` : ''}.`,
         });
         loadRecords(1);
       } else {
@@ -1095,7 +1296,7 @@ export default function OwnerDataPage() {
       });
     });
 
-    await executeOwnerImport(parsedImportRows, activeMappings, approvedNewItems);
+    await executeOwnerImport(parsedImportRows, activeMappings, approvedNewItems, ownerDuplicateMode);
   };
 
   if (canViewOwnerData === false) {
@@ -1686,6 +1887,16 @@ export default function OwnerDataPage() {
                       {/* 12. Actions - Permanent & Mandatory */}
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                            {canClaim && (!r.assigned_to || r.assigned_to === 'Unassigned') && (
+                              <button
+                                onClick={() => handleClaimRecord(r.id, r.owner_name)}
+                                disabled={claimingId === r.id}
+                                className="p-1.5 bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 rounded border border-emerald-200 cursor-pointer transition-colors"
+                                title="Claim this unassigned property to yourself"
+                              >
+                                <Zap className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               onClick={() => setViewRecord(r)}
                               className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded cursor-pointer transition-colors"
@@ -1761,10 +1972,22 @@ export default function OwnerDataPage() {
             <span className="w-6 h-6 rounded-full bg-[#C8A147] text-[#081428] flex items-center justify-center font-mono text-xs font-extrabold">
               {selectedIds.length}
             </span>
-            <span>Leads Selected</span>
+            <span>Records Selected</span>
           </div>
 
           <div className="flex items-center gap-2">
+            {canClaim && (
+              <button
+                onClick={handleExecuteBulkClaim}
+                disabled={bulkLoading}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Claim all selected unassigned records to yourself"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>{bulkLoading ? 'Claiming...' : 'Claim to Me'}</span>
+              </button>
+            )}
+
             <select
               value={bulkAssignOwner}
               onChange={(e) => setBulkAssignOwner(e.target.value)}
@@ -2076,15 +2299,18 @@ export default function OwnerDataPage() {
         </div>
       )}
 
-      {/* 7. CSV IMPORT MODAL WITH VALUE MAPPING & STANDARDIZATION */}
+      {/* 7. IMPORT MODAL WITH CROSS-DATABASE DUPLICATE AUDIT & CATALOG STANDARDIZATION */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full ${importStep === 'mapping' ? 'max-w-4xl' : 'max-w-lg'} overflow-hidden animate-fade-in transition-all`}>
-            <div className="bg-[#081428] text-white px-6 py-4 flex items-center justify-between">
+          <div className={`bg-white rounded-xl shadow-2xl border border-[#E8E2D9] w-full ${importStep === 'preview' ? 'max-w-4xl' : 'max-w-lg'} overflow-hidden animate-fade-in transition-all flex flex-col max-h-[92vh]`}>
+            {/* Modal Header */}
+            <div className="bg-[#081428] text-white px-6 py-4 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-[#C9A84C]" />
                 <h2 className="font-heading font-bold text-base">
-                  {importStep === 'mapping' ? 'Standardize Owner Data Catalogs (Area, Project, Type)' : 'Import Owner Data (CSV)'}
+                  {importStep === 'preview'
+                    ? `Import Preview & Duplicate Audit (${parsedImportRows.length} Records)`
+                    : 'Import Owner Data (Excel / CSV)'}
                 </h2>
               </div>
               <button
@@ -2093,6 +2319,8 @@ export default function OwnerDataPage() {
                   setImportStep('upload');
                   setParsedImportRows([]);
                   setImportPreviewData(null);
+                  setShowDuplicatesTable(false);
+                  setShowCatalogMappings(false);
                 }}
                 className="text-slate-400 hover:text-white cursor-pointer"
               >
@@ -2102,11 +2330,11 @@ export default function OwnerDataPage() {
 
             {/* STEP 1: FILE UPLOAD */}
             {importStep === 'upload' && (
-              <div className="p-6 space-y-4 text-xs">
+              <div className="p-6 space-y-4 text-xs overflow-y-auto">
                 <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 flex items-start gap-2.5">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-semibold">Expected CSV Header Format:</p>
+                    <p className="font-semibold">Expected File Format (Excel .xlsx or CSV):</p>
                     <p className="text-[11px] text-amber-800 mt-1 font-mono">
                       Property Name, Area, Property Number, Building Name, Bedrooms, Property Type, Owner Name, Primary Phone, Secondary Phone, Email
                     </p>
@@ -2114,7 +2342,7 @@ export default function OwnerDataPage() {
                 </div>
 
                 <div className="flex justify-between items-center pt-1">
-                  <span className="text-slate-600">Need the exact CSV format?</span>
+                  <span className="text-slate-600">Need the exact template format?</span>
                   <button
                     type="button"
                     onClick={handleDownloadSampleCsv}
@@ -2127,12 +2355,12 @@ export default function OwnerDataPage() {
 
                 <div className="border-2 border-dashed border-[#E8E2D9] rounded-xl p-8 text-center bg-[#FAF8F5] hover:bg-slate-50 transition-colors">
                   <Upload className="w-8 h-8 text-[#C9A84C] mx-auto mb-2" />
-                  <p className="font-bold text-sm text-[#081428]">Select CSV File to Upload</p>
-                  <p className="text-slate-400 text-xs mt-1">Supports UTF-8 formatted CSV spreadsheets</p>
+                  <p className="font-bold text-sm text-[#081428]">Select Excel (.xlsx, .xls) or CSV File</p>
+                  <p className="text-slate-400 text-xs mt-1">Uploaded records remain unassigned for sales advisors to claim</p>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".csv"
+                    accept=".xlsx,.xls,.csv"
                     onChange={handleFileUpload}
                     className="mt-4 text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-[#081428] file:text-[#C9A84C] hover:file:bg-[#122444] cursor-pointer"
                   />
@@ -2141,252 +2369,399 @@ export default function OwnerDataPage() {
                 {importing && (
                   <div className="flex items-center justify-center gap-2 text-[#081428] font-semibold py-2">
                     <RefreshCw className="w-4 h-4 animate-spin text-[#C9A84C]" />
-                    <span>Analyzing file against master catalogs...</span>
+                    <span>Auditing duplicates against Owner Data database & catalogs...</span>
                   </div>
                 )}
               </div>
             )}
 
-            {/* STEP 2: VALUE MAPPING & CATALOG STANDARDIZATION */}
-            {importStep === 'mapping' && importPreviewData && (
-              <div className="p-6 space-y-4 text-xs">
+            {/* STEP 2: PREVIEW, DUPLICATE AUDIT & CATALOG STANDARDIZATION */}
+            {importStep === 'preview' && importPreviewData && (
+              <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
                 {/* Auto-Mapped Notification Banner */}
                 {Boolean(importPreviewData?.auto_mapped_count && importPreviewData.auto_mapped_count > 0) && (
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                       <span>
-                        <strong>{importPreviewData.auto_mapped_count} catalog {importPreviewData.auto_mapped_count === 1 ? 'value' : 'values'}</strong> automatically standardized with high confidence. Only ambiguous items below require your confirmation.
+                        <strong>{importPreviewData.auto_mapped_count} catalog {importPreviewData.auto_mapped_count === 1 ? 'value' : 'values'}</strong> automatically standardized with high confidence.
                       </span>
                     </div>
                   </div>
                 )}
 
-                {/* Header Info Banner */}
-                <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-lg flex items-start gap-2.5 text-[#081428]">
-                  <Sparkles className="w-4 h-4 text-[#C9A84C] shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-bold text-xs text-[#081428]">
-                      Standardize Imported Catalog Values ({parsedImportRows.length} total rows)
-                    </div>
-                    <p className="text-[11px] text-[#6E6E6E] mt-0.5">
-                      We detected Community/Area names, Project/Building names, or Property Types in your CSV that do not match existing Settings catalogs.
-                      Choose whether to map to an existing catalog name, add as a new official entry, or keep raw values.
-                    </p>
+                {/* 1. Summary Metric Stat Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="bg-[#FAF8F5] p-3 rounded-lg border border-[#E8E2D9] text-center">
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Total Records in File</span>
+                    <div className="text-xl font-extrabold text-[#081428] mt-0.5">{importPreviewData.total_records}</div>
+                  </div>
+                  <div className="bg-emerald-50/70 p-3 rounded-lg border border-emerald-200 text-center">
+                    <span className="text-[10px] text-emerald-700 uppercase tracking-wider font-semibold">Unique / Safe to Import</span>
+                    <div className="text-xl font-extrabold text-emerald-800 mt-0.5">{importPreviewData.new_count ?? 0}</div>
+                  </div>
+                  <div className="bg-amber-50/70 p-3 rounded-lg border border-amber-200 text-center">
+                    <span className="text-[10px] text-amber-700 uppercase tracking-wider font-semibold">Duplicates Detected</span>
+                    <div className="text-xl font-extrabold text-amber-900 mt-0.5">{importPreviewData.duplicate_count ?? 0}</div>
+                    {(importPreviewData.duplicate_count ?? 0) > 0 && (
+                      <div className="text-[10px] font-semibold mt-1 flex items-center justify-center gap-1.5 flex-wrap">
+                        {(importPreviewData.db_duplicate_count ?? 0) > 0 && (
+                          <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
+                            {importPreviewData.db_duplicate_count} in Owner Data
+                          </span>
+                        )}
+                        {(importPreviewData.file_duplicate_count ?? 0) > 0 && (
+                          <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200">
+                            {importPreviewData.file_duplicate_count} in File
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Category Filter Tabs */}
-                <div className="flex items-center gap-2 border-b border-[#E8E2D9] pb-2 overflow-x-auto">
-                  {[
-                    { key: 'all', label: 'All Unmatched' },
-                    { key: 'community', label: 'Communities / Areas', count: importPreviewData.unmatched?.community?.length || 0 },
-                    { key: 'project', label: 'Projects / Buildings', count: importPreviewData.unmatched?.project?.length || 0 },
-                    { key: 'property_type', label: 'Property Types', count: importPreviewData.unmatched?.property_type?.length || 0 },
-                  ].map((tab) => {
-                    const isActive = ownerMappingCategoryTab === tab.key;
-                    return (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        onClick={() => setOwnerMappingCategoryTab(tab.key as any)}
-                        className={`px-3 py-1.5 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
-                          isActive
-                            ? 'bg-[#081428] text-[#C9A84C] shadow-2xs'
-                            : 'bg-white border border-[#E8E2D9] text-[#6E6E6E] hover:text-[#081428]'
-                        }`}
-                      >
-                        <span>{tab.label}</span>
-                        {tab.count !== undefined && tab.count > 0 && (
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                            isActive ? 'bg-[#C8A147] text-[#081428]' : 'bg-amber-100 text-amber-900 font-bold'
-                          }`}>
-                            {tab.count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                {/* 2. Duplicate Handling Strategy Selector */}
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-bold text-[#081428] uppercase tracking-wider">
+                    Duplicate Resolution Strategy
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      ownerDuplicateMode === 'skip'
+                        ? 'border-emerald-500 bg-emerald-50/30 ring-1 ring-emerald-400'
+                        : 'border-[#E8E2D9] hover:bg-slate-50'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="ownerDuplicateMode"
+                        value="skip"
+                        checked={ownerDuplicateMode === 'skip'}
+                        onChange={() => setOwnerDuplicateMode('skip')}
+                        className="mt-1 accent-emerald-600"
+                      />
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-[#081428]">Skip Duplicates</span>
+                          <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded font-bold">Recommended</span>
+                        </div>
+                        <p className="text-[11px] text-[#6E6E6E] mt-0.5">
+                          Import only the <strong className="text-[#081428]">{importPreviewData.new_count ?? 0} unique records</strong>. All {importPreviewData.duplicate_count ?? 0} duplicates ({importPreviewData.db_duplicate_count || 0} already in Owner Data, {importPreviewData.file_duplicate_count || 0} repeated in file) will be skipped.
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      ownerDuplicateMode === 'update'
+                        ? 'border-blue-500 bg-blue-50/30 ring-1 ring-blue-400'
+                        : 'border-[#E8E2D9] hover:bg-slate-50'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="ownerDuplicateMode"
+                        value="update"
+                        checked={ownerDuplicateMode === 'update'}
+                        onChange={() => setOwnerDuplicateMode('update')}
+                        className="mt-1 accent-blue-600"
+                      />
+                      <div>
+                        <div className="font-bold text-[#081428]">Update Existing Contact & Property Info</div>
+                        <p className="text-[11px] text-[#6E6E6E] mt-0.5">
+                          Import {importPreviewData.new_count ?? 0} new records and update details (phones, email, bedrooms, notes) for {importPreviewData.db_duplicate_count || 0} matching records already in Owner Data.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
                 </div>
 
-                {/* Mapping Rows Table / List */}
-                <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1">
-                  {['community', 'project', 'property_type']
-                    .filter((cat) => ownerMappingCategoryTab === 'all' || ownerMappingCategoryTab === cat)
-                    .flatMap((cat) => (importPreviewData.unmatched?.[cat] || []).map((item) => ({ ...item, category: cat })))
-                    .map((item) => {
-                      const key = `${item.category}::${item.file_value}`;
-                      const currentAction = ownerMappingActions[key] || 'keep';
-                      const targetVal = ownerValueMappings[item.category]?.[item.file_value] || '';
-                      const catalogOptions = importPreviewData.catalogs?.[item.category] || [];
+                {/* 3. Collapsible Duplicates Audit Table */}
+                {(importPreviewData.duplicates?.length ?? 0) > 0 && (
+                  <div className="space-y-2 border border-[#E8E2D9] rounded-lg p-3 bg-slate-50/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                        <span className="font-bold text-[#081428] text-xs">
+                          Duplicate Records Audit ({importPreviewData.duplicates?.length} items)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowDuplicatesTable(!showDuplicatesTable)}
+                        className="text-xs font-semibold text-[#C9A84C] hover:text-[#081428] underline cursor-pointer"
+                      >
+                        {showDuplicatesTable ? 'Hide Audit Table ▲' : 'Inspect Duplicate Records ▼'}
+                      </button>
+                    </div>
 
-                      const categoryLabels: Record<string, string> = {
-                        community: 'Area / Community',
-                        project: 'Building / Project',
-                        property_type: 'Property Type',
-                      };
+                    {showDuplicatesTable && (
+                      <div className="max-h-56 overflow-y-auto bg-white border border-[#E8E2D9] rounded-lg mt-2">
+                        <table className="w-full text-left text-[11px] border-collapse">
+                          <thead>
+                            <tr className="border-b border-[#E8E2D9] text-[#6E6E6E] bg-slate-50 sticky top-0">
+                              <th className="p-2 w-12">Row</th>
+                              <th className="p-2">Owner Name</th>
+                              <th className="p-2">Phone / Email</th>
+                              <th className="p-2">Unit & Building</th>
+                              <th className="p-2">Duplicate Source</th>
+                              <th className="p-2">Matched Info / Existing Record</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#E8E2D9]">
+                            {importPreviewData.duplicates?.map((dup) => (
+                              <tr key={dup.row_index} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="p-2 font-bold text-slate-500">#{dup.row_index}</td>
+                                <td className="p-2 font-semibold text-[#081428]">{dup.owner_name}</td>
+                                <td className="p-2 font-mono text-slate-700">
+                                  <div>{dup.phone || '-'}</div>
+                                  {dup.email && <div className="text-[10px] text-slate-500">{dup.email}</div>}
+                                </td>
+                                <td className="p-2 text-slate-700">
+                                  <div>{dup.property_number ? `Unit ${dup.property_number}` : '-'}</div>
+                                  <div className="text-[10px] text-slate-500">{dup.building_name || dup.area || ''}</div>
+                                </td>
+                                <td className="p-2">
+                                  {dup.duplicate_source === 'database' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                                      Already in Owner Data
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                                      Duplicate in File
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-2 text-[#081428] font-medium text-[11px]">
+                                  {dup.matched_with}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                      return (
-                        <div
-                          key={key}
-                          className="p-3 bg-white border border-[#E8E2D9] rounded-lg shadow-2xs space-y-2.5 hover:border-[#C9A84C]/50 transition-colors"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
-                                {categoryLabels[item.category] || item.category}
-                              </span>
-                              <span className="font-bold text-[#081428] text-xs">
-                                &quot;{item.file_value}&quot;
-                              </span>
-                              <span className="px-1.5 py-0.2 bg-amber-50 text-amber-800 text-[10px] rounded font-semibold border border-amber-200">
-                                {item.count} {item.count === 1 ? 'row' : 'rows'}
-                              </span>
-                            </div>
+                {/* 4. Master Catalogs Standardization (Collapsible if unmatched exists) */}
+                {importPreviewData.has_unmatched && (
+                  <div className="space-y-2 border border-[#E8E2D9] rounded-lg p-3 bg-amber-50/30">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-[#C9A84C]" />
+                        <span className="font-bold text-[#081428] text-xs">
+                          Catalog Standardization Options (Area, Project, Type)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowCatalogMappings(!showCatalogMappings)}
+                        className="text-xs font-semibold text-[#081428] hover:text-[#C9A84C] underline cursor-pointer"
+                      >
+                        {showCatalogMappings ? 'Collapse Catalogs ▲' : 'Review & Map Catalogs ▼'}
+                      </button>
+                    </div>
 
-                            {/* Suggested Match Indicator */}
-                            {item.suggested_match && (
-                              <div className="flex items-center gap-1 text-[11px]">
-                                <span className="text-[#6E6E6E]">Suggested:</span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOwnerMappingActions((prev) => ({ ...prev, [key]: 'map' }));
-                                    setOwnerValueMappings((prev) => ({
-                                      ...prev,
-                                      [item.category]: {
-                                        ...prev[item.category],
-                                        [item.file_value]: item.suggested_match,
-                                      },
-                                    }));
-                                  }}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold rounded cursor-pointer transition-colors text-[10px]"
-                                  title="Click to apply suggested match"
-                                >
-                                  <span>🎯 {item.suggested_match}</span>
-                                  <span className="text-emerald-600 font-mono">({item.confidence}%)</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Action Selection Controls */}
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-100">
-                            {/* 1. Map to Existing */}
-                            <label
-                              className={`flex flex-col gap-1.5 p-2 rounded border cursor-pointer transition-all ${
-                                currentAction === 'map'
-                                  ? 'bg-amber-50/50 border-[#C9A84C] ring-1 ring-[#C9A84C]/40'
-                                  : 'bg-slate-50/60 border-slate-200'
-                              }`}
-                            >
-                              <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
-                                <input
-                                  type="radio"
-                                  name={`owner_action_${key}`}
-                                  checked={currentAction === 'map'}
-                                  onChange={() => {
-                                    setOwnerMappingActions((prev) => ({ ...prev, [key]: 'map' }));
-                                    if (!targetVal && item.suggested_match) {
-                                      setOwnerValueMappings((prev) => ({
-                                        ...prev,
-                                        [item.category]: {
-                                          ...prev[item.category],
-                                          [item.file_value]: item.suggested_match,
-                                        },
-                                      }));
-                                    } else if (!targetVal && catalogOptions.length > 0) {
-                                      setOwnerValueMappings((prev) => ({
-                                        ...prev,
-                                        [item.category]: {
-                                          ...prev[item.category],
-                                          [item.file_value]: catalogOptions[0],
-                                        },
-                                      }));
-                                    }
-                                  }}
-                                  className="accent-[#C9A84C]"
-                                />
-                                <span>Map to Catalog</span>
-                              </div>
-
-                              {currentAction === 'map' && (
-                                <select
-                                  value={targetVal}
-                                  onChange={(e) => {
-                                    const v = e.target.value;
-                                    setOwnerValueMappings((prev) => ({
-                                      ...prev,
-                                      [item.category]: {
-                                        ...prev[item.category],
-                                        [item.file_value]: v,
-                                      },
-                                    }));
-                                  }}
-                                  className="w-full text-[11px] px-2 py-1 bg-white border border-[#E8E2D9] rounded focus:border-[#C9A84C] font-medium"
-                                >
-                                  {catalogOptions.map((opt) => (
-                                    <option key={opt} value={opt}>
-                                      {opt}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                            </label>
-
-                            {/* 2. Add as New to Catalog */}
-                            <label
-                              className={`flex flex-col gap-1 p-2 rounded border cursor-pointer transition-all ${
-                                currentAction === 'new'
-                                  ? 'bg-emerald-50/50 border-emerald-400 ring-1 ring-emerald-300'
-                                  : 'bg-slate-50/60 border-slate-200'
-                              }`}
-                            >
-                              <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
-                                <input
-                                  type="radio"
-                                  name={`owner_action_${key}`}
-                                  checked={currentAction === 'new'}
-                                  onChange={() => setOwnerMappingActions((prev) => ({ ...prev, [key]: 'new' }))}
-                                  className="accent-emerald-600"
-                                />
-                                <span className="text-emerald-800">+ Add to Master Catalog</span>
-                              </div>
-                              <span className="text-[10px] text-slate-500 pl-4">
-                                Registers as official Settings entry
-                              </span>
-                            </label>
-
-                            {/* 3. Keep Raw Value */}
-                            <label
-                              className={`flex flex-col gap-1 p-2 rounded border cursor-pointer transition-all ${
-                                currentAction === 'keep'
-                                  ? 'bg-slate-100 border-slate-400 ring-1 ring-slate-300'
-                                  : 'bg-slate-50/60 border-slate-200'
-                              }`}
-                            >
-                              <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
-                                <input
-                                  type="radio"
-                                  name={`owner_action_${key}`}
-                                  checked={currentAction === 'keep'}
-                                  onChange={() => setOwnerMappingActions((prev) => ({ ...prev, [key]: 'keep' }))}
-                                  className="accent-slate-600"
-                                />
-                                <span>Keep Raw String</span>
-                              </div>
-                              <span className="text-[10px] text-slate-500 pl-4">
-                                Stores unmapped text as-is
-                              </span>
-                            </label>
-                          </div>
+                    {showCatalogMappings && (
+                      <div className="space-y-3 pt-2">
+                        {/* Category Filter Tabs */}
+                        <div className="flex items-center gap-2 border-b border-[#E8E2D9] pb-2 overflow-x-auto">
+                          {[
+                            { key: 'all', label: 'All Unmatched' },
+                            { key: 'community', label: 'Communities / Areas', count: importPreviewData.unmatched?.community?.length || 0 },
+                            { key: 'project', label: 'Projects / Buildings', count: importPreviewData.unmatched?.project?.length || 0 },
+                            { key: 'property_type', label: 'Property Types', count: importPreviewData.unmatched?.property_type?.length || 0 },
+                          ].map((tab) => {
+                            const isActive = ownerMappingCategoryTab === tab.key;
+                            return (
+                              <button
+                                key={tab.key}
+                                type="button"
+                                onClick={() => setOwnerMappingCategoryTab(tab.key as any)}
+                                className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                                  isActive
+                                    ? 'bg-[#081428] text-[#C9A84C] shadow-2xs'
+                                    : 'bg-white border border-[#E8E2D9] text-[#6E6E6E] hover:text-[#081428]'
+                                }`}
+                              >
+                                <span>{tab.label}</span>
+                                {tab.count !== undefined && tab.count > 0 && (
+                                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                                    isActive ? 'bg-[#C8A147] text-[#081428]' : 'bg-amber-100 text-amber-900 font-bold'
+                                  }`}>
+                                    {tab.count}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
+
+                        {/* Mapping Rows List */}
+                        <div className="max-h-60 overflow-y-auto space-y-2.5 pr-1">
+                          {['community', 'project', 'property_type']
+                            .filter((cat) => ownerMappingCategoryTab === 'all' || ownerMappingCategoryTab === cat)
+                            .flatMap((cat) => (importPreviewData.unmatched?.[cat] || []).map((item) => ({ ...item, category: cat })))
+                            .map((item) => {
+                              const key = `${item.category}::${item.file_value}`;
+                              const currentAction = ownerMappingActions[key] || 'keep';
+                              const targetVal = ownerValueMappings[item.category]?.[item.file_value] || '';
+                              const catalogOptions = importPreviewData.catalogs?.[item.category] || [];
+
+                              const categoryLabels: Record<string, string> = {
+                                community: 'Area / Community',
+                                project: 'Building / Project',
+                                property_type: 'Property Type',
+                              };
+
+                              return (
+                                <div
+                                  key={key}
+                                  className="p-3 bg-white border border-[#E8E2D9] rounded-lg shadow-2xs space-y-2 hover:border-[#C9A84C]/50 transition-colors"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                                        {categoryLabels[item.category] || item.category}
+                                      </span>
+                                      <span className="font-bold text-[#081428] text-xs">
+                                        &quot;{item.file_value}&quot;
+                                      </span>
+                                      <span className="px-1.5 py-0.2 bg-amber-50 text-amber-800 text-[10px] rounded font-semibold border border-amber-200">
+                                        {item.count} {item.count === 1 ? 'row' : 'rows'}
+                                      </span>
+                                    </div>
+
+                                    {item.suggested_match && (
+                                      <div className="flex items-center gap-1 text-[11px]">
+                                        <span className="text-[#6E6E6E]">Suggested:</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setOwnerMappingActions((prev) => ({ ...prev, [key]: 'map' }));
+                                            setOwnerValueMappings((prev) => ({
+                                              ...prev,
+                                              [item.category]: {
+                                                ...prev[item.category],
+                                                [item.file_value]: item.suggested_match,
+                                              },
+                                            }));
+                                          }}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold rounded cursor-pointer transition-colors text-[10px]"
+                                        >
+                                          <span>🎯 {item.suggested_match}</span>
+                                          <span className="text-emerald-600 font-mono">({item.confidence}%)</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-100">
+                                    <label className={`flex flex-col gap-1 p-2 rounded border cursor-pointer ${
+                                      currentAction === 'map' ? 'bg-amber-50/50 border-[#C9A84C]' : 'bg-slate-50 border-slate-200'
+                                    }`}>
+                                      <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
+                                        <input
+                                          type="radio"
+                                          name={`owner_action_${key}`}
+                                          checked={currentAction === 'map'}
+                                          onChange={() => {
+                                            setOwnerMappingActions((prev) => ({ ...prev, [key]: 'map' }));
+                                            if (!targetVal && item.suggested_match) {
+                                              setOwnerValueMappings((prev) => ({
+                                                ...prev,
+                                                [item.category]: {
+                                                  ...prev[item.category],
+                                                  [item.file_value]: item.suggested_match,
+                                                },
+                                              }));
+                                            } else if (!targetVal && catalogOptions.length > 0) {
+                                              setOwnerValueMappings((prev) => ({
+                                                ...prev,
+                                                [item.category]: {
+                                                  ...prev[item.category],
+                                                  [item.file_value]: catalogOptions[0],
+                                                },
+                                              }));
+                                            }
+                                          }}
+                                          className="accent-[#C9A84C]"
+                                        />
+                                        <span>Map to Catalog</span>
+                                      </div>
+                                      {currentAction === 'map' && (
+                                        <select
+                                          value={targetVal}
+                                          onChange={(e) => {
+                                            const v = e.target.value;
+                                            setOwnerValueMappings((prev) => ({
+                                              ...prev,
+                                              [item.category]: {
+                                                ...prev[item.category],
+                                                [item.file_value]: v,
+                                              },
+                                            }));
+                                          }}
+                                          className="w-full text-[11px] px-2 py-1 bg-white border border-[#E8E2D9] rounded focus:border-[#C9A84C] font-medium mt-1"
+                                        >
+                                          {catalogOptions.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                          ))}
+                                        </select>
+                                      )}
+                                    </label>
+
+                                    <label className={`flex flex-col gap-1 p-2 rounded border cursor-pointer ${
+                                      currentAction === 'new' ? 'bg-emerald-50/50 border-emerald-400' : 'bg-slate-50 border-slate-200'
+                                    }`}>
+                                      <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
+                                        <input
+                                          type="radio"
+                                          name={`owner_action_${key}`}
+                                          checked={currentAction === 'new'}
+                                          onChange={() => setOwnerMappingActions((prev) => ({ ...prev, [key]: 'new' }))}
+                                          className="accent-emerald-600"
+                                        />
+                                        <span className="text-emerald-800">+ Add to Catalog</span>
+                                      </div>
+                                      <span className="text-[10px] text-slate-500 pl-4">Registers new setting</span>
+                                    </label>
+
+                                    <label className={`flex flex-col gap-1 p-2 rounded border cursor-pointer ${
+                                      currentAction === 'keep' ? 'bg-slate-100 border-slate-400' : 'bg-slate-50 border-slate-200'
+                                    }`}>
+                                      <div className="flex items-center gap-1.5 font-bold text-[11px] text-[#081428]">
+                                        <input
+                                          type="radio"
+                                          name={`owner_action_${key}`}
+                                          checked={currentAction === 'keep'}
+                                          onChange={() => setOwnerMappingActions((prev) => ({ ...prev, [key]: 'keep' }))}
+                                          className="accent-slate-600"
+                                        />
+                                        <span>Keep Raw String</span>
+                                      </div>
+                                      <span className="text-[10px] text-slate-500 pl-4">Stores raw as-is</span>
+                                    </label>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Unassigned Notification Note */}
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg flex items-center gap-2 text-[11px] text-blue-900">
+                  <UserCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>
+                    <strong>Claim Protection Active:</strong> Imported records will remain <strong>Unassigned</strong> so that sales advisors can manually claim their own properties.
+                  </span>
                 </div>
 
                 {/* Action Footer */}
-                <div className="flex items-center justify-between pt-3 border-t border-[#E8E2D9]">
+                <div className="flex items-center justify-between pt-3 border-t border-[#E8E2D9] shrink-0">
                   <button
                     type="button"
                     onClick={() => {
@@ -2406,7 +2781,7 @@ export default function OwnerDataPage() {
                     className="px-5 py-2 bg-[#081428] hover:bg-[#122444] text-[#C9A84C] font-bold rounded shadow-xs flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
                   >
                     {importing && <RefreshCw className="w-4 h-4 animate-spin" />}
-                    <span>{importing ? 'Importing Records...' : 'Confirm & Import Records'}</span>
+                    <span>{importing ? 'Importing Records...' : `Confirm & Import ${parsedImportRows.length} Records`}</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>

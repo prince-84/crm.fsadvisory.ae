@@ -39,6 +39,8 @@ class RoleAndPermissionSeeder extends Seeder
             'owner_data.view',
             'owner_data.create',
             'owner_data.edit',
+            'owner_data.claim',
+            'owner_data.assign',
             'owner_data.delete',
             'owner_data.export',
             'owner_data.import',

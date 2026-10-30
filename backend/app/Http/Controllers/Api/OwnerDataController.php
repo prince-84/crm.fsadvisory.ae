@@ -128,6 +128,36 @@ class OwnerDataController extends Controller
 
         return ['match' => null, 'confidence' => $highestScore];
     }
+
+    /**
+     * Normalize international phone numbers by extracting the last 9 digits.
+     */
+    private function normalizePhone($phone)
+    {
+        if (empty($phone)) return '';
+        $digits = preg_replace('/[^0-9]/', '', (string)$phone);
+        if (strlen($digits) >= 9) {
+            return substr($digits, -9);
+        }
+        return $digits;
+    }
+
+    /**
+     * Recursively clean UTF-8 strings to prevent JSON encoding errors.
+     */
+    private function cleanUtf8($data)
+    {
+        if (is_string($data)) {
+            return mb_convert_encoding($data, 'UTF-8', 'UTF-8');
+        }
+        if (is_array($data)) {
+            foreach ($data as $key => $val) {
+                $data[$key] = $this->cleanUtf8($val);
+            }
+        }
+        return $data;
+    }
+
     /**
      * Display a listing of owner records with filtering, search, and KPI stats
      */
@@ -472,17 +502,83 @@ class OwnerDataController extends Controller
     }
 
     /**
-     * Preview and analyze CSV / Excel owner records against Master Catalogs before saving.
+     * Preview and analyze CSV / Excel owner records against database duplicates and Master Catalogs before saving.
      */
     public function preview(Request $request)
     {
-        $rows = $request->input('records', []);
+        $rawRows = $request->input('records', []);
+        $rows = $this->cleanUtf8($rawRows);
 
         if (empty($rows) || !is_array($rows)) {
             return response()->json(['success' => false, 'message' => 'No import rows provided'], 400);
         }
 
-        // Fetch Master Catalogs
+        // 1. Preload existing database Owner Records for cross-matching duplicates
+        $existingOwnerRecords = OwnerRecord::withoutTrashed()
+            ->select('id', 'owner_name', 'phone_number', 'mobile_number', 'email', 'property_number', 'building_name', 'property_name')
+            ->get();
+
+        $dbPhoneMap = [];
+        $dbEmailMap = [];
+        $dbUnitMap = [];
+
+        foreach ($existingOwnerRecords as $r) {
+            $normP = $this->normalizePhone($r->mobile_number);
+            if (!empty($normP) && !isset($dbPhoneMap[$normP])) {
+                $dbPhoneMap[$normP] = [
+                    'id' => $r->id,
+                    'name' => $r->owner_name,
+                    'phone' => $r->mobile_number,
+                    'email' => $r->email,
+                ];
+            }
+            $normS = $this->normalizePhone($r->phone_number);
+            if (!empty($normS) && !isset($dbPhoneMap[$normS])) {
+                $dbPhoneMap[$normS] = [
+                    'id' => $r->id,
+                    'name' => $r->owner_name,
+                    'phone' => $r->phone_number,
+                    'email' => $r->email,
+                ];
+            }
+            if (!empty($r->email)) {
+                $normEmail = mb_strtolower(trim($r->email), 'UTF-8');
+                if (!isset($dbEmailMap[$normEmail])) {
+                    $dbEmailMap[$normEmail] = [
+                        'id' => $r->id,
+                        'name' => $r->owner_name,
+                        'email' => $r->email,
+                        'phone' => $r->mobile_number ?: $r->phone_number,
+                    ];
+                }
+            }
+            $unitNum = trim((string)$r->property_number);
+            $bldgName = trim((string)($r->building_name ?: $r->property_name));
+            if (!empty($unitNum) && !empty($bldgName)) {
+                $unitKey = mb_strtolower($unitNum . '::' . $bldgName, 'UTF-8');
+                if (!isset($dbUnitMap[$unitKey])) {
+                    $dbUnitMap[$unitKey] = [
+                        'id' => $r->id,
+                        'name' => $r->owner_name,
+                        'unit' => $unitNum,
+                        'building' => $bldgName,
+                    ];
+                }
+            }
+        }
+
+        // 2. In-file duplicate trackers & duplicate counters
+        $filePhoneMap = [];
+        $fileEmailMap = [];
+        $fileUnitMap = [];
+
+        $duplicateCount = 0;
+        $dbDuplicateCount = 0;
+        $fileDuplicateCount = 0;
+        $newCount = 0;
+        $duplicatesList = [];
+
+        // 3. Fetch Master Catalogs
         $catalogCommunities = Community::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
         $catalogProjects = Project::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
         $catalogPropertyTypes = PropertyType::where('is_active', true)->orderBy('name')->pluck('name')->values()->all();
@@ -495,10 +591,17 @@ class OwnerDataController extends Controller
 
         $propertyTypeKeywords = ['apartment', 'villa', 'townhouse', 'penthouse', 'duplex', 'commercial', 'office', 'plot', 'mansion'];
 
-        foreach ($rows as $row) {
-            $area = trim((string)($row['area'] ?? ''));
-            $building = trim((string)($row['building_name'] ?? ''));
+        foreach ($rows as $index => $row) {
+            $ownerName = trim((string)($row['owner_name'] ?? ''));
+            if (empty($ownerName)) $ownerName = 'Unknown Owner';
+
+            $mobilePhone = trim((string)($row['mobile_number'] ?? ''));
+            $secPhone = trim((string)($row['phone_number'] ?? ''));
+            $email = trim((string)($row['email'] ?? ''));
+            $propNum = trim((string)($row['property_number'] ?? ''));
+            $bldg = trim((string)($row['building_name'] ?? ''));
             $propName = trim((string)($row['property_name'] ?? ''));
+            $area = trim((string)($row['area'] ?? ''));
             $rawBedrooms = trim((string)($row['bedrooms'] ?? ''));
             $rawPropType = trim((string)($row['property_type'] ?? ''));
 
@@ -514,17 +617,109 @@ class OwnerDataController extends Controller
             if (!empty($area)) {
                 $catValues['community'][$area] = ($catValues['community'][$area] ?? 0) + 1;
             }
-            if (!empty($building)) {
-                $catValues['project'][$building] = ($catValues['project'][$building] ?? 0) + 1;
+            if (!empty($bldg)) {
+                $catValues['project'][$bldg] = ($catValues['project'][$bldg] ?? 0) + 1;
             } elseif (!empty($propName)) {
                 $catValues['project'][$propName] = ($catValues['project'][$propName] ?? 0) + 1;
             }
             if (!empty($rawPropType)) {
                 $catValues['property_type'][$rawPropType] = ($catValues['property_type'][$rawPropType] ?? 0) + 1;
             }
+
+            // Duplicate Detection
+            $normP = $this->normalizePhone($mobilePhone);
+            $normS = $this->normalizePhone($secPhone);
+            $normEmail = !empty($email) ? mb_strtolower($email, 'UTF-8') : null;
+            $unitKey = (!empty($propNum) && (!empty($bldg) || !empty($propName))) 
+                ? mb_strtolower($propNum . '::' . ($bldg ?: $propName), 'UTF-8') 
+                : null;
+
+            $isDuplicate = false;
+            $duplicateSource = null;
+            $matchedInfo = null;
+            $matchedRecordId = null;
+
+            // Check A: Database matches (Lead Pool / Owner Data)
+            if (!empty($normP) && isset($dbPhoneMap[$normP])) {
+                $isDuplicate = true;
+                $duplicateSource = 'database';
+                $dbHit = $dbPhoneMap[$normP];
+                $matchedRecordId = $dbHit['id'];
+                $matchedInfo = "Already in Owner Data: {$dbHit['name']} (#{$dbHit['id']}) [Phone: {$dbHit['phone']}]";
+            } elseif (!empty($normS) && isset($dbPhoneMap[$normS])) {
+                $isDuplicate = true;
+                $duplicateSource = 'database';
+                $dbHit = $dbPhoneMap[$normS];
+                $matchedRecordId = $dbHit['id'];
+                $matchedInfo = "Already in Owner Data: {$dbHit['name']} (#{$dbHit['id']}) [Sec Phone: {$dbHit['phone']}]";
+            } elseif (!empty($normEmail) && isset($dbEmailMap[$normEmail])) {
+                $isDuplicate = true;
+                $duplicateSource = 'database';
+                $dbHit = $dbEmailMap[$normEmail];
+                $matchedRecordId = $dbHit['id'];
+                $matchedInfo = "Already in Owner Data: {$dbHit['name']} (#{$dbHit['id']}) [Email: {$dbHit['email']}]";
+            } elseif (!empty($unitKey) && isset($dbUnitMap[$unitKey])) {
+                $isDuplicate = true;
+                $duplicateSource = 'database';
+                $dbHit = $dbUnitMap[$unitKey];
+                $matchedRecordId = $dbHit['id'];
+                $matchedInfo = "Already in Owner Data: {$dbHit['name']} (#{$dbHit['id']}) [Unit: {$dbHit['unit']} in {$dbHit['building']}]";
+            }
+            // Check B: Duplicates repeating within the uploaded file
+            elseif (!empty($normP) && isset($filePhoneMap[$normP])) {
+                $isDuplicate = true;
+                $duplicateSource = 'file';
+                $fHit = $filePhoneMap[$normP];
+                $matchedInfo = "Duplicate in File: Row #{$fHit['row']} ({$fHit['name']})";
+            } elseif (!empty($normS) && isset($filePhoneMap[$normS])) {
+                $isDuplicate = true;
+                $duplicateSource = 'file';
+                $fHit = $filePhoneMap[$normS];
+                $matchedInfo = "Duplicate in File: Row #{$fHit['row']} ({$fHit['name']})";
+            } elseif (!empty($normEmail) && isset($fileEmailMap[$normEmail])) {
+                $isDuplicate = true;
+                $duplicateSource = 'file';
+                $fHit = $fileEmailMap[$normEmail];
+                $matchedInfo = "Duplicate in File: Row #{$fHit['row']} ({$fHit['name']})";
+            } elseif (!empty($unitKey) && isset($fileUnitMap[$unitKey])) {
+                $isDuplicate = true;
+                $duplicateSource = 'file';
+                $fHit = $fileUnitMap[$unitKey];
+                $matchedInfo = "Duplicate in File: Row #{$fHit['row']} ({$fHit['name']}) [Same Unit]";
+            }
+
+            $dupData = [
+                'row_index' => $index + 1,
+                'owner_name' => $ownerName,
+                'phone' => $mobilePhone ?: $secPhone,
+                'email' => $email,
+                'property_number' => $propNum,
+                'building_name' => $bldg ?: $propName,
+                'area' => $area,
+                'is_duplicate' => $isDuplicate,
+                'duplicate_source' => $duplicateSource,
+                'matched_with' => $matchedInfo,
+                'matched_record_id' => $matchedRecordId,
+            ];
+
+            if ($isDuplicate) {
+                $duplicateCount++;
+                if ($duplicateSource === 'database') {
+                    $dbDuplicateCount++;
+                } else {
+                    $fileDuplicateCount++;
+                }
+                $duplicatesList[] = $dupData;
+            } else {
+                $newCount++;
+                if (!empty($normP)) $filePhoneMap[$normP] = ['row' => $index + 1, 'name' => $ownerName];
+                if (!empty($normS)) $filePhoneMap[$normS] = ['row' => $index + 1, 'name' => $ownerName];
+                if (!empty($normEmail)) $fileEmailMap[$normEmail] = ['row' => $index + 1, 'name' => $ownerName];
+                if (!empty($unitKey)) $fileUnitMap[$unitKey] = ['row' => $index + 1, 'name' => $ownerName];
+            }
         }
 
-        // Solution A: Compute Auto-Mapped (>=80% confidence) vs Truly Unmatched (<80% confidence)
+        // 4. Compute Auto-Mapped (>=80% confidence) vs Truly Unmatched (<80% confidence) for Catalogs
         $unmatched = [
             'community' => [],
             'project' => [],
@@ -556,7 +751,7 @@ class OwnerDataController extends Controller
 
             foreach ($values as $rawVal => $count) {
                 $rawLower = mb_strtolower(trim($rawVal), 'UTF-8');
-                // 1. Exact match exists in catalog -> case-standardized
+                // Exact match exists in catalog -> case-standardized
                 if (isset($catalogLowerLookup[$rawLower])) {
                     $stdVal = $catalogLowerLookup[$rawLower];
                     if ($stdVal !== $rawVal) {
@@ -567,7 +762,7 @@ class OwnerDataController extends Controller
 
                 $best = $this->findBestMatch($rawVal, $catalogList);
 
-                // Solution A: High confidence match (>= 80%) is AUTO-MAPPED in background
+                // High confidence match (>= 80%) is AUTO-MAPPED in background
                 if (!empty($best['match']) && $best['confidence'] >= 80) {
                     $autoMapped[$category][] = [
                         'file_value' => $rawVal,
@@ -601,9 +796,14 @@ class OwnerDataController extends Controller
             count($autoMapped['property_type'])
         );
 
-        return response()->json([
+        return response()->json($this->cleanUtf8([
             'success' => true,
             'total_records' => count($rows),
+            'new_count' => $newCount,
+            'duplicate_count' => $duplicateCount,
+            'db_duplicate_count' => $dbDuplicateCount,
+            'file_duplicate_count' => $fileDuplicateCount,
+            'duplicates' => $duplicatesList,
             'has_unmatched' => $hasUnmatched,
             'unmatched' => $unmatched,
             'auto_mapped' => $autoMapped,
@@ -614,23 +814,66 @@ class OwnerDataController extends Controller
                 'project' => $catalogProjects,
                 'property_type' => $catalogPropertyTypes,
             ],
-        ]);
+        ]));
     }
 
     /**
-     * Bulk import owner records from CSV / array payload with value mappings.
+     * Bulk import owner records from CSV / array payload with value mappings and duplicate resolution.
      */
     public function import(Request $request)
     {
-        $rows = $request->input('records', []);
+        $rawRows = $request->input('records', []);
+        $rows = $this->cleanUtf8($rawRows);
         $valueMappings = $request->input('value_mappings', []);
         $newCatalogItems = $request->input('new_catalog_items', []);
+        $duplicateMode = $request->input('duplicate_mode', 'skip'); // 'skip' or 'update'
 
         if (empty($rows) || !is_array($rows)) {
             return response()->json(['success' => false, 'message' => 'No import rows provided'], 400);
         }
 
         $imported = 0;
+        $skipped = 0;
+        $updated = 0;
+
+        // Preload database contacts for duplicate detection
+        $existingOwnerRecords = OwnerRecord::withoutTrashed()
+            ->select('id', 'owner_name', 'phone_number', 'mobile_number', 'email', 'property_number', 'building_name', 'property_name')
+            ->get();
+
+        $dbPhoneMap = [];
+        $dbEmailMap = [];
+        $dbUnitMap = [];
+
+        foreach ($existingOwnerRecords as $r) {
+            $normP = $this->normalizePhone($r->mobile_number);
+            if (!empty($normP) && !isset($dbPhoneMap[$normP])) {
+                $dbPhoneMap[$normP] = ['id' => $r->id, 'name' => $r->owner_name];
+            }
+            $normS = $this->normalizePhone($r->phone_number);
+            if (!empty($normS) && !isset($dbPhoneMap[$normS])) {
+                $dbPhoneMap[$normS] = ['id' => $r->id, 'name' => $r->owner_name];
+            }
+            if (!empty($r->email)) {
+                $normEmail = mb_strtolower(trim($r->email), 'UTF-8');
+                if (!isset($dbEmailMap[$normEmail])) {
+                    $dbEmailMap[$normEmail] = ['id' => $r->id, 'name' => $r->owner_name];
+                }
+            }
+            $unitNum = trim((string)$r->property_number);
+            $bldgName = trim((string)($r->building_name ?: $r->property_name));
+            if (!empty($unitNum) && !empty($bldgName)) {
+                $unitKey = mb_strtolower($unitNum . '::' . $bldgName, 'UTF-8');
+                if (!isset($dbUnitMap[$unitKey])) {
+                    $dbUnitMap[$unitKey] = ['id' => $r->id, 'name' => $r->owner_name];
+                }
+            }
+        }
+
+        $filePhoneMap = [];
+        $fileEmailMap = [];
+        $fileUnitMap = [];
+
         DB::beginTransaction();
         try {
             // Register any newly approved catalog items into Master Settings
@@ -664,9 +907,15 @@ class OwnerDataController extends Controller
             $fallbackProps = PropertyType::where('is_active', true)->pluck('name')->toArray();
             $activeUsers = User::where('is_active', true)->get();
 
-            foreach ($rows as $row) {
+            foreach ($rows as $index => $row) {
                 if (empty($row['owner_name'])) continue;
 
+                $mobilePhone = trim((string)($row['mobile_number'] ?? ''));
+                $secPhone = trim((string)($row['phone_number'] ?? ''));
+                $email = trim((string)($row['email'] ?? ''));
+                $propNum = trim((string)($row['property_number'] ?? ''));
+                $building = trim((string)($row['building_name'] ?? ''));
+                $propName = trim((string)($row['property_name'] ?? ''));
                 $rawBedrooms = $row['bedrooms'] ?? null;
                 $rawPropType = $row['property_type'] ?? null;
 
@@ -679,6 +928,72 @@ class OwnerDataController extends Controller
                             $rawBedrooms = null;
                             break;
                         }
+                    }
+                }
+
+                // Check Duplicate Status
+                $normP = $this->normalizePhone($mobilePhone);
+                $normS = $this->normalizePhone($secPhone);
+                $normEmail = !empty($email) ? mb_strtolower($email, 'UTF-8') : null;
+                $unitKey = (!empty($propNum) && (!empty($building) || !empty($propName))) 
+                    ? mb_strtolower($propNum . '::' . ($building ?: $propName), 'UTF-8') 
+                    : null;
+
+                $isDuplicate = false;
+                $matchedDbId = null;
+
+                // Database Duplicate Check
+                if (!empty($normP) && isset($dbPhoneMap[$normP])) {
+                    $isDuplicate = true;
+                    $matchedDbId = $dbPhoneMap[$normP]['id'];
+                } elseif (!empty($normS) && isset($dbPhoneMap[$normS])) {
+                    $isDuplicate = true;
+                    $matchedDbId = $dbPhoneMap[$normS]['id'];
+                } elseif (!empty($normEmail) && isset($dbEmailMap[$normEmail])) {
+                    $isDuplicate = true;
+                    $matchedDbId = $dbEmailMap[$normEmail]['id'];
+                } elseif (!empty($unitKey) && isset($dbUnitMap[$unitKey])) {
+                    $isDuplicate = true;
+                    $matchedDbId = $dbUnitMap[$unitKey]['id'];
+                }
+                // File Duplicate Check
+                elseif (!empty($normP) && isset($filePhoneMap[$normP])) {
+                    $isDuplicate = true;
+                } elseif (!empty($normS) && isset($filePhoneMap[$normS])) {
+                    $isDuplicate = true;
+                } elseif (!empty($normEmail) && isset($fileEmailMap[$normEmail])) {
+                    $isDuplicate = true;
+                } elseif (!empty($unitKey) && isset($fileUnitMap[$unitKey])) {
+                    $isDuplicate = true;
+                }
+
+                // Handle Duplicate Resolution
+                if ($isDuplicate) {
+                    if ($duplicateMode === 'skip') {
+                        $skipped++;
+                        continue;
+                    } elseif ($duplicateMode === 'update') {
+                        if ($matchedDbId) {
+                            $existing = OwnerRecord::find($matchedDbId);
+                            if ($existing) {
+                                $updateData = [];
+                                if (!empty($mobilePhone)) $updateData['mobile_number'] = $mobilePhone;
+                                if (!empty($secPhone)) $updateData['phone_number'] = $secPhone;
+                                if (!empty($email)) $updateData['email'] = $email;
+                                if (!empty($row['notes'])) $updateData['notes'] = $row['notes'];
+                                if (!empty($rawBedrooms)) $updateData['bedrooms'] = $rawBedrooms;
+                                if (!empty($rawPropType)) $updateData['property_type'] = $rawPropType;
+
+                                if (!empty($updateData)) {
+                                    $existing->update($updateData);
+                                }
+                                $updated++;
+                                continue;
+                            }
+                        }
+                        // If file-only duplicate, skip to prevent creating duplicate records
+                        $skipped++;
+                        continue;
                     }
                 }
 
@@ -695,7 +1010,6 @@ class OwnerDataController extends Controller
                     }
                 }
 
-                $building = $row['building_name'] ?? null;
                 if (!empty($building)) {
                     if (isset($valueMappings['project'][$building])) {
                         $building = $valueMappings['project'][$building];
@@ -707,7 +1021,6 @@ class OwnerDataController extends Controller
                     }
                 }
 
-                $propName = $row['property_name'] ?? null;
                 if (!empty($propName)) {
                     if (isset($valueMappings['project'][$propName])) {
                         $propName = $valueMappings['project'][$propName];
@@ -730,6 +1043,7 @@ class OwnerDataController extends Controller
                     }
                 }
 
+                // Assign to active advisor only if explicitly specified in the row, otherwise leave UNASSIGNED
                 $rawAssignedTo = !empty($row['assigned_to']) ? trim((string)$row['assigned_to']) : '';
                 $unassignedPlaceholders = ['unassigned', 'auto', 'none', '-', '--', 'n/a', 'na', 'not assigned', 'not_assigned', 'null', ''];
                 $isPlaceholder = in_array(mb_strtolower($rawAssignedTo, 'UTF-8'), $unassignedPlaceholders, true);
@@ -743,39 +1057,152 @@ class OwnerDataController extends Controller
 
                 $assignedTo = $matchedActiveUser ? $matchedActiveUser->name : null;
 
+                // Create the Owner Record (NO automatic auto-assignment; records remain unassigned for agents to claim)
                 $createdRecord = OwnerRecord::create([
                     'property_name'   => $propName,
                     'area'            => $area,
-                    'property_number' => $row['property_number'] ?? null,
+                    'property_number' => $propNum ?: null,
                     'building_name'   => $building,
                     'bedrooms'        => $rawBedrooms,
                     'property_type'   => $rawPropType,
                     'owner_name'      => $row['owner_name'],
-                    'phone_number'    => $row['phone_number'] ?? null,
-                    'mobile_number'   => $row['mobile_number'] ?? null,
-                    'email'           => $row['email'] ?? null,
+                    'phone_number'    => $secPhone ?: null,
+                    'mobile_number'   => $mobilePhone ?: null,
+                    'email'           => $email ?: null,
                     'notes'           => $row['notes'] ?? null,
                     'status'          => $row['status'] ?? 'active',
                     'assigned_to'     => $assignedTo,
                 ]);
 
-                // Auto-assign to sales advisors via Round-Robin if not explicitly assigned to a valid active advisor
-                if (empty($assignedTo)) {
-                    LeadDistributionService::autoAssignOwnerRecord($createdRecord);
-                }
+                // Track in file maps
+                if (!empty($normP)) $filePhoneMap[$normP] = ['id' => $createdRecord->id, 'name' => $createdRecord->owner_name];
+                if (!empty($normS)) $filePhoneMap[$normS] = ['id' => $createdRecord->id, 'name' => $createdRecord->owner_name];
+                if (!empty($normEmail)) $fileEmailMap[$normEmail] = ['id' => $createdRecord->id, 'name' => $createdRecord->owner_name];
+                if (!empty($unitKey)) $fileUnitMap[$unitKey] = ['id' => $createdRecord->id, 'name' => $createdRecord->owner_name];
 
                 $imported++;
             }
             DB::commit();
 
-            return response()->json([
+            return response()->json($this->cleanUtf8([
                 'success'  => true,
                 'message'  => "Successfully imported {$imported} owner records!",
                 'imported' => $imported,
-            ]);
+                'skipped'  => $skipped,
+                'updated'  => $updated,
+            ]));
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => 'Import failed: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Claim an unassigned owner property record to the authenticated user.
+     */
+    public function claim(Request $request, $id)
+    {
+        $authUser = $request->user();
+        if (!$authUser) {
+            return response()->json(['error' => 'Unauthenticated.'], 401);
+        }
+
+        $canClaim = $authUser->hasPermission('*') || 
+                    $authUser->hasPermission('owner_data.claim') || 
+                    $authUser->hasPermission('owner_data.assign') ||
+                    $authUser->hasPermission('lead_pool.claim') || 
+                    $authUser->hasPermission('lead_pool.assign');
+
+        if (!$canClaim) {
+            return response()->json([
+                'error' => 'Unauthorized: You do not have permission to claim records from Owner Data.'
+            ], 403);
+        }
+
+        $record = OwnerRecord::findOrFail($id);
+
+        if (!empty($record->assigned_to) && $record->assigned_to !== 'Unassigned') {
+            return response()->json([
+                'error' => "This owner property record is already assigned to {$record->assigned_to} and cannot be claimed."
+            ], 422);
+        }
+
+        $agentName = $authUser->name;
+        $record->update([
+            'assigned_to' => $agentName,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Owner property record successfully claimed by {$agentName}!",
+            'record'  => $record->fresh(),
+        ]);
+    }
+
+    /**
+     * Bulk claim multiple unassigned owner records.
+     */
+    public function bulkClaim(Request $request)
+    {
+        $authUser = $request->user();
+        if (!$authUser) {
+            return response()->json(['error' => 'Unauthenticated.'], 401);
+        }
+
+        $canClaim = $authUser->hasPermission('*') || 
+                    $authUser->hasPermission('owner_data.claim') || 
+                    $authUser->hasPermission('owner_data.assign') ||
+                    $authUser->hasPermission('lead_pool.claim') || 
+                    $authUser->hasPermission('lead_pool.assign');
+
+        if (!$canClaim) {
+            return response()->json([
+                'error' => 'Unauthorized: You do not have permission to claim records from Owner Data.'
+            ], 403);
+        }
+
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer',
+        ]);
+
+        $ids = $request->input('ids', []);
+        if (empty($ids)) {
+            return response()->json(['error' => 'No records selected.'], 422);
+        }
+
+        $unassignedRecords = OwnerRecord::whereIn('id', $ids)
+            ->where(function($q) {
+                $q->whereNull('assigned_to')
+                  ->orWhere('assigned_to', '')
+                  ->orWhere('assigned_to', 'Unassigned');
+            })
+            ->get();
+
+        if ($unassignedRecords->isEmpty()) {
+            return response()->json([
+                'error' => 'None of the selected records can be claimed because they are already assigned to an advisor.'
+            ], 422);
+        }
+
+        $agentName = $authUser->name;
+        $claimedCount = 0;
+        foreach ($unassignedRecords as $record) {
+            $record->update(['assigned_to' => $agentName]);
+            $claimedCount++;
+        }
+
+        $skippedCount = count($ids) - $claimedCount;
+        $msg = "{$claimedCount} owner record(s) successfully claimed by {$agentName}!";
+        if ($skippedCount > 0) {
+            $msg .= " ({$skippedCount} already assigned record(s) skipped).";
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $msg,
+            'claimed_count' => $claimedCount,
+            'skipped_count' => $skippedCount,
+        ]);
     }
 }

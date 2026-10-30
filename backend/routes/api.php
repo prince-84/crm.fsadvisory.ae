@@ -218,10 +218,12 @@ Route::middleware(['crm.auth'])->group(function () {
     Route::post('/owner-data', [OwnerDataController::class, 'store']);
     Route::post('/owner-data/bulk-delete', [OwnerDataController::class, 'bulkDelete']);
     Route::post('/owner-data/bulk-assign', [OwnerDataController::class, 'bulkAssign']);
+    Route::post('/owner-data/bulk-claim', [OwnerDataController::class, 'bulkClaim']);
     Route::post('/owner-data/import-preview', [OwnerDataController::class, 'preview']);
     Route::post('/owner-data/import', [OwnerDataController::class, 'import']);
     Route::get('/owner-data/{id}', [OwnerDataController::class, 'show']);
     Route::put('/owner-data/{id}', [OwnerDataController::class, 'update']);
+    Route::post('/owner-data/{id}/claim', [OwnerDataController::class, 'claim']);
     Route::delete('/owner-data/{id}', [OwnerDataController::class, 'destroy']);
     Route::post('/owner-data/{id}/restore', [OwnerDataController::class, 'restore']);
 

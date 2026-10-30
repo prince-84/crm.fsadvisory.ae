@@ -228,6 +228,42 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
     - Created Date (`created_at`) enabled by default and formatted with date and time (`YYYY-MM-DD HH:mm`).
     - Floating bulk actions toolbar for selective assignment and bulk trash management.
 
+- **49 — Cross-Database Lead Import Duplicate Detection & Audit Engine (`ImportController.php`, `ImportLeadsModal.tsx`)**:
+  - **Problem Solved**: Batch Excel/CSV lead import previously only cross-checked phone numbers against repeating rows within the uploaded file itself. Leads that already existed in the database / Lead Pool were not flagged as duplicates during preview or execution.
+  - **Database-Wide Pre-Indexing & Cross-Matching**:
+    - Pre-indexes all active and soft-deleted contacts' primary phones, secondary phones, and emails into high-speed memory maps (`$dbPhoneMap`, `$dbEmailMap`).
+    - Compares each uploaded row across 2 distinct scopes: **Database (Already in Lead Pool)** and **File (Duplicate in File)**.
+    - Prevents duplicate contacts from entering the CRM while maintaining contact permanency.
+  - **Enhanced Duplicate Inspection & Categorized UI**:
+    - Expanded preview metrics to display distinct badges: `Total Duplicates`, `X in Lead Pool`, and `Y in File`.
+    - Collapsible Duplicate Audit Table displaying detailed reference info (e.g. `Already in Lead Pool: John Doe (#120) [Phone: +971501234567]` vs `Duplicate in File: Row #4 (Jane Doe)`).
+    - Resolution Strategy Enforcement:
+      - `Skip Duplicates`: Skips both database matches and in-file duplicate rows, importing strictly 100% unique leads.
+      - `Update Existing Records`: Locates matched database contact and safely updates email, secondary phone, and nationality without creating duplicate profiles. If duplicate only within file, skips subsequent occurrences.
+      - `Route to Duplicate Tab`: Flags duplicates and routes them to the dedicated Duplicate tab.
+
+- **50 — Owner Data Cross-Database Duplicate Engine, Auto-Assign Removal & Granular Claim Mechanism (`OwnerDataController.php`, `owner-data/page.tsx`, `RoleController.php`, `RoleAndPermissionSeeder.php`, `routes/api.php`)**:
+  - **Problem Solved**:
+    - Owner Data file imports previously executed a forced Round-Robin auto-assignment (`LeadDistributionService::autoAssignOwnerRecord`), immediately distributing uploaded title deed records to sales agents instead of preserving them in an unassigned master registry for advisors to claim on-demand.
+    - File preview only checked within the uploaded file, failing to detect records that already existed in the `owner_records` database table.
+    - There was no manual row-level or bulk "Claim" action available for sales agents on `/owner-data`.
+  - **Cross-Database Duplicate Pre-Indexing & Audit Engine**:
+    - In `OwnerDataController::preview()`, pre-indexes the existing `owner_records` database by normalized mobile number (last 9 digits), primary phone, email address, and composite property key (`property_number::building_name`).
+    - Computes dual-scope audit metrics: `total_records`, `new_count`, `duplicate_count`, `db_duplicate_count` (*"In Owner Data"*), `file_duplicate_count` (*"In File"*), and generates an itemized audit list with matched reference info.
+    - In `OwnerDataController::import()`, supports `duplicate_mode = 'skip'` (skips duplicates safely) or `'update'` (updates contact & property details of existing matched records without creating duplicates).
+  - **Auto-Assign Elimination on Import**:
+    - Completely removed forced auto-assignment from `OwnerDataController::import()`.
+    - Uploaded owner records strictly remain `assigned_to = null` (*Unassigned*) unless explicitly designated in the imported file, guaranteeing parity with the Lead Pool master bank architecture.
+  - **Granular Permissions & Advisor Claim Workflow**:
+    - Registered `owner_data.claim` (*"Claim Owner Records (Self-Assign)"*) and `owner_data.assign` (*"Bulk Assign Owner Records"*) under `Owner Data Bank` in `RoleController.php` and `RoleAndPermissionSeeder.php`.
+    - Added backend claim endpoints:
+      - `POST /api/owner-data/{id}/claim`: Validates permissions (`owner_data.claim`, `owner_data.assign`, `lead_pool.claim`, or wildcard `*`), checks unassigned status, and assigns the record to `$authUser->name`.
+      - `POST /api/owner-data/bulk-claim`: Batch claims selected unassigned owner records.
+    - Updated `/owner-data` UI:
+      - Table Action column displays a 1-click **Claim (`<Zap />`)** button on unassigned rows when the user holds claim permissions.
+      - Floating Bulk Toolbar displays a **`Claim to Me`** button for multi-selected unassigned owner records.
+      - Import Modal features KPI cards, duplicate mode selection cards, collapsible audit preview, and master catalog standardizations.
+
 ### Enterprise Access, Governance & Distribution
 - **36 — Enterprise User Management & Granular Permission Matrix (`/users`)**:
   - `users` and `roles` table schema with departments, phone numbers, active status, and custom JSON granular permissions.
@@ -3002,6 +3038,36 @@ An enterprise-grade, high-density Real Estate CRM built for **FS Advisory (Dubai
       - Added Puppeteer `client.pupPage.isClosed()` checks to `triggerPageQrReload()` to eliminate detached frame exceptions.
     - **Backend TTL Alignment (`backend/app/Http/Controllers/Api/WhatsAppController.php`)**:
       - Aligned `expires_in` in `generateQr` and `gatewayQr` to 25 seconds.
+
+- **220 — Lead Pool Cross-Database Duplicate Detection & Audit Engine (`ImportController.php`, `ImportLeadsModal.tsx`)**:
+  - **Cross-Database Audit vs. In-File Matching**:
+    - Pre-indexes database contacts by normalized phone (last 9 digits) and email into memory maps (`$dbPhoneMap`, `$dbEmailMap`).
+    - Compares every uploaded row across 2 scopes: **Database (Already in Lead Pool)** and **File (Duplicate in File)**.
+    - Prevents duplicate contacts from entering the CRM while maintaining contact permanency.
+  - **Duplicate Audit Preview & Resolution Modes**:
+    - Displays 3 distinct KPI badges: `Total Duplicates`, `X in Lead Pool`, and `Y in File`.
+    - Collapsible Duplicate Audit Table with status pills and matched reference details (`Already in Lead Pool: [Name] (#ID) [Phone: +971...]` vs `Duplicate in File: Row #N`).
+    - Interactive strategy cards: `Skip Duplicates` (skips both DB matches and repeated rows) vs `Update Existing Records` (safely updates details of existing contacts without creating duplicates).
+
+- **221 — Owner Data Cross-Database Duplicate Engine, Auto-Assign Elimination & Advisor Claim Desk (`OwnerDataController.php`, `owner-data/page.tsx`, `RoleController.php`, `RoleAndPermissionSeeder.php`, `routes/api.php`)**:
+  - **Issue Diagnosed & Architectural Alignment**:
+    - Previously, importing Title Deed records on `/owner-data` automatically executed `LeadDistributionService::autoAssignOwnerRecord`, immediately dispersing owner records across sales agents via Round-Robin distribution.
+    - The import preview failed to detect if property owners already existed in the `owner_records` database table.
+    - Sales agents had no self-service mechanism to claim unassigned owner records from the Title Deed inventory.
+  - **Auto-Assign Elimination on Owner Import**:
+    - Removed `autoAssignOwnerRecord` completely from `OwnerDataController::import()`.
+    - Uploaded records strictly remain `assigned_to = null` (*Unassigned*) unless an advisor was explicitly named in the imported file, guaranteeing parity with the Lead Pool master bank workflow.
+  - **Cross-Database Duplicate Pre-Indexing & Resolution Engine**:
+    - `OwnerDataController::preview()` pre-indexes the `owner_records` table by normalized mobile number (last 9 digits), primary phone, email, and composite property key (`property_number::building_name`).
+    - Computes dual-scope audit metrics: `total_records`, `new_count`, `duplicate_count`, `db_duplicate_count` (*"In Owner Data"*), `file_duplicate_count` (*"In File"*), and provides a collapsible itemized audit table.
+    - Supports `duplicate_mode = 'skip'` (skips DB duplicates and duplicate rows) or `duplicate_mode = 'update'` (updates contact & property details of existing matched records).
+  - **Granular Permissions & 1-Click / Bulk Claim Mechanism**:
+    - Registered `owner_data.claim` (*"Claim Owner Records (Self-Assign)"*) and `owner_data.assign` (*"Bulk Assign Owner Records"*) under `Owner Data Bank` in `RoleController.php` and `RoleAndPermissionSeeder.php`.
+    - Registered endpoints: `POST /api/owner-data/{id}/claim` and `POST /api/owner-data/bulk-claim`.
+    - In `owner-data/page.tsx`:
+      - Unassigned records (`!assigned_to || assigned_to === 'Unassigned'`) feature a 1-click **Claim (`<Zap />`)** button in the permanent `Actions` column for permitted users (`owner_data.claim`, `owner_data.assign`, `lead_pool.claim`, or `*`).
+      - Multi-record selection displays a **`Claim to Me`** action button in the floating bulk toolbar.
+      - Import Modal overhauled with KPI cards, duplicate mode strategy selector, collapsible audit list, and Master Catalog standardizations.
 
 ## ⚙️ Installation & Running Instructions
 
